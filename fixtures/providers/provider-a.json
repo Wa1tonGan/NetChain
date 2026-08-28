@@ -1,0 +1,46 @@
+{
+  "providerId": "PROVIDER-A",
+  "brand": "NusaNet 5G",
+  "category": "TELCO_5G_QOD",
+  "description": "Fictional Malaysian telco exposing CAMARA-style 5G Quality-on-Demand sessions for prioritised app flows. Big capacity and excellent reliability, but the standard CAMARA session setup is slow unless the P0 fast lane is pre-authorised.",
+  "agentCard": {
+    "name": "nusanet-5g-agent",
+    "version": "0.1.0",
+    "protocol": "REST/JSON (A2A-semantic)",
+    "endpoint": "http://127.0.0.1:8101",
+    "capabilities": [
+      "qod_session_create",
+      "capacity_burst",
+      "p0_fast_lane"
+    ],
+    "healthy": true,
+    "credentialsReady": true,
+    "lastHealthCheckAt": "2026-08-29T08:00:00Z"
+  },
+  "policy": {
+    "maxCapacityMbps": 400,
+    "baseFee": 20,
+    "pricePer100MbpsPerHour": 15,
+    "currency": "MYR"
+  },
+  "performance": {
+    "latencyMs": 30,
+    "packetLossPercent": 0.3,
+    "reliabilityScore": 0.9995
+  },
+  "activation": {
+    "standard": {
+      "class": "MEDIUM",
+      "timeMs": 8000
+    },
+    "p0FastLane": {
+      "class": "FAST",
+      "timeMs": 1500
+    }
+  },
+  "publicKey": {
+    "algorithm": "ed25519",
+    "keyId": "provider-a-demo",
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANFh/vBoKl3ImMPq5ZwMqynNprhLGhXTLcg7YkebotPA=\n-----END PUBLIC KEY-----"
+  }
+}

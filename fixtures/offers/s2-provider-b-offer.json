@@ -1,0 +1,21 @@
+{
+  "offerId": "OFF-INC-S2-PROVIDER-B",
+  "incidentId": "INC-S2",
+  "providerId": "PROVIDER-B",
+  "available": true,
+  "capacityMbps": 300,
+  "expectedActivationClass": "FAST",
+  "expectedActivationTimeMs": 1500,
+  "activationLane": "STANDARD",
+  "price": 60,
+  "currency": "MYR",
+  "reliabilityScore": 0.999,
+  "latencyMs": 35,
+  "packetLossPercent": 0.5,
+  "offerExpiry": "2026-08-29T12:01:00.000Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "provider-b-demo",
+    "value": "H8tkf19oeJLhDFohLWQKv68Q9qUKZ6oDIeZvl0Wrlz3fLR6R1GybMZ5Fz1MJ2Hr/lAt+Rdi14CJaYyWV7/tUCA=="
+  }
+}

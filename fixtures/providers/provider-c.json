@@ -1,0 +1,46 @@
+{
+  "providerId": "PROVIDER-C",
+  "brand": "OrbitSat GO",
+  "category": "LEO_SATELLITE",
+  "description": "Fictional LEO satellite backhaul provider for disaster recovery where terrestrial capacity is gone. Wide coverage and instant pointing, but limited capacity and high latency rule it out for demanding city links.",
+  "agentCard": {
+    "name": "orbitsat-go-agent",
+    "version": "0.1.0",
+    "protocol": "REST/JSON (A2A-semantic)",
+    "endpoint": "http://127.0.0.1:8103",
+    "capabilities": [
+      "disaster_recovery",
+      "wide_coverage",
+      "instant_activation"
+    ],
+    "healthy": true,
+    "credentialsReady": true,
+    "lastHealthCheckAt": "2026-08-29T08:00:00Z"
+  },
+  "policy": {
+    "maxCapacityMbps": 150,
+    "baseFee": 10,
+    "pricePer100MbpsPerHour": 14,
+    "currency": "MYR"
+  },
+  "performance": {
+    "latencyMs": 120,
+    "packetLossPercent": 1.2,
+    "reliabilityScore": 0.98
+  },
+  "activation": {
+    "standard": {
+      "class": "FAST",
+      "timeMs": 2000
+    },
+    "p0FastLane": {
+      "class": "INSTANT",
+      "timeMs": 500
+    }
+  },
+  "publicKey": {
+    "algorithm": "ed25519",
+    "keyId": "provider-c-demo",
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAEQ4BLzkbNaIsFeOn2LDW96xTHcj8wfUjNJLhmjqNpkY=\n-----END PUBLIC KEY-----"
+  }
+}

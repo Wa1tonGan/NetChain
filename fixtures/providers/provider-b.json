@@ -1,0 +1,45 @@
+{
+  "providerId": "PROVIDER-B",
+  "brand": "KilatLink FWA",
+  "category": "FWA_BURST",
+  "description": "Fictional fixed-wireless access operator selling quickly activatable burst capacity over pre-connected FWA links. The value pick: fast activation and dependable reliability at a fair price.",
+  "agentCard": {
+    "name": "kilatlink-fwa-agent",
+    "version": "0.1.0",
+    "protocol": "REST/JSON (A2A-semantic)",
+    "endpoint": "http://127.0.0.1:8102",
+    "capabilities": [
+      "capacity_burst",
+      "fast_activation"
+    ],
+    "healthy": true,
+    "credentialsReady": true,
+    "lastHealthCheckAt": "2026-08-29T08:00:00Z"
+  },
+  "policy": {
+    "maxCapacityMbps": 300,
+    "baseFee": 15,
+    "pricePer100MbpsPerHour": 15,
+    "currency": "MYR"
+  },
+  "performance": {
+    "latencyMs": 35,
+    "packetLossPercent": 0.5,
+    "reliabilityScore": 0.999
+  },
+  "activation": {
+    "standard": {
+      "class": "FAST",
+      "timeMs": 1500
+    },
+    "p0FastLane": {
+      "class": "FAST",
+      "timeMs": 1000
+    }
+  },
+  "publicKey": {
+    "algorithm": "ed25519",
+    "keyId": "provider-b-demo",
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA5PH2DCSPaXIk54K6lab5rJFNoADulnrtGNi8Zwr2C8Q=\n-----END PUBLIC KEY-----"
+  }
+}

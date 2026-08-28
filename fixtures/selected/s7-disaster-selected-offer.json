@@ -1,0 +1,54 @@
+{
+  "incidentId": "INC-S7",
+  "customerId": "STADIUM-001",
+  "selectionMode": "EMERGENCY",
+  "selectedProvider": {
+    "providerId": "PROVIDER-A",
+    "brand": "NusaNet 5G",
+    "offerId": "OFF-INC-S7-PROVIDER-A",
+    "capacityMbps": 400,
+    "expectedActivationClass": "FAST",
+    "expectedActivationTimeMs": 1500,
+    "activationLane": "P0_FAST",
+    "price": 140,
+    "currency": "MYR",
+    "reliabilityScore": 0.9995,
+    "latencyMs": 30,
+    "packetLossPercent": 0.3
+  },
+  "agreement": {
+    "amount": 140,
+    "currency": "MYR",
+    "durationMinutes": 120,
+    "nonce": "INC-S7:PROVIDER-A:001",
+    "expiry": "2026-08-29T12:01:00.000Z"
+  },
+  "signatures": {
+    "offerSignature": {
+      "algorithm": "ed25519",
+      "keyId": "provider-a-demo",
+      "value": "B/ViZwl8I8Y0r9FcuQJZUiXg0GbXIBVg2osxgjK9IYxRxWDeNmUrKh66Kevnr4xCphQgtGfeZZXYPPuHKWnqBA=="
+    },
+    "buyerSignature": {
+      "algorithm": "ed25519",
+      "keyId": "buyer-demo",
+      "value": "dSLAfymFNJkl89LlFjbFxcklUgb3V1eF3vCrdfy6rQLpyDoX438mwXOJXtdeYb4fWeAebTTzju56nAxrfhVaCQ=="
+    }
+  },
+  "rejectedOffers": [
+    {
+      "providerId": "PROVIDER-C",
+      "reason": "INSUFFICIENT_CAPACITY",
+      "detail": "offered 150 Mbps < 300 Mbps required; offered 120 ms latency > 50 ms allowed; offered 1.2% loss > 1% allowed; reliability 0.98 < 0.999 required"
+    },
+    {
+      "providerId": "PROVIDER-B",
+      "reason": "SUPERSEDED_BY_FIRST_VIABLE",
+      "detail": "viable but arrived 300 ms after the first viable offer"
+    }
+  ],
+  "timing": {
+    "tDetect": 1788004800000,
+    "tDecide": 1788004800650
+  }
+}
