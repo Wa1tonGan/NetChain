@@ -1,0 +1,55 @@
+{
+  "incidentId": "INC-S4",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "network",
+    "type": "HIGH_PACKET_LOSS_DETECTED",
+    "severity": "high"
+  },
+  "detectedConditions": ["NETWORK_DEGRADATION", "HIGH_PACKET_LOSS"],
+  "networkState": {
+    "activeLinkIds": ["WAN-A"],
+    "unavailableLinkIds": [],
+    "rawAvailableCapacityMbps": 1000,
+    "usableCapacityMbps": 0,
+    "requiredCapacityMbps": 400,
+    "grossShortfallMbps": 0,
+    "shortfallAfterTrafficProtectionMbps": 400,
+    "worstLatencyMs": 20,
+    "worstPacketLossPercent": 8
+  },
+  "affectedServices": [
+    {
+      "serviceId": "POS",
+      "priority": "P1",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    },
+    {
+      "serviceId": "BROADCAST",
+      "priority": "P2",
+      "requiredMbps": 300,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 300
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 0,
+    "recoveryCapacityNeededMbps": 400,
+    "maximumLatencyMs": 80,
+    "maximumPacketLossPercent": 2,
+    "minimumReliability": 0.99,
+    "targetActivationTimeMs": 5000
+  },
+  "priority": {
+    "level": "P1",
+    "emergencyOverride": false
+  },
+  "constraints": {
+    "maxBudget": 100,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",
+  "requestedAction": "FIND_LOWER_PACKET_LOSS_PATH"
+}

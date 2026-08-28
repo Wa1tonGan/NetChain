@@ -1,0 +1,69 @@
+{
+  "incidentId": "INC-S7",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "event",
+    "type": "DISASTER_MODE_ACTIVATED",
+    "severity": "life_critical"
+  },
+  "detectedConditions": [
+    "DISASTER_EMERGENCY",
+    "LINK_FAILURE",
+    "NETWORK_DEGRADATION",
+    "HIGH_LATENCY",
+    "HIGH_PACKET_LOSS",
+    "CAPACITY_SHORTFALL"
+  ],
+  "networkState": {
+    "activeLinkIds": ["WAN-B"],
+    "unavailableLinkIds": ["WAN-A"],
+    "rawAvailableCapacityMbps": 120,
+    "usableCapacityMbps": 0,
+    "requiredCapacityMbps": 300,
+    "grossShortfallMbps": 180,
+    "shortfallAfterTrafficProtectionMbps": 300,
+    "worstLatencyMs": 140,
+    "worstPacketLossPercent": 6
+  },
+  "affectedServices": [
+    {
+      "serviceId": "MEDICAL",
+      "priority": "P0",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    },
+    {
+      "serviceId": "SECURITY",
+      "priority": "P0",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    },
+    {
+      "serviceId": "OPERATIONS",
+      "priority": "P1",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 180,
+    "recoveryCapacityNeededMbps": 300,
+    "maximumLatencyMs": 50,
+    "maximumPacketLossPercent": 1,
+    "minimumReliability": 0.999,
+    "targetActivationTimeMs": 2000
+  },
+  "priority": {
+    "level": "P0",
+    "emergencyOverride": true
+  },
+  "constraints": {
+    "maxBudget": 1000,
+    "durationMinutes": 120
+  },
+  "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",
+  "requestedAction": "EMERGENCY_RECOVERY"
+}

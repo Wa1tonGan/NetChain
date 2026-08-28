@@ -1,0 +1,40 @@
+{
+  "incidentId": "INC-S0",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "network",
+    "type": "PERIODIC_NETWORK_EVALUATION",
+    "severity": "info"
+  },
+  "detectedConditions": [],
+  "networkState": {
+    "activeLinkIds": ["WAN-A"],
+    "unavailableLinkIds": [],
+    "rawAvailableCapacityMbps": 1000,
+    "usableCapacityMbps": 1000,
+    "requiredCapacityMbps": 500,
+    "grossShortfallMbps": 0,
+    "shortfallAfterTrafficProtectionMbps": 0,
+    "worstLatencyMs": 20,
+    "worstPacketLossPercent": 0.2
+  },
+  "affectedServices": [],
+  "requirements": {
+    "additionalCapacityNeededMbps": 0,
+    "recoveryCapacityNeededMbps": 0,
+    "maximumLatencyMs": 80,
+    "maximumPacketLossPercent": 2,
+    "minimumReliability": 0.99,
+    "targetActivationTimeMs": 30000
+  },
+  "priority": {
+    "level": "P3",
+    "emergencyOverride": false
+  },
+  "constraints": {
+    "maxBudget": 100,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "NO_EXTERNAL_RECOVERY_NEEDED",
+  "requestedAction": "NO_ACTION"
+}

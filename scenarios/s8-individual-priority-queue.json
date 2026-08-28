@@ -1,0 +1,73 @@
+{
+  "incidentId": "INC-S8",
+  "customerId": "INDIVIDUAL-QUEUE-001",
+  "trigger": {
+    "source": "event",
+    "type": "MEDICAL_EMERGENCY",
+    "severity": "life_critical"
+  },
+  "detectedConditions": [
+    "MEDICAL_EMERGENCY",
+    "INDIVIDUAL_PRIORITY_REQUEST",
+    "CAPACITY_SHORTFALL"
+  ],
+  "networkState": {
+    "activeLinkIds": ["TEMP-RECOVERY-A"],
+    "unavailableLinkIds": [],
+    "rawAvailableCapacityMbps": 100,
+    "usableCapacityMbps": 100,
+    "requiredCapacityMbps": 400,
+    "grossShortfallMbps": 300,
+    "shortfallAfterTrafficProtectionMbps": 300,
+    "worstLatencyMs": 35,
+    "worstPacketLossPercent": 0.5
+  },
+  "affectedServices": [
+    {
+      "serviceId": "P0_EMERGENCY",
+      "priority": "P0",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 100,
+      "deficitMbps": 0
+    },
+    {
+      "serviceId": "VVIP_USER",
+      "priority": "P1",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    },
+    {
+      "serviceId": "VIP_USER",
+      "priority": "P2",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    },
+    {
+      "serviceId": "NORMAL_USER",
+      "priority": "P3",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 0,
+      "deficitMbps": 100
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 300,
+    "recoveryCapacityNeededMbps": 300,
+    "maximumLatencyMs": 50,
+    "maximumPacketLossPercent": 1,
+    "minimumReliability": 0.999,
+    "targetActivationTimeMs": 2000
+  },
+  "priority": {
+    "level": "P0",
+    "emergencyOverride": true
+  },
+  "constraints": {
+    "maxBudget": 500,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",
+  "requestedAction": "FIND_ADDITIONAL_CONNECTIVITY"
+}

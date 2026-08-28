@@ -1,0 +1,12 @@
+{
+  "name": "netchain-person-1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
+}

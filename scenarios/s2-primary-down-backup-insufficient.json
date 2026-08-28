@@ -1,0 +1,55 @@
+{
+  "incidentId": "INC-S2",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "network",
+    "type": "PRIMARY_LINK_DOWN",
+    "severity": "critical"
+  },
+  "detectedConditions": ["LINK_FAILURE", "CAPACITY_SHORTFALL"],
+  "networkState": {
+    "activeLinkIds": ["WAN-B"],
+    "unavailableLinkIds": ["WAN-A"],
+    "rawAvailableCapacityMbps": 500,
+    "usableCapacityMbps": 500,
+    "requiredCapacityMbps": 700,
+    "grossShortfallMbps": 200,
+    "shortfallAfterTrafficProtectionMbps": 200,
+    "worstLatencyMs": 28,
+    "worstPacketLossPercent": 0.4
+  },
+  "affectedServices": [
+    {
+      "serviceId": "POS",
+      "priority": "P1",
+      "requiredMbps": 100,
+      "currentlyAllocatedMbps": 60,
+      "deficitMbps": 40
+    },
+    {
+      "serviceId": "BROADCAST",
+      "priority": "P2",
+      "requiredMbps": 300,
+      "currentlyAllocatedMbps": 140,
+      "deficitMbps": 160
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 200,
+    "recoveryCapacityNeededMbps": 200,
+    "maximumLatencyMs": 80,
+    "maximumPacketLossPercent": 2,
+    "minimumReliability": 0.99,
+    "targetActivationTimeMs": 5000
+  },
+  "priority": {
+    "level": "P1",
+    "emergencyOverride": false
+  },
+  "constraints": {
+    "maxBudget": 100,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",
+  "requestedAction": "FIND_ADDITIONAL_CONNECTIVITY"
+}

@@ -1,0 +1,48 @@
+{
+  "incidentId": "INC-S6",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "event",
+    "type": "MEDICAL_EMERGENCY",
+    "severity": "life_critical"
+  },
+  "detectedConditions": ["MEDICAL_EMERGENCY"],
+  "networkState": {
+    "activeLinkIds": ["WAN-A"],
+    "unavailableLinkIds": [],
+    "rawAvailableCapacityMbps": 1000,
+    "usableCapacityMbps": 1000,
+    "requiredCapacityMbps": 550,
+    "grossShortfallMbps": 0,
+    "shortfallAfterTrafficProtectionMbps": 0,
+    "worstLatencyMs": 20,
+    "worstPacketLossPercent": 0.2
+  },
+  "affectedServices": [
+    {
+      "serviceId": "MEDICAL",
+      "priority": "P0",
+      "requiredMbps": 50,
+      "currentlyAllocatedMbps": 50,
+      "deficitMbps": 0
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 0,
+    "recoveryCapacityNeededMbps": 0,
+    "maximumLatencyMs": 50,
+    "maximumPacketLossPercent": 1,
+    "minimumReliability": 0.999,
+    "targetActivationTimeMs": 2000
+  },
+  "priority": {
+    "level": "P0",
+    "emergencyOverride": true
+  },
+  "constraints": {
+    "maxBudget": 500,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "NO_EXTERNAL_RECOVERY_NEEDED",
+  "requestedAction": "PROTECT_EXISTING_CAPACITY"
+}

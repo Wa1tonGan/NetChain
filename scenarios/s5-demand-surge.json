@@ -1,0 +1,55 @@
+{
+  "incidentId": "INC-S5",
+  "customerId": "STADIUM-001",
+  "trigger": {
+    "source": "network",
+    "type": "SERVICE_DEMAND_EXCEEDED_CAPACITY",
+    "severity": "critical"
+  },
+  "detectedConditions": ["DEMAND_SURGE", "CAPACITY_SHORTFALL"],
+  "networkState": {
+    "activeLinkIds": ["WAN-A"],
+    "unavailableLinkIds": [],
+    "rawAvailableCapacityMbps": 1000,
+    "usableCapacityMbps": 1000,
+    "requiredCapacityMbps": 1350,
+    "grossShortfallMbps": 350,
+    "shortfallAfterTrafficProtectionMbps": 200,
+    "worstLatencyMs": 20,
+    "worstPacketLossPercent": 0.2
+  },
+  "affectedServices": [
+    {
+      "serviceId": "BROADCAST",
+      "priority": "P2",
+      "requiredMbps": 300,
+      "currentlyAllocatedMbps": 100,
+      "deficitMbps": 200
+    },
+    {
+      "serviceId": "GUEST_WIFI",
+      "priority": "P5",
+      "requiredMbps": 250,
+      "currentlyAllocatedMbps": 100,
+      "deficitMbps": 150
+    }
+  ],
+  "requirements": {
+    "additionalCapacityNeededMbps": 200,
+    "recoveryCapacityNeededMbps": 200,
+    "maximumLatencyMs": 80,
+    "maximumPacketLossPercent": 2,
+    "minimumReliability": 0.99,
+    "targetActivationTimeMs": 5000
+  },
+  "priority": {
+    "level": "P2",
+    "emergencyOverride": false
+  },
+  "constraints": {
+    "maxBudget": 150,
+    "durationMinutes": 60
+  },
+  "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",
+  "requestedAction": "ACQUIRE_BURST_CAPACITY"
+}
