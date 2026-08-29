@@ -1,0 +1,11 @@
+[package]
+name = "netchain"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["NetChain Person 3 (Sui & Reliability Execution)"]
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "testnet-v1.78.1" }
+
+[addresses]
+netchain = "0x0"

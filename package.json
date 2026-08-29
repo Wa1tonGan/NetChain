@@ -6,9 +6,15 @@
   "scripts": {
     "test": "node --test",
     "provision": "node scripts/provision-demo-identity.mjs",
-    "generate:fixtures": "node scripts/generate-fixtures.mjs"
+    "generate:fixtures": "node scripts/generate-fixtures.mjs",
+    "sui:setup": "node scripts/sui-setup.mjs",
+    "sui:fixtures": "node scripts/sui-fixtures.mjs",
+    "trust": "node scripts/trust.mjs",
+    "harness:sui": "node scripts/sui-harness.mjs",
+    "demo:sui": "node scripts/sui-demo.mjs"
   },
   "dependencies": {
+    "@mysten/sui": "1.45.2",
     "zod": "^4.0.0"
   }
 }
