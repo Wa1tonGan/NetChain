@@ -57,8 +57,8 @@ export class TrustService {
     });
 
     const result = await commitVoucher(this.client, this.keypair, this.config, voucher);
-    const committedEvent = result.events?.find((e) => e.id.txDigest && e.parsedJson?.idempotent !== undefined);
-    const idempotent = committedEvent?.parsedJson?.idempotent ?? false;
+    const committedEvent = result.events?.find((e) => e.json?.idempotent !== undefined);
+    const idempotent = committedEvent?.json?.idempotent ?? false;
     this.ledger.emit("COMMITTED", {
       incidentId: voucher.incidentId,
       nonce: voucher.nonce,

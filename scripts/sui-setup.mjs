@@ -14,7 +14,8 @@ import {
   network,
   publishPackage,
   runSetup,
-  saveConfig
+  saveConfig,
+  waitForObject
 } from "../src/sui/client.js";
 import { EventLedger } from "../src/sui/events.js";
 import { suiAddressFromPem } from "../src/sui/keys.js";
@@ -39,6 +40,9 @@ if (!config.packageId || config.network !== network()) {
   Object.assign(config, published);
   saveConfig(config);
   console.log(`[setup] package=${published.packageId} treasury=${published.treasuryId}`);
+  // Fresh objects lag behind their tx in gRPC indexing — wait before use.
+  await waitForObject(client, published.packageId);
+  await waitForObject(client, published.treasuryId);
 } else {
   console.log(`[setup] reusing package=${config.packageId}`);
 }

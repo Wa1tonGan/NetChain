@@ -31,6 +31,9 @@ export class EventLedger {
 
   indexEvent(event) {
     if (!event.nonce) return;
+    // Only lifecycle events create registry state — VERIFIED alone must not
+    // make a nonce look committed (that would block the real commit).
+    if (!["COMMITTED", "SETTLED", "REFUNDED", "RECLAIMED"].includes(event.type)) return;
     const state = this.registry.get(event.nonce) ?? { nonce: event.nonce };
     if (event.incidentId) state.incidentId = event.incidentId;
     if (event.txDigest) state.txDigest = event.txDigest;
