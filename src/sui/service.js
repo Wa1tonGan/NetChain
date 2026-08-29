@@ -88,6 +88,7 @@ export class TrustService {
         incidentId, nonce: commitment.nonce, txDigest: result.digest,
         data: { amount: this.ledger.lookup(commitment.nonce)?.amount ?? null, recoveredCapacityMbps, confirmedAtMs }
       });
+      await this.postSettlement(incidentId, "SETTLED", commitment.nonce, result.digest);
       return { status: "SETTLED", txDigest: result.digest };
     }
     if (status === "FAILED") {
@@ -96,6 +97,7 @@ export class TrustService {
         incidentId, nonce: commitment.nonce, txDigest: result.digest,
         data: { reason: "activation FAILED", confirmedAtMs }
       });
+      await this.postSettlement(incidentId, "REFUNDED", commitment.nonce, result.digest);
       return { status: "REFUNDED", txDigest: result.digest };
     }
     this.ledger.emit("ACTIVATION_OBSERVED", {
@@ -110,7 +112,39 @@ export class TrustService {
     this.ledger.emit("RECLAIMED", {
       incidentId: state?.incidentId ?? null, nonce, txDigest: result.digest, data: {}
     });
+    await this.postSettlement(state?.incidentId, "RECLAIMED", nonce, result.digest);
     return { status: "RECLAIMED", txDigest: result.digest };
+  }
+
+  /**
+   * Person 2 default #4: push settlement status to their callback endpoint.
+   * Fire-and-forget — a callback failure must never fail the settlement.
+   */
+  async postSettlement(incidentId, status, nonce, txDigest) {
+    const url = this.config?.p2CallbackUrl;
+    if (!url) return;
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ incidentId, status, nonce, txDigest, ts: Date.now() })
+      });
+      this.ledger.emit("CALLBACK_SENT", { incidentId, nonce, data: { status, url } });
+    } catch (err) {
+      this.ledger.emit("CALLBACK_FAILED", { incidentId, nonce, data: { status, url, error: err.message } });
+    }
+  }
+
+  /**
+   * Person 2 default #3: pull delivery — fetch their
+   * `GET /incidents/:id/result` and commit whatever Selected Offer it holds.
+   */
+  async commitFromUrl(resultUrl) {
+    const response = await fetch(resultUrl);
+    if (!response.ok) throw new Error(`pull ${resultUrl} → ${response.status}`);
+    const body = await response.json();
+    const selected = body.selectedOffer ?? body.result?.selectedOffer ?? body;
+    return this.commit(selected);
   }
 
   status(incidentId) {

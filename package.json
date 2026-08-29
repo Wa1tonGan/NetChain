@@ -11,7 +11,8 @@
     "sui:fixtures": "node scripts/sui-fixtures.mjs",
     "trust": "node scripts/trust.mjs",
     "harness:sui": "node scripts/sui-harness.mjs",
-    "demo:sui": "node scripts/sui-demo.mjs"
+    "demo:sui": "node scripts/sui-demo.mjs",
+    "trust:server": "node src/sui/server.js"
   },
   "dependencies": {
     "@mysten/sui": "2.27.1",
