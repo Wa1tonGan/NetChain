@@ -1,0 +1,21 @@
+{
+  "offerId": "OFF-INC-S7-PROVIDER-A",
+  "incidentId": "INC-S7",
+  "providerId": "PROVIDER-A",
+  "available": true,
+  "capacityMbps": 400,
+  "expectedActivationClass": "FAST",
+  "expectedActivationTimeMs": 1500,
+  "activationLane": "P0_FAST",
+  "price": 140,
+  "currency": "MYR",
+  "reliabilityScore": 0.9995,
+  "latencyMs": 30,
+  "packetLossPercent": 0.3,
+  "offerExpiry": "2026-08-29T10:00:49.815Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "provider-a-demo",
+    "value": "9QYAEpGl3u8O3H42abhnIRSkTSS6/m5zUzHwDLO1meXKa5Zmg2VKV0PCTk3thqCtRTWGk/wF/oeT9eVRbliGAg=="
+  }
+}

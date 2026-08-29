@@ -1,0 +1,705 @@
+[NOTE] Dependencies on Sui, MoveStdlib, Bridge, DeepBook, and SuiSystem are automatically added, but this feature is disabled for your package because you have explicitly included dependencies on Sui. Consider removing these dependencies from `Move.toml`.
+// Move bytecode v7
+module 0.escrow {
+use 0000000000000000000000000000000000000000000000000000000000000000::authority;
+use 0000000000000000000000000000000000000000000000000000000000000002::balance;
+use 0000000000000000000000000000000000000000000000000000000000000002::clock;
+use 0000000000000000000000000000000000000000000000000000000000000002::coin;
+use 0000000000000000000000000000000000000000000000000000000000000002::ed25519;
+use 0000000000000000000000000000000000000000000000000000000000000002::event;
+use 0000000000000000000000000000000000000000000000000000000000000002::hash;
+use 0000000000000000000000000000000000000000000000000000000000000002::object;
+use 0000000000000000000000000000000000000000000000000000000000000002::table;
+use 0000000000000000000000000000000000000000000000000000000000000002::transfer;
+use 0000000000000000000000000000000000000000000000000000000000000002::tx_context;
+
+struct Commitment has store {
+	incident_id: vector<u8>,
+	provider_id: vector<u8>,
+	amount: u64,
+	expiry_ms: u64,
+	voucher_digest: vector<u8>,
+	buyer: address,
+	provider: address,
+	status: u8
+}
+
+struct Escrow<phantom T> has store, key {
+	id: UID,
+	available: Balance<T>,
+	locked: Table<vector<u8>, Balance<T>>,
+	commitments: Table<vector<u8>, Commitment>
+}
+
+struct EscrowFunded has copy, drop {
+	escrow_id: ID,
+	amount: u64,
+	available: u64
+}
+
+struct Committed has copy, drop {
+	escrow_id: ID,
+	incident_id: vector<u8>,
+	provider_id: vector<u8>,
+	nonce: vector<u8>,
+	amount: u64,
+	expiry_ms: u64,
+	voucher_digest: vector<u8>,
+	buyer: address,
+	provider: address,
+	idempotent: bool,
+	status: u8
+}
+
+struct Settled has copy, drop {
+	escrow_id: ID,
+	incident_id: vector<u8>,
+	nonce: vector<u8>,
+	amount: u64,
+	provider: address
+}
+
+struct Refunded has copy, drop {
+	escrow_id: ID,
+	incident_id: vector<u8>,
+	nonce: vector<u8>,
+	amount: u64,
+	buyer: address
+}
+
+struct Reclaimed has copy, drop {
+	escrow_id: ID,
+	incident_id: vector<u8>,
+	nonce: vector<u8>,
+	amount: u64,
+	buyer: address
+}
+
+public new<T>(ctx#0#0: &mut TxContext): Escrow<T> {
+B0:
+	0: CopyLoc[0](ctx#0#0: &mut TxContext)
+	1: Call object::new(&mut TxContext): UID
+	2: Call balance::zero<T>(): Balance<T>
+	3: CopyLoc[0](ctx#0#0: &mut TxContext)
+	4: Call table::new<vector<u8>, Balance<T>>(&mut TxContext): Table<vector<u8>, Balance<T>>
+	5: MoveLoc[0](ctx#0#0: &mut TxContext)
+	6: Call table::new<vector<u8>, Commitment>(&mut TxContext): Table<vector<u8>, Commitment>
+	7: PackGeneric[0](Escrow<T>)
+	8: Ret
+}
+
+public deposit<T>(escrow#0#0: &mut Escrow<T>, coin#0#0: Coin<T>) {
+L2:	amount#1#0: u64
+B0:
+	0: ImmBorrowLoc[1](coin#0#0: Coin<T>)
+	1: Call coin::value<T>(&Coin<T>): u64
+	2: StLoc[2](amount#1#0: u64)
+	3: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	4: MutBorrowFieldGeneric[0](Escrow.available: Balance<T>)
+	5: MoveLoc[1](coin#0#0: Coin<T>)
+	6: Call coin::into_balance<T>(Coin<T>): Balance<T>
+	7: Call balance::join<T>(&mut Balance<T>, Balance<T>): u64
+	8: Pop
+	9: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	10: FreezeRef
+	11: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	12: MoveLoc[2](amount#1#0: u64)
+	13: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	14: ImmBorrowFieldGeneric[0](Escrow.available: Balance<T>)
+	15: Call balance::value<T>(&Balance<T>): u64
+	16: Pack[2](EscrowFunded)
+	17: Call event::emit<EscrowFunded>(EscrowFunded)
+	18: Ret
+}
+
+public commit<T>(escrow#0#0: &mut Escrow<T>, authority#0#0: &mut AuthorityCap, clock#0#0: &Clock, incident_id#0#0: vector<u8>, provider_id#0#0: vector<u8>, amount#0#0: u64, expiry_ms#0#0: u64, nonce#0#0: vector<u8>, provider#0#0: address, buyer_msg#0#0: vector<u8>, buyer_sig#0#0: vector<u8>, buyer_pk#0#0: vector<u8>, provider_msg#0#0: vector<u8>, provider_sig#0#0: vector<u8>, provider_pk#0#0: vector<u8>, ctx#0#0: &mut TxContext) {
+L16:	buyer#1#0: address
+L17:	digest#1#0: vector<u8>
+L18:	existing#1#0: &Commitment
+L19:	locked#1#0: Balance<T>
+B0:
+	0: ImmBorrowLoc[9](buyer_msg#0#0: vector<u8>)
+	1: Call hash::blake2b256(&vector<u8>): vector<u8>
+	2: StLoc[17](digest#1#0: vector<u8>)
+	3: MoveLoc[15](ctx#0#0: &mut TxContext)
+	4: FreezeRef
+	5: Call tx_context::sender(&TxContext): address
+	6: StLoc[16](buyer#1#0: address)
+	7: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	8: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	9: CopyLoc[7](nonce#0#0: vector<u8>)
+	10: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	11: BrFalse(64)
+B1:
+	12: MoveLoc[2](clock#0#0: &Clock)
+	13: Pop
+	14: MoveLoc[1](authority#0#0: &mut AuthorityCap)
+	15: Pop
+	16: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	17: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	18: CopyLoc[7](nonce#0#0: vector<u8>)
+	19: Call table::borrow<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): &Commitment
+	20: StLoc[18](existing#1#0: &Commitment)
+	21: CopyLoc[18](existing#1#0: &Commitment)
+	22: ImmBorrowField[2](Commitment.voucher_digest: vector<u8>)
+	23: ReadRef
+	24: CopyLoc[17](digest#1#0: vector<u8>)
+	25: Eq
+	26: BrFalse(28)
+B2:
+	27: Branch(34)
+B3:
+	28: MoveLoc[18](existing#1#0: &Commitment)
+	29: Pop
+	30: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	31: Pop
+	32: LdConst[2](u64: 3)
+	33: Abort
+B4:
+	34: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	35: FreezeRef
+	36: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	37: CopyLoc[18](existing#1#0: &Commitment)
+	38: ImmBorrowField[3](Commitment.incident_id: vector<u8>)
+	39: ReadRef
+	40: CopyLoc[18](existing#1#0: &Commitment)
+	41: ImmBorrowField[4](Commitment.provider_id: vector<u8>)
+	42: ReadRef
+	43: MoveLoc[7](nonce#0#0: vector<u8>)
+	44: CopyLoc[18](existing#1#0: &Commitment)
+	45: ImmBorrowField[5](Commitment.amount: u64)
+	46: ReadRef
+	47: CopyLoc[18](existing#1#0: &Commitment)
+	48: ImmBorrowField[6](Commitment.expiry_ms: u64)
+	49: ReadRef
+	50: MoveLoc[17](digest#1#0: vector<u8>)
+	51: CopyLoc[18](existing#1#0: &Commitment)
+	52: ImmBorrowField[7](Commitment.buyer: address)
+	53: ReadRef
+	54: CopyLoc[18](existing#1#0: &Commitment)
+	55: ImmBorrowField[8](Commitment.provider: address)
+	56: ReadRef
+	57: LdTrue
+	58: MoveLoc[18](existing#1#0: &Commitment)
+	59: ImmBorrowField[9](Commitment.status: u8)
+	60: ReadRef
+	61: Pack[3](Committed)
+	62: Call event::emit<Committed>(Committed)
+	63: Ret
+B5:
+	64: ImmBorrowLoc[13](provider_sig#0#0: vector<u8>)
+	65: ImmBorrowLoc[14](provider_pk#0#0: vector<u8>)
+	66: ImmBorrowLoc[12](provider_msg#0#0: vector<u8>)
+	67: Call ed25519::ed25519_verify(&vector<u8>, &vector<u8>, &vector<u8>): bool
+	68: BrFalse(70)
+B6:
+	69: Branch(78)
+B7:
+	70: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	71: Pop
+	72: MoveLoc[2](clock#0#0: &Clock)
+	73: Pop
+	74: MoveLoc[1](authority#0#0: &mut AuthorityCap)
+	75: Pop
+	76: LdConst[0](u64: 1)
+	77: Abort
+B8:
+	78: ImmBorrowLoc[10](buyer_sig#0#0: vector<u8>)
+	79: ImmBorrowLoc[11](buyer_pk#0#0: vector<u8>)
+	80: ImmBorrowLoc[9](buyer_msg#0#0: vector<u8>)
+	81: Call ed25519::ed25519_verify(&vector<u8>, &vector<u8>, &vector<u8>): bool
+	82: BrFalse(84)
+B9:
+	83: Branch(92)
+B10:
+	84: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	85: Pop
+	86: MoveLoc[2](clock#0#0: &Clock)
+	87: Pop
+	88: MoveLoc[1](authority#0#0: &mut AuthorityCap)
+	89: Pop
+	90: LdConst[0](u64: 1)
+	91: Abort
+B11:
+	92: MoveLoc[1](authority#0#0: &mut AuthorityCap)
+	93: CopyLoc[5](amount#0#0: u64)
+	94: Call authority::assert_can_spend(&mut AuthorityCap, u64)
+	95: MoveLoc[2](clock#0#0: &Clock)
+	96: Call clock::timestamp_ms(&Clock): u64
+	97: CopyLoc[6](expiry_ms#0#0: u64)
+	98: Lt
+	99: BrFalse(101)
+B12:
+	100: Branch(105)
+B13:
+	101: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	102: Pop
+	103: LdConst[1](u64: 2)
+	104: Abort
+B14:
+	105: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	106: ImmBorrowFieldGeneric[0](Escrow.available: Balance<T>)
+	107: Call balance::value<T>(&Balance<T>): u64
+	108: CopyLoc[5](amount#0#0: u64)
+	109: Ge
+	110: BrFalse(112)
+B15:
+	111: Branch(116)
+B16:
+	112: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	113: Pop
+	114: LdConst[3](u64: 6)
+	115: Abort
+B17:
+	116: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	117: MutBorrowFieldGeneric[0](Escrow.available: Balance<T>)
+	118: CopyLoc[5](amount#0#0: u64)
+	119: Call balance::split<T>(&mut Balance<T>, u64): Balance<T>
+	120: StLoc[19](locked#1#0: Balance<T>)
+	121: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	122: MutBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	123: CopyLoc[7](nonce#0#0: vector<u8>)
+	124: MoveLoc[19](locked#1#0: Balance<T>)
+	125: Call table::add<vector<u8>, Balance<T>>(&mut Table<vector<u8>, Balance<T>>, vector<u8>, Balance<T>)
+	126: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	127: MutBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	128: CopyLoc[7](nonce#0#0: vector<u8>)
+	129: CopyLoc[3](incident_id#0#0: vector<u8>)
+	130: CopyLoc[4](provider_id#0#0: vector<u8>)
+	131: CopyLoc[5](amount#0#0: u64)
+	132: CopyLoc[6](expiry_ms#0#0: u64)
+	133: CopyLoc[17](digest#1#0: vector<u8>)
+	134: CopyLoc[16](buyer#1#0: address)
+	135: CopyLoc[8](provider#0#0: address)
+	136: LdConst[7](u8: 0)
+	137: Pack[0](Commitment)
+	138: Call table::add<vector<u8>, Commitment>(&mut Table<vector<u8>, Commitment>, vector<u8>, Commitment)
+	139: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	140: FreezeRef
+	141: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	142: MoveLoc[3](incident_id#0#0: vector<u8>)
+	143: MoveLoc[4](provider_id#0#0: vector<u8>)
+	144: MoveLoc[7](nonce#0#0: vector<u8>)
+	145: MoveLoc[5](amount#0#0: u64)
+	146: MoveLoc[6](expiry_ms#0#0: u64)
+	147: MoveLoc[17](digest#1#0: vector<u8>)
+	148: MoveLoc[16](buyer#1#0: address)
+	149: MoveLoc[8](provider#0#0: address)
+	150: LdFalse
+	151: LdConst[7](u8: 0)
+	152: Pack[3](Committed)
+	153: Call event::emit<Committed>(Committed)
+	154: Ret
+}
+
+public settle<T>(escrow#0#0: &mut Escrow<T>, _authority#0#0: &AuthorityCap, nonce#0#0: vector<u8>, ctx#0#0: &mut TxContext) {
+L4:	amount#1#0: u64
+L5:	c#2#0: &mut Commitment
+L6:	incident_id#1#0: vector<u8>
+L7:	payment#1#0: Coin<T>
+L8:	provider#1#0: address
+B0:
+	0: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	1: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	2: CopyLoc[2](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	4: BrFalse(6)
+B1:
+	5: Branch(12)
+B2:
+	6: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	7: Pop
+	8: MoveLoc[3](ctx#0#0: &mut TxContext)
+	9: Pop
+	10: LdConst[4](u64: 7)
+	11: Abort
+B3:
+	12: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	13: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	14: CopyLoc[2](nonce#0#0: vector<u8>)
+	15: Call table::borrow<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): &Commitment
+	16: ImmBorrowField[9](Commitment.status: u8)
+	17: ReadRef
+	18: LdConst[7](u8: 0)
+	19: Eq
+	20: BrFalse(22)
+B4:
+	21: Branch(28)
+B5:
+	22: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	23: Pop
+	24: MoveLoc[3](ctx#0#0: &mut TxContext)
+	25: Pop
+	26: LdConst[5](u64: 8)
+	27: Abort
+B6:
+	28: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	29: ImmBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	30: CopyLoc[2](nonce#0#0: vector<u8>)
+	31: Call table::contains<vector<u8>, Balance<T>>(&Table<vector<u8>, Balance<T>>, vector<u8>): bool
+	32: BrFalse(34)
+B7:
+	33: Branch(40)
+B8:
+	34: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	35: Pop
+	36: MoveLoc[3](ctx#0#0: &mut TxContext)
+	37: Pop
+	38: LdConst[4](u64: 7)
+	39: Abort
+B9:
+	40: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	41: MutBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	42: CopyLoc[2](nonce#0#0: vector<u8>)
+	43: Call table::remove<vector<u8>, Balance<T>>(&mut Table<vector<u8>, Balance<T>>, vector<u8>): Balance<T>
+	44: MoveLoc[3](ctx#0#0: &mut TxContext)
+	45: Call coin::from_balance<T>(Balance<T>, &mut TxContext): Coin<T>
+	46: StLoc[7](payment#1#0: Coin<T>)
+	47: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	48: MutBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	49: CopyLoc[2](nonce#0#0: vector<u8>)
+	50: Call table::borrow_mut<vector<u8>, Commitment>(&mut Table<vector<u8>, Commitment>, vector<u8>): &mut Commitment
+	51: StLoc[5](c#2#0: &mut Commitment)
+	52: LdConst[8](u8: 1)
+	53: CopyLoc[5](c#2#0: &mut Commitment)
+	54: MutBorrowField[9](Commitment.status: u8)
+	55: WriteRef
+	56: CopyLoc[5](c#2#0: &mut Commitment)
+	57: ImmBorrowField[8](Commitment.provider: address)
+	58: ReadRef
+	59: CopyLoc[5](c#2#0: &mut Commitment)
+	60: ImmBorrowField[5](Commitment.amount: u64)
+	61: ReadRef
+	62: MoveLoc[5](c#2#0: &mut Commitment)
+	63: ImmBorrowField[3](Commitment.incident_id: vector<u8>)
+	64: ReadRef
+	65: StLoc[6](incident_id#1#0: vector<u8>)
+	66: StLoc[4](amount#1#0: u64)
+	67: StLoc[8](provider#1#0: address)
+	68: MoveLoc[7](payment#1#0: Coin<T>)
+	69: CopyLoc[8](provider#1#0: address)
+	70: Call transfer::public_transfer<Coin<T>>(Coin<T>, address)
+	71: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	72: FreezeRef
+	73: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	74: MoveLoc[6](incident_id#1#0: vector<u8>)
+	75: MoveLoc[2](nonce#0#0: vector<u8>)
+	76: MoveLoc[4](amount#1#0: u64)
+	77: MoveLoc[8](provider#1#0: address)
+	78: Pack[4](Settled)
+	79: Call event::emit<Settled>(Settled)
+	80: Ret
+}
+
+public refund<T>(escrow#0#0: &mut Escrow<T>, _authority#0#0: &AuthorityCap, nonce#0#0: vector<u8>, ctx#0#0: &mut TxContext) {
+L4:	amount#1#0: u64
+L5:	buyer#1#0: address
+L6:	c#2#0: &mut Commitment
+L7:	incident_id#1#0: vector<u8>
+L8:	returned#1#0: Coin<T>
+B0:
+	0: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	1: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	2: CopyLoc[2](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	4: BrFalse(6)
+B1:
+	5: Branch(12)
+B2:
+	6: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	7: Pop
+	8: MoveLoc[3](ctx#0#0: &mut TxContext)
+	9: Pop
+	10: LdConst[4](u64: 7)
+	11: Abort
+B3:
+	12: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	13: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	14: CopyLoc[2](nonce#0#0: vector<u8>)
+	15: Call table::borrow<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): &Commitment
+	16: ImmBorrowField[9](Commitment.status: u8)
+	17: ReadRef
+	18: LdConst[7](u8: 0)
+	19: Eq
+	20: BrFalse(22)
+B4:
+	21: Branch(28)
+B5:
+	22: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	23: Pop
+	24: MoveLoc[3](ctx#0#0: &mut TxContext)
+	25: Pop
+	26: LdConst[5](u64: 8)
+	27: Abort
+B6:
+	28: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	29: ImmBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	30: CopyLoc[2](nonce#0#0: vector<u8>)
+	31: Call table::contains<vector<u8>, Balance<T>>(&Table<vector<u8>, Balance<T>>, vector<u8>): bool
+	32: BrFalse(34)
+B7:
+	33: Branch(40)
+B8:
+	34: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	35: Pop
+	36: MoveLoc[3](ctx#0#0: &mut TxContext)
+	37: Pop
+	38: LdConst[4](u64: 7)
+	39: Abort
+B9:
+	40: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	41: MutBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	42: CopyLoc[2](nonce#0#0: vector<u8>)
+	43: Call table::remove<vector<u8>, Balance<T>>(&mut Table<vector<u8>, Balance<T>>, vector<u8>): Balance<T>
+	44: MoveLoc[3](ctx#0#0: &mut TxContext)
+	45: Call coin::from_balance<T>(Balance<T>, &mut TxContext): Coin<T>
+	46: StLoc[8](returned#1#0: Coin<T>)
+	47: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	48: MutBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	49: CopyLoc[2](nonce#0#0: vector<u8>)
+	50: Call table::borrow_mut<vector<u8>, Commitment>(&mut Table<vector<u8>, Commitment>, vector<u8>): &mut Commitment
+	51: StLoc[6](c#2#0: &mut Commitment)
+	52: LdConst[9](u8: 2)
+	53: CopyLoc[6](c#2#0: &mut Commitment)
+	54: MutBorrowField[9](Commitment.status: u8)
+	55: WriteRef
+	56: CopyLoc[6](c#2#0: &mut Commitment)
+	57: ImmBorrowField[7](Commitment.buyer: address)
+	58: ReadRef
+	59: CopyLoc[6](c#2#0: &mut Commitment)
+	60: ImmBorrowField[5](Commitment.amount: u64)
+	61: ReadRef
+	62: MoveLoc[6](c#2#0: &mut Commitment)
+	63: ImmBorrowField[3](Commitment.incident_id: vector<u8>)
+	64: ReadRef
+	65: StLoc[7](incident_id#1#0: vector<u8>)
+	66: StLoc[4](amount#1#0: u64)
+	67: StLoc[5](buyer#1#0: address)
+	68: MoveLoc[8](returned#1#0: Coin<T>)
+	69: CopyLoc[5](buyer#1#0: address)
+	70: Call transfer::public_transfer<Coin<T>>(Coin<T>, address)
+	71: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	72: FreezeRef
+	73: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	74: MoveLoc[7](incident_id#1#0: vector<u8>)
+	75: MoveLoc[2](nonce#0#0: vector<u8>)
+	76: MoveLoc[4](amount#1#0: u64)
+	77: MoveLoc[5](buyer#1#0: address)
+	78: Pack[5](Refunded)
+	79: Call event::emit<Refunded>(Refunded)
+	80: Ret
+}
+
+public reclaim<T>(escrow#0#0: &mut Escrow<T>, nonce#0#0: vector<u8>, clock#0#0: &Clock, ctx#0#0: &mut TxContext) {
+L4:	amount#1#0: u64
+L5:	buyer#1#0: address
+L6:	c#1#0: &Commitment
+L7:	c#2#0: &mut Commitment
+L8:	incident_id#1#0: vector<u8>
+L9:	returned#1#0: Coin<T>
+B0:
+	0: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	1: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	2: CopyLoc[1](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	4: BrFalse(6)
+B1:
+	5: Branch(14)
+B2:
+	6: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	7: Pop
+	8: MoveLoc[3](ctx#0#0: &mut TxContext)
+	9: Pop
+	10: MoveLoc[2](clock#0#0: &Clock)
+	11: Pop
+	12: LdConst[4](u64: 7)
+	13: Abort
+B3:
+	14: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	15: ImmBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	16: CopyLoc[1](nonce#0#0: vector<u8>)
+	17: Call table::contains<vector<u8>, Balance<T>>(&Table<vector<u8>, Balance<T>>, vector<u8>): bool
+	18: BrFalse(20)
+B4:
+	19: Branch(28)
+B5:
+	20: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	21: Pop
+	22: MoveLoc[3](ctx#0#0: &mut TxContext)
+	23: Pop
+	24: MoveLoc[2](clock#0#0: &Clock)
+	25: Pop
+	26: LdConst[4](u64: 7)
+	27: Abort
+B6:
+	28: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	29: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	30: CopyLoc[1](nonce#0#0: vector<u8>)
+	31: Call table::borrow<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): &Commitment
+	32: StLoc[6](c#1#0: &Commitment)
+	33: CopyLoc[6](c#1#0: &Commitment)
+	34: ImmBorrowField[9](Commitment.status: u8)
+	35: ReadRef
+	36: LdConst[7](u8: 0)
+	37: Eq
+	38: BrFalse(40)
+B7:
+	39: Branch(50)
+B8:
+	40: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	41: Pop
+	42: MoveLoc[3](ctx#0#0: &mut TxContext)
+	43: Pop
+	44: MoveLoc[2](clock#0#0: &Clock)
+	45: Pop
+	46: MoveLoc[6](c#1#0: &Commitment)
+	47: Pop
+	48: LdConst[5](u64: 8)
+	49: Abort
+B9:
+	50: MoveLoc[2](clock#0#0: &Clock)
+	51: Call clock::timestamp_ms(&Clock): u64
+	52: MoveLoc[6](c#1#0: &Commitment)
+	53: ImmBorrowField[6](Commitment.expiry_ms: u64)
+	54: ReadRef
+	55: Ge
+	56: BrFalse(58)
+B10:
+	57: Branch(64)
+B11:
+	58: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	59: Pop
+	60: MoveLoc[3](ctx#0#0: &mut TxContext)
+	61: Pop
+	62: LdConst[6](u64: 9)
+	63: Abort
+B12:
+	64: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	65: MutBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	66: CopyLoc[1](nonce#0#0: vector<u8>)
+	67: Call table::remove<vector<u8>, Balance<T>>(&mut Table<vector<u8>, Balance<T>>, vector<u8>): Balance<T>
+	68: MoveLoc[3](ctx#0#0: &mut TxContext)
+	69: Call coin::from_balance<T>(Balance<T>, &mut TxContext): Coin<T>
+	70: StLoc[9](returned#1#0: Coin<T>)
+	71: CopyLoc[0](escrow#0#0: &mut Escrow<T>)
+	72: MutBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	73: CopyLoc[1](nonce#0#0: vector<u8>)
+	74: Call table::borrow_mut<vector<u8>, Commitment>(&mut Table<vector<u8>, Commitment>, vector<u8>): &mut Commitment
+	75: StLoc[7](c#2#0: &mut Commitment)
+	76: LdConst[10](u8: 3)
+	77: CopyLoc[7](c#2#0: &mut Commitment)
+	78: MutBorrowField[9](Commitment.status: u8)
+	79: WriteRef
+	80: CopyLoc[7](c#2#0: &mut Commitment)
+	81: ImmBorrowField[7](Commitment.buyer: address)
+	82: ReadRef
+	83: CopyLoc[7](c#2#0: &mut Commitment)
+	84: ImmBorrowField[5](Commitment.amount: u64)
+	85: ReadRef
+	86: MoveLoc[7](c#2#0: &mut Commitment)
+	87: ImmBorrowField[3](Commitment.incident_id: vector<u8>)
+	88: ReadRef
+	89: StLoc[8](incident_id#1#0: vector<u8>)
+	90: StLoc[4](amount#1#0: u64)
+	91: StLoc[5](buyer#1#0: address)
+	92: MoveLoc[9](returned#1#0: Coin<T>)
+	93: CopyLoc[5](buyer#1#0: address)
+	94: Call transfer::public_transfer<Coin<T>>(Coin<T>, address)
+	95: MoveLoc[0](escrow#0#0: &mut Escrow<T>)
+	96: FreezeRef
+	97: Call object::id<Escrow<T>>(&Escrow<T>): ID
+	98: MoveLoc[8](incident_id#1#0: vector<u8>)
+	99: MoveLoc[1](nonce#0#0: vector<u8>)
+	100: MoveLoc[4](amount#1#0: u64)
+	101: MoveLoc[5](buyer#1#0: address)
+	102: Pack[6](Reclaimed)
+	103: Call event::emit<Reclaimed>(Reclaimed)
+	104: Ret
+}
+
+public available_value<T>(escrow#0#0: &Escrow<T>): u64 {
+B0:
+	0: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	1: ImmBorrowFieldGeneric[0](Escrow.available: Balance<T>)
+	2: Call balance::value<T>(&Balance<T>): u64
+	3: Ret
+}
+
+public has_commitment<T>(escrow#0#0: &Escrow<T>, nonce#0#0: vector<u8>): bool {
+B0:
+	0: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	1: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	2: MoveLoc[1](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	4: Ret
+}
+
+public commitment_status<T>(escrow#0#0: &Escrow<T>, nonce#0#0: vector<u8>): u8 {
+L2:	%#1: u8
+B0:
+	0: CopyLoc[0](escrow#0#0: &Escrow<T>)
+	1: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	2: CopyLoc[1](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): bool
+	4: BrFalse(13)
+B1:
+	5: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	6: ImmBorrowFieldGeneric[1](Escrow.commitments: Table<vector<u8>, Commitment>)
+	7: MoveLoc[1](nonce#0#0: vector<u8>)
+	8: Call table::borrow<vector<u8>, Commitment>(&Table<vector<u8>, Commitment>, vector<u8>): &Commitment
+	9: ImmBorrowField[9](Commitment.status: u8)
+	10: ReadRef
+	11: StLoc[2](%#1: u8)
+	12: Branch(17)
+B2:
+	13: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	14: Pop
+	15: LdConst[11](u8: 255)
+	16: StLoc[2](%#1: u8)
+B3:
+	17: MoveLoc[2](%#1: u8)
+	18: Ret
+}
+
+public locked_value<T>(escrow#0#0: &Escrow<T>, nonce#0#0: vector<u8>): u64 {
+L2:	%#1: u64
+B0:
+	0: CopyLoc[0](escrow#0#0: &Escrow<T>)
+	1: ImmBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	2: CopyLoc[1](nonce#0#0: vector<u8>)
+	3: Call table::contains<vector<u8>, Balance<T>>(&Table<vector<u8>, Balance<T>>, vector<u8>): bool
+	4: BrFalse(12)
+B1:
+	5: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	6: ImmBorrowFieldGeneric[2](Escrow.locked: Table<vector<u8>, Balance<T>>)
+	7: MoveLoc[1](nonce#0#0: vector<u8>)
+	8: Call table::borrow<vector<u8>, Balance<T>>(&Table<vector<u8>, Balance<T>>, vector<u8>): &Balance<T>
+	9: Call balance::value<T>(&Balance<T>): u64
+	10: StLoc[2](%#1: u64)
+	11: Branch(16)
+B2:
+	12: MoveLoc[0](escrow#0#0: &Escrow<T>)
+	13: Pop
+	14: LdU64(0)
+	15: StLoc[2](%#1: u64)
+B3:
+	16: MoveLoc[2](%#1: u64)
+	17: Ret
+}
+
+Constants [
+	0 => u64: 1
+	1 => u64: 2
+	2 => u64: 3
+	3 => u64: 6
+	4 => u64: 7
+	5 => u64: 8
+	6 => u64: 9
+	7 => u8: 0
+	8 => u8: 1
+	9 => u8: 2
+	10 => u8: 3
+	11 => u8: 255
+]
+}
+

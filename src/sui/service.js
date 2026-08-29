@@ -121,7 +121,7 @@ export class TrustService {
 
 export function defaultPaths() {
   return {
-    offersDir: "fixtures/offers",
+    offersDir: "fixtures/sui/offers",
     providersDir: "fixtures/providers",
     keysDir: "fixtures/keys"
   };

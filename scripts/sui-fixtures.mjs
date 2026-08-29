@@ -28,6 +28,7 @@ import { providerProfileSchema } from "../src/a2a/schemas/providerProfile.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(root, "fixtures", "sui");
+const offersDir = path.join(outDir, "offers");
 
 const EPOCH_MS = Number(process.env.SUI_FIXTURE_EPOCH_MS ?? Date.now());
 const TTL_MS = Number(process.env.SUI_FIXTURE_TTL_MS ?? 300_000);
@@ -121,8 +122,10 @@ function buildSelected(profile, winner, request, rejected, timing) {
   return selected;
 }
 
-function generate(label, scenarioFile, { exclude = [] } = {}) {
-  const intent = JSON.parse(readFileSync(path.join(root, "scenarios", scenarioFile), "utf8"));
+function generate(label, scenarioFile, { exclude = [], intentOverride = null } = {}) {
+  const intent = intentOverride
+    ? intentOverride
+    : JSON.parse(readFileSync(path.join(root, "scenarios", scenarioFile), "utf8"));
   const request = buildProviderRequest(intent);
   if (!request) throw new Error(`${scenarioFile} needs no external recovery`);
 
@@ -134,6 +137,17 @@ function generate(label, scenarioFile, { exclude = [] } = {}) {
     profile,
     receivedAtMs: ARRIVALS[profile.providerId]
   }));
+
+  // Persist the signed original offers — voucher verification looks the
+  // winning offer up by offerId (the Selected Offer carries only a projection).
+  mkdirSync(offersDir, { recursive: true });
+  for (const arrival of arrivals) {
+    writeFileSync(
+      path.join(offersDir, `${label}-${arrival.profile.providerId.toLowerCase()}-offer.json`),
+      `${JSON.stringify(arrival.offer, null, 2)}
+`
+    );
+  }
 
   const { selected: winner, rejected } = selectOffer(arrivals, request);
   if (!winner) throw new Error(`${label}: no viable provider`);
@@ -163,6 +177,13 @@ generate("s2", "s2-primary-down-backup-insufficient.json");
 generate("s7-disaster", "s7-disaster.json");
 // Fallback: PROVIDER-A committed, then failed activation → excluded → B takes over.
 generate("s7-fallback", "s7-disaster.json", { exclude: ["PROVIDER-A"] });
+// Expiry-guard fixture: synthetic incident with a UNIQUE id so the harness
+// can test VOUCHER_EXPIRED without colliding with committed nonces.
+{
+  const s2Intent = JSON.parse(readFileSync(path.join(root, "scenarios", "s2-primary-down-backup-insufficient.json"), "utf8"));
+  generate("s9-expiry", null, { intentOverride: { ...s2Intent, incidentId: "INC-S9-EXPIRY" } });
+}
+
 // Verbatim duplicate of s2 for the refund drill (B commits → FAILS → refund).
 writeFileSync(
   path.join(outDir, "s2-refund-selected-offer.json"),

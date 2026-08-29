@@ -101,7 +101,21 @@ export async function publishPackage(client, keypair, moveDir = "move") {
 }
 
 /** Readiness phase: mint MYRC, create + fund escrow, create AuthorityCap. */
-export async function runSetup(client, keypair, config, {
+export async function runSetup(client, keypair, config, opts = {}) {
+  const { escrowId, authorityId, digest } = await setupEscrow(client, keypair, config, opts);
+  config.escrowId = escrowId;
+  config.authorityId = authorityId;
+  config.buyer = keypair.toSuiAddress();
+  config.setupDigest = digest;
+  return config;
+}
+
+/**
+ * Create a fresh escrow pool + authority. Nonces are keyed per escrow Table,
+ * so callers that need clean replay state (the harness) spin their own pool
+ * instead of reusing the demo escrow.
+ */
+export async function setupEscrow(client, keypair, config, {
   mintAmount = 10_000,
   escrowFund = 2_000,
   maxPerVoucher = 500
@@ -128,8 +142,7 @@ export async function runSetup(client, keypair, config, {
     target: `${config.packageId}::authority::new_to_sender`,
     arguments: [tx.pure.u64(maxPerVoucher)]
   });
-  const raw = await signAndRun(client, keypair, tx);
-  const result = unpack(raw);
+  const result = unpack(await signAndRun(client, keypair, tx));
 
   // Discover the fresh escrow/authority objects created by THIS transaction.
   const escrowObj = findCreatedType(result, "::escrow::Escrow");
@@ -137,11 +150,7 @@ export async function runSetup(client, keypair, config, {
   if (!escrowObj || !authority) {
     throw new Error("setup ran but escrow/authority objects not found in tx objectTypes");
   }
-  config.escrowId = escrowObj.objectId;
-  config.authorityId = authority.objectId;
-  config.buyer = buyer;
-  config.setupDigest = result.digest;
-  return config;
+  return { escrowId: escrowObj.objectId, authorityId: authority.objectId, digest: result.digest };
 }
 
 /** Fresh objects are not queryable for a moment after their tx — poll for them. */
@@ -250,6 +259,10 @@ async function signAndRun(client, keypair, tx) {
     err.digest = result.digest;
     throw err;
   }
+  // gRPC nodes index objects asynchronously: a tx that mutates an object we
+  // use next (escrow → settle) must be awaited, or the next build's
+  // simulation resolves a stale object version and aborts "not found".
+  await client.waitForTransaction({ digest: result.digest }).catch(() => {});
   return result;
 }
 

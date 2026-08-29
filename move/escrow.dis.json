@@ -1,0 +1,7 @@
+error: unexpected argument '--bytecode-format' found
+
+  tip: a similar argument exists: '--bytecode-map'
+
+Usage: sui.exe move disassemble <module_path|--Xdebug|--interactive|--bytecode-map>
+
+For more information, try '--help'.
