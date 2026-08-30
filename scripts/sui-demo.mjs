@@ -72,7 +72,8 @@ async function main() {
 
   const ledgerPath = path.resolve(`events/demo-${net}.jsonl`);
   rmSync(ledgerPath, { force: true });
-  const service = new TrustService({ ledger: new EventLedger(ledgerPath), config });
+  const ledger = new EventLedger(ledgerPath);
+  const service = new TrustService({ ledger, config });
 
   step("📝 ", "INC-S2 (stadium, NORMAL): commit the signed recovery voucher");
   const s2 = load("s2-selected-offer.json");

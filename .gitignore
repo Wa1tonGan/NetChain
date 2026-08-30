@@ -6,3 +6,5 @@ move/escrow.dis*
 .env
 .DS_Store
 *.log
+fixtures/sui/
+.DS_Store
