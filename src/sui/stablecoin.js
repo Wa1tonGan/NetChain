@@ -16,7 +16,9 @@ export const TESTNET_USDC =
  */
 export function stablecoinConfig(network = process.env.SUI_NETWORK ?? "localnet") {
   if (network === "localnet") {
-    return { type: null, decimals: 0, currency: "MYR", name: "MYRC" };
+    // MYRC demo coin: 2 decimals (base unit = 1 sen — real-MYR semantics, so
+    // fractional platform fees like 5% of 105 = 5.25 are representable).
+    return { type: null, decimals: 2, currency: "MYR", name: "MYRC" };
   }
   return {
     type: process.env.STABLECOIN_TYPE ?? TESTNET_USDC,

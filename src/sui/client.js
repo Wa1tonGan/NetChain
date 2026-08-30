@@ -8,6 +8,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 
 import path from "node:path";
 import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { getFaucetHost, requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
 import { keypairFromPem } from "./keys.js";
 import { stablecoinConfig, toBaseUnits } from "./stablecoin.js";
@@ -50,6 +51,11 @@ export function saveConfig(config, filePath = configPath()) {
 }
 
 export function buyerKeypair(keysDir = "fixtures/keys") {
+  // Two-track buyer identity: SUI_BUYER_SECRET (env, gitignored) is a REAL
+  // self-custody buyer wallet (e.g. the 60-USDC testnet buyer); the committed
+  // demo PEM stays the localnet buyer. zkLogin replaces this in the real UI.
+  const secret = process.env.SUI_BUYER_SECRET;
+  if (secret) return Ed25519Keypair.fromSecretKey(secret);
   return keypairFromPem(readFileSync(path.join(keysDir, "buyer.private.pem"), "utf8"));
 }
 
@@ -143,7 +149,8 @@ export async function setupEscrow(client, keypair, config, {
   const fundHuman = stablecoinFund
     ?? (asset.type ? Number(process.env.STABLECOIN_ESCROW_FUND ?? 12) : 2_000);
   const fundBase = toBaseUnits(fundHuman, asset.decimals);
-  const maxBase = maxPerVoucher ?? (asset.type ? fundBase : 500);
+  // Cap in BASE units: localnet default 500 MYRC = 50_000 sen (2 decimals).
+  const maxBase = maxPerVoucher ?? (asset.type ? fundBase : toBaseUnits(500, asset.decimals));
 
   const tx = new Transaction();
   let funding;

@@ -68,8 +68,8 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
     assert.equal(voucher.incidentId, "INC-S2");
     assert.equal(voucher.nonce, "INC-S2:PROVIDER-B:001");
     assert.equal(voucher.planAmount, 60); // buyer-signed plan price
-    assert.equal(voucher.providerAmount, voucher.planAmount); // §1.2: full quote stays with provider
-    assert.equal(voucher.amount, voucher.planAmount + voucher.platformFee); // escrow locks plan + fee
+    assert.equal(voucher.providerAmount, 6000); // §1.2 full quote, base units (2dp sen)
+    assert.equal(voucher.amount, 6300); // escrow locks plan + fee, base units
     assert.equal(voucher.buyerPk.length, 32);
     assert.equal(voucher.providerPk.length, 32);
     assert.equal(voucher.buyerSig.length, 64);
@@ -92,16 +92,16 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
       (err) => err instanceof VoucherError && err.code === "VOUCHER_EXPIRED");
   });
 
-  it("rejects non-integer amounts (MYRC has 0 decimals)", () => {
+  it("rejects amounts beyond MYRC's 2-decimal precision (sen)", () => {
     const selected = load("s2-selected-offer.json");
     // keep the schema's fee-split cross-checks happy (fee 0 @ 0%), then hit
     // the coin rule on the buyer-signed plan price
-    selected.selectedProvider.price = 60.5;
-    selected.agreement.planPrice = 60.5;
+    selected.selectedProvider.price = 60.505;
+    selected.agreement.planPrice = 60.505;
     selected.agreement.platformFeePercent = 0;
     selected.agreement.platformFee = 0;
-    selected.agreement.providerAmount = 60.5;
-    selected.agreement.amount = 60.5;
+    selected.agreement.providerAmount = 60.505;
+    selected.agreement.amount = 60.505;
     assert.throws(() => buildVoucher(selected, PATHS, { nowMs: Date.parse(selected.agreement.expiry) - 1000 }),
       (err) => err instanceof VoucherError && err.code === "NON_INTEGRAL_AMOUNT");
   });
@@ -138,28 +138,30 @@ describe("sui/voucher — platform fee split (blueprint §1.3/§3.3)", () => {
       const selected = load("s2-selected-offer.json");
       const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
       assert.equal(voucher.planAmount, 60); // buyer-signed plan price
-      assert.equal(voucher.platformFee, 3); // floor(60 × 5%)
-      assert.equal(voucher.amount, 63); // TOTAL locked on-chain
-      assert.equal(voucher.providerAmount, 60); // §1.2: providers keep the full quote
+      assert.equal(voucher.platformFee, 300); // signed platformFee (5% of 60), base units
+      assert.equal(voucher.amount, 6300); // TOTAL locked on-chain
+      assert.equal(voucher.providerAmount, 6000); // §1.2: full quote stays with provider (base units)
       assert.equal(voucher.platformAddress, PLATFORM_WALLET);
     });
   });
 
-  it("defaults to PLATFORM_FEE_PERCENT=5 when only the wallet is configured", () => {
-    withEnv({ PLATFORM_ADDRESS: PLATFORM_WALLET }, () => {
+  it("fee comes from the buyer-SIGNED agreement, not the service env", () => {
+    // The Rescue Agent signed platformFee = 3 (5% of 60) into the agreement.
+    // A service running with a different PLATFORM_FEE_PERCENT must NOT
+    // recompute — the buyer approved exactly what is signed.
+    withEnv({ PLATFORM_ADDRESS: PLATFORM_WALLET, PLATFORM_FEE_PERCENT: "9" }, () => {
       const selected = load("s2-selected-offer.json");
       const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
-      assert.equal(voucher.platformFee, 3);
-      assert.equal(voucher.amount, 63);
+      assert.equal(voucher.platformFee, 300); // signed, not recomputed at 9%
+      assert.equal(voucher.amount, 6300);
     });
   });
 
-  it("no PLATFORM_ADDRESS configured → fee 0, single payout (no split)", () => {
-    withEnv({ PLATFORM_ADDRESS: undefined, PLATFORM_FEE_PERCENT: undefined }, () => {
+  it("platformAddress prefers the buyer-signed agreement over service env", () => {
+    withEnv({ PLATFORM_ADDRESS: "0x0000000000000000000000000000000000000009" }, () => {
       const selected = load("s2-selected-offer.json");
       const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
-      assert.equal(voucher.platformFee, 0);
-      assert.equal(voucher.amount, 60);
+      assert.equal(voucher.platformAddress, PLATFORM_WALLET); // signed address wins
     });
   });
 
@@ -213,13 +215,13 @@ describe("sui/service — COMMITTED row carries the split (offline, stubbed chai
       delete process.env.PLATFORM_FEE_PERCENT;
     }
     assert.equal(result.status, "COMMITTED");
-    assert.equal(result.voucher.platformFee, 3);
-    assert.equal(result.voucher.amount, 63);
+    assert.equal(result.voucher.platformFee, 300);
+    assert.equal(result.voucher.amount, 6300);
 
     const row = ledger.lookup(nonce);
-    assert.equal(row.amount, 63);
-    assert.equal(row.providerAmount, 60);
-    assert.equal(row.platformFee, 3);
+    assert.equal(row.amount, 6300);
+    assert.equal(row.providerAmount, 6000);
+    assert.equal(row.platformFee, 300);
     assert.equal(row.platformAddress, PLATFORM_WALLET);
     assert.match(row.voucherDigest, /^[0-9a-f]{64}$/);
   });

@@ -22,22 +22,22 @@
     "providerAmount": 140,
     "amount": 147,
     "platformFeePercent": 5,
-    "platformAddress": "0xPLATFORM_DEMO",
+    "platformAddress": "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4",
     "currency": "MYR",
     "durationMinutes": 120,
     "nonce": "INC-S7:PROVIDER-A:001",
-    "expiry": "2026-08-30T10:15:55.400Z"
+    "expiry": "2026-08-30T16:01:51.621Z"
   },
   "signatures": {
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-a-demo",
-      "value": "+jo80Acio3RcAFD2ExfcFYM01j0L4hZlaP/QwCgTLeANfq80NYjKYi1n4tLGgxhtjux10KRI+HJI61Jn/9m6Cw=="
+      "value": "C/Z1YSBRS0cYs/B/OfdReLu9FWSKI7+45621dMCLW23X5RkpZBe8VmO9rM3NlJmFSxU8E6LE6GdoPLbOL+9EDg=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "Cx+Ll9bkQdjlku6agWuEHLSQ6i2SuibkEKMxbfmVS/H3WivCKciDuvfPAEF/dD/XzQ5QNE0+/CvK5Sbu2QoJAA=="
+      "value": "GTvfU0BrD9Mk3wpEYlZnNhdlEzQdNzbQ1hZmVyW/eBSMex5QyLEGE2ZckmJTKNvnFJZQd0gTKVt6/hJYzVdHBw=="
     }
   },
   "rejectedOffers": [
@@ -53,7 +53,7 @@
     }
   ],
   "timing": {
-    "tDetect": 1788084655400,
-    "tDecide": 1788084656050
+    "tDetect": 1788105411621,
+    "tDecide": 1788105412271
   }
 }

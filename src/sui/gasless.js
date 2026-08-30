@@ -65,6 +65,23 @@ export async function sendCoin(client, keypair, { coinType, recipient, amountBas
   return result;
 }
 
+/** SUI gas top-up from a funded wallet (e.g. buyer gas for a fresh wallet). */
+export async function sendSui(client, keypair, { recipient, amountMist }) {
+  const tx = new Transaction();
+  tx.transferObjects([tx.splitCoins(tx.gas, [amountMist])[0]], recipient);
+  const result = unpack(await client.signAndExecuteTransaction({
+    signer: keypair,
+    transaction: tx,
+    include: { effects: true }
+  }));
+  const status = result.status ?? {};
+  if (!status.success) {
+    throw new Error(`SUI transfer failed: ${JSON.stringify(status.error)}`);
+  }
+  await client.waitForTransaction({ digest: result.digest }).catch(() => {});
+  return result;
+}
+
 /** Sum of gas charges in a tx result — 0 proves a transfer was gasless. */
 export function gasUsedTotal(result) {
   let found = null;

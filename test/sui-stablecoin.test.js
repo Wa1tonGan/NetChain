@@ -40,10 +40,10 @@ describe("sui/stablecoin — network asset config (Track 01)", () => {
     }
   });
 
-  it("localnet keeps the MYRC demo coin (0 decimals, MYR, type composed from package)", () => {
+  it("localnet keeps the MYRC demo coin (2 decimals = sen, MYR, type composed from package)", () => {
     const cfg = stablecoinConfig("localnet");
     assert.equal(cfg.type, null); // composed with packageId by the caller
-    assert.equal(cfg.decimals, 0);
+    assert.equal(cfg.decimals, 2); // base unit = 1 sen (fractional fees representable)
     assert.equal(cfg.currency, "MYR");
     assert.equal(cfg.name, "MYRC");
   });
