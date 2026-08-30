@@ -89,15 +89,17 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   // 1. Schema (strict + cross-checks: amount==price, nonce prefix, timing).
   selectedOfferSchema.parse(selectedOffer);
 
-  // 2. Currency: the demo MYRC asset settles integer MYR only.
-  const { amount, currency } = selectedOffer.agreement;
+  // 2. Currency: the demo MYRC asset settles integer MYR only. planPrice is
+  //    the buyer-signed provider quote; agreement.amount adds the platform
+  //    fee on top (blueprint §1.3) and is the customer-facing escrow total.
+  const { planPrice, currency } = selectedOffer.agreement;
   if (currency !== "MYR") {
     throw new VoucherError("UNSUPPORTED_CURRENCY", `escrow demo settles MYR, got ${currency}`);
   }
-  if (!Number.isInteger(amount) || amount <= 0) {
+  if (!Number.isInteger(planPrice) || planPrice <= 0) {
     throw new VoucherError(
       "NON_INTEGRAL_AMOUNT",
-      `MYRC has 0 decimals; agreement.amount must be an integer MYR value, got ${amount}`
+      `MYRC has 0 decimals; agreement.planPrice must be an integer MYR value, got ${planPrice}`
     );
   }
 
@@ -131,10 +133,12 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   }
 
   // 6. Assemble Move commit arguments: two (msg, sig, pk) triples + terms.
-  //    `amount` is the TOTAL locked (plan + fee, blueprint §3.3); the provider
-  //    share stays the full signed quote and the platform fee is charged on top.
+  //    The fee is recomputed from the service env (the same env the Rescue
+  //    Agent used at signing time) rather than trusted from the artifact; the
+  //    provider share stays the full signed quote and the platform fee is
+  //    charged on top (blueprint §3.3).
   const feeCfg = platformFeeConfig();
-  const platformFee = feeCfg.address ? Math.floor((amount * feeCfg.percent) / 100) : 0;
+  const platformFee = feeCfg.address ? Math.floor((planPrice * feeCfg.percent) / 100) : 0;
   const buyerMsg = canonicalBytes(buyerAgreementPayload(selectedOffer));
   const providerMsg = canonicalBytes(offerSigningPayload(originalOffer));
   const providerAddress = paths.providerAddresses?.[selectedOffer.selectedProvider.providerId] ?? null;
@@ -145,11 +149,11 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
     providerId: selectedOffer.selectedProvider.providerId,
     brand: selectedOffer.selectedProvider.brand,
     offerId: selectedOffer.selectedProvider.offerId,
-    planAmount: amount, // buyer-signed plan price (provider's full quote)
+    planAmount: planPrice, // buyer-signed plan price (provider's full quote)
     platformFee,
     platformAddress: feeCfg.address ?? providerAddress, // unused on-chain when fee == 0
-    providerAmount: amount,
-    amount: amount + platformFee, // MYRC units (1 = 1 MYR); what the escrow locks
+    providerAmount: planPrice,
+    amount: planPrice + platformFee, // MYRC units (1 = 1 MYR); what the escrow locks
     expiryMs,
     nonce: selectedOffer.agreement.nonce,
     buyerMsg,

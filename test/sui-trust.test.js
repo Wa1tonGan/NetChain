@@ -86,9 +86,14 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
 
   it("rejects non-integer amounts (MYRC has 0 decimals)", () => {
     const selected = load("s2-selected-offer.json");
-    // keep the schema's amount==price cross-check happy, then hit the coin rule
-    selected.agreement.amount = 60.5;
+    // keep the schema's fee-split cross-checks happy (fee 0 @ 0%), then hit
+    // the coin rule on the buyer-signed plan price
     selected.selectedProvider.price = 60.5;
+    selected.agreement.planPrice = 60.5;
+    selected.agreement.platformFeePercent = 0;
+    selected.agreement.platformFee = 0;
+    selected.agreement.providerAmount = 60.5;
+    selected.agreement.amount = 60.5;
     assert.throws(() => buildVoucher(selected, PATHS, { nowMs: Date.parse(selected.agreement.expiry) - 1000 }),
       (err) => err instanceof VoucherError && err.code === "NON_INTEGRAL_AMOUNT");
   });

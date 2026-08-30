@@ -17,22 +17,27 @@
     "packetLossPercent": 0.5
   },
   "agreement": {
-    "amount": 105,
+    "planPrice": 105,
+    "platformFee": 5.25,
+    "providerAmount": 105,
+    "amount": 110.25,
+    "platformFeePercent": 5,
+    "platformAddress": "0xPLATFORM_DEMO",
     "currency": "MYR",
     "durationMinutes": 120,
     "nonce": "INC-S7:PROVIDER-B:001",
-    "expiry": "2026-08-30T09:02:41.552Z"
+    "expiry": "2026-08-30T10:15:55.400Z"
   },
   "signatures": {
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-b-demo",
-      "value": "+3Xb0Y1QRzQW56h2QNN+U3pV4g5/e6PFxkj87etKIu/cBNAAnmtXdy8EvEgggpr7NsfiGBDqblQ5DIsyG5QQBg=="
+      "value": "jJ93NGlHHdRF2SL6oJsbzNsvC/tOA6lGd6KlG9QzhkswgUJjocKgoXQRfhTbHZh6jEI+JMgMlHALozI7n9jTAQ=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "TiH1Dxp2lR3UFT0duXJHSN0yP9TroYvXV8JZQktG1CZY+qIQ+OVAKD2FQqaTJW2HMDl4klWCmtez6SdxOOKxCw=="
+      "value": "Qx51tsO7UHDyD3qEhSD9WMIm7QUK3cp96gV3SuL0UHuGMslRl4BlU3hhWhv/9/lCoMP/4WO/tlLOoZPh67AzAA=="
     }
   },
   "rejectedOffers": [
@@ -48,7 +53,7 @@
     }
   ],
   "timing": {
-    "tDetect": 1788080261552,
-    "tDecide": 1788080262502
+    "tDetect": 1788084655400,
+    "tDecide": 1788084656350
   }
 }

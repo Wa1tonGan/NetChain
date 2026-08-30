@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildProviderRequest } from "../src/a2a/buildProviderRequest.js";
+import { computeFeeSplit, feeConfigFromEnv } from "../src/a2a/fees.js";
 import { selectOffer } from "../src/a2a/offerEvaluator.js";
 import {
   signBuyerAgreement,
@@ -33,6 +34,10 @@ const offersDir = path.join(outDir, "offers");
 const EPOCH_MS = Number(process.env.SUI_FIXTURE_EPOCH_MS ?? Date.now());
 const TTL_MS = Number(process.env.SUI_FIXTURE_TTL_MS ?? 300_000);
 const ARRIVALS = { "PROVIDER-A": 600, "PROVIDER-B": 900, "PROVIDER-C": 300 };
+
+// Fee economics baked into the buyer-signed agreement (blueprint §1.3) —
+// Person 2's fee engine, same env contract the Rescue Agent uses live.
+const FEES = feeConfigFromEnv();
 
 const offerExpiry = new Date(EPOCH_MS + TTL_MS).toISOString();
 
@@ -63,6 +68,7 @@ function buildOffer(profile, request) {
     providerId: profile.providerId,
     available: true,
     capacityMbps,
+    durationMinutes: request.durationMinutes,
     expectedActivationClass: lane.class,
     expectedActivationTimeMs: lane.timeMs,
     activationLane: lane.lane,
@@ -79,6 +85,7 @@ function buildOffer(profile, request) {
 }
 
 function buildSelected(profile, winner, request, rejected, timing) {
+  const feeSplit = computeFeeSplit(winner.offer.price, FEES.platformFeePercent);
   const selected = {
     incidentId: request.incidentId,
     customerId: request.customerId,
@@ -98,7 +105,12 @@ function buildSelected(profile, winner, request, rejected, timing) {
       packetLossPercent: winner.offer.packetLossPercent
     },
     agreement: {
-      amount: winner.offer.price,
+      // Fee-split shape (blueprint §1.3): amount = planPrice + platformFee is
+      // the escrow lock; the provider keeps the full plan price. Must match
+      // selectedOfferSchema's cross-checks exactly.
+      ...feeSplit,
+      platformFeePercent: FEES.platformFeePercent,
+      platformAddress: FEES.platformAddress,
       currency: winner.offer.currency,
       durationMinutes: request.durationMinutes,
       nonce: `${request.incidentId}:${winner.offer.providerId}:001`,

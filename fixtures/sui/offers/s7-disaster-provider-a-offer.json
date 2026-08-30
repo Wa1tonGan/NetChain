@@ -4,6 +4,7 @@
   "providerId": "PROVIDER-A",
   "available": true,
   "capacityMbps": 400,
+  "durationMinutes": 120,
   "expectedActivationClass": "FAST",
   "expectedActivationTimeMs": 1500,
   "activationLane": "P0_FAST",
@@ -12,10 +13,10 @@
   "reliabilityScore": 0.9995,
   "latencyMs": 30,
   "packetLossPercent": 0.3,
-  "offerExpiry": "2026-08-30T09:02:41.552Z",
+  "offerExpiry": "2026-08-30T10:15:55.400Z",
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-a-demo",
-    "value": "PvtGr9LvTpNyuL9AQ7OywTAa1AUkR9yR8W2/EuoElzBNm9K4sEeAoLfXPTHuJdpi7Q31l/aX4SRtQuhQrRLSDA=="
+    "value": "+jo80Acio3RcAFD2ExfcFYM01j0L4hZlaP/QwCgTLeANfq80NYjKYi1n4tLGgxhtjux10KRI+HJI61Jn/9m6Cw=="
   }
 }

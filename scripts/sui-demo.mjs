@@ -65,7 +65,7 @@ async function main() {
   const c1 = await service.commit(s2);
   console.log(
     `    ${s2.selectedProvider.brand} (${s2.selectedProvider.providerId}) — ` +
-    `${s2.agreement.amount} MYRC + ${c1.voucher.platformFee} platform fee = ` +
+    `${s2.agreement.planPrice} MYRC + ${c1.voucher.platformFee} platform fee = ` +
     `${c1.voucher.amount} MYRC locked, nonce ${s2.agreement.nonce}`
   );
   console.log(`    ✅ dual ed25519 signatures verified ON-CHAIN, funds locked — tx ${c1.txDigest?.slice(0, 12)}…`);
