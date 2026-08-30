@@ -3,3 +3,4 @@ move/build/
 .sui/
 events/
 move/escrow.dis*
+.env

@@ -21,6 +21,7 @@ module netchain::escrow_tests {
     const E_UNKNOWN_COMMITMENT: u64 = 7;
     const E_ALREADY_FINALIZED: u64 = 8;
     const E_NOT_EXPIRED: u64 = 9;
+    const E_INVALID_FEE: u64 = 10;
 
     // Commitment status mirrors.
     const STATUS_COMMITTED: u8 = 0;
@@ -30,11 +31,14 @@ module netchain::escrow_tests {
 
     const BUYER: address = @0xa0ccc8bcc83f6c628340134f8546a21e0618fd1aaa02432bba454c4a2c2233da;
     const PROVIDER: address = @0x6c889013fb165a3a991a62d706af2435d3145a2655347074db6fc94b0eb97ad3;
+    // Platform fee address (blueprint §1.3/§3.3): the team's real testnet wallet.
+    const PLATFORM: address = @0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4;
 
     const NOW: u64 = 1_000;
     const EXPIRY: u64 = 61_000;
     const AFTER_EXPIRY: u64 = 61_500;
-    const AMOUNT: u64 = 60;
+    const AMOUNT: u64 = 60; // TOTAL locked = provider share + platform fee
+    const FEE: u64 = 10; // platform fee portion (blueprint §1.3: fee on top, provider keeps full quote)
     const LIMIT: u64 = 500;
     const FUND: u64 = 1_000;
 
@@ -86,6 +90,7 @@ module netchain::escrow_tests {
         escrow::commit(
             escrow, authority, clock,
             b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+            PLATFORM, FEE,
             buyer_msg(), buyer_sig(), buyer_pk(),
             provider_msg(), provider_sig(), provider_pk(),
             ctx,
@@ -152,6 +157,7 @@ module netchain::escrow_tests {
             escrow::commit(
                 &mut escrow, &mut authority, &clock,
                 b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, FEE,
                 buyer_msg_tampered(), buyer_sig(), buyer_pk(),
                 provider_msg(), provider_sig(), provider_pk(),
                 ctx,
@@ -172,6 +178,7 @@ module netchain::escrow_tests {
             escrow::commit(
                 &mut escrow, &mut authority, &clock,
                 b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, FEE,
                 buyer_msg(), buyer_sig_corrupt(), buyer_pk(),
                 provider_msg(), provider_sig(), provider_pk(),
                 ctx,
@@ -223,6 +230,96 @@ module netchain::escrow_tests {
         {
             let ctx = scenario.ctx();
             escrow::settle(&mut escrow, &authority, b"INC-T:PROVIDER-B:999", ctx);
+        };
+        finish(scenario, escrow, authority);
+    }
+
+    // Blueprint §1.3/§3.3 split settlement: escrow locks plan + fee (one
+    // settlement pays provider = amount − fee, platform fee address = fee).
+    #[test]
+    fun settle_splits_provider_and_platform() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit(&mut escrow, &mut authority, &clock, ctx);
+            clock::destroy_for_testing(clock);
+        };
+        {
+            let ctx = scenario.ctx();
+            escrow::settle(&mut escrow, &authority, nonce(), ctx);
+        };
+        scenario.next_tx(PROVIDER);
+        let provider_payout = scenario.take_from_address<coin::Coin<sui::SUI>>(PROVIDER);
+        assert!(coin::value(&provider_payout) == AMOUNT - FEE, 140);
+        transfer::public_transfer(provider_payout, @0xBEEF);
+        scenario.next_tx(PLATFORM);
+        let platform_payout = scenario.take_from_address<coin::Coin<sui::SUI>>(PLATFORM);
+        assert!(coin::value(&platform_payout) == FEE, 141);
+        transfer::public_transfer(platform_payout, @0xBEEF);
+        scenario.next_tx(BUYER);
+        assert!(escrow::locked_value(&escrow, nonce()) == 0, 142);
+        assert!(escrow::commitment_status(&escrow, nonce()) == STATUS_SETTLED, 143);
+        finish(scenario, escrow, authority);
+    }
+
+    // fee == 0 → the provider takes everything; no zero-value platform coin
+    // may be minted (taking from PLATFORM must find nothing and panic).
+    #[test]
+    #[expected_failure]
+    fun settle_zero_fee_leaves_no_platform_object() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            escrow::commit(
+                &mut escrow, &mut authority, &clock,
+                b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, 0,
+                buyer_msg(), buyer_sig(), buyer_pk(),
+                provider_msg(), provider_sig(), provider_pk(),
+                ctx,
+            );
+            clock::destroy_for_testing(clock);
+        };
+        {
+            let ctx = scenario.ctx();
+            escrow::settle(&mut escrow, &authority, nonce(), ctx);
+        };
+        scenario.next_tx(PROVIDER);
+        let payout = scenario.take_from_address<coin::Coin<sui::SUI>>(PROVIDER);
+        assert!(coin::value(&payout) == AMOUNT, 150);
+        transfer::public_transfer(payout, @0xBEEF);
+        scenario.next_tx(PLATFORM);
+        let unexpected = scenario.take_from_address<coin::Coin<sui::SUI>>(PLATFORM);
+        transfer::public_transfer(unexpected, @0xBEEF);
+        finish(scenario, escrow, authority);
+    }
+
+    // The provider share must stay positive: fee == amount leaves nothing to
+    // pay the quoted plan price → abort.
+    #[test]
+    #[expected_failure(abort_code = E_INVALID_FEE, location = netchain::escrow)]
+    fun commit_fee_at_amount_aborts() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            escrow::commit(
+                &mut escrow, &mut authority, &clock,
+                b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, AMOUNT,
+                buyer_msg(), buyer_sig(), buyer_pk(),
+                provider_msg(), provider_sig(), provider_pk(),
+                ctx,
+            );
+            clock::destroy_for_testing(clock);
         };
         finish(scenario, escrow, authority);
     }

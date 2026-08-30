@@ -65,7 +65,8 @@ async function main() {
   const c1 = await service.commit(s2);
   console.log(
     `    ${s2.selectedProvider.brand} (${s2.selectedProvider.providerId}) — ` +
-    `${s2.agreement.amount} MYRC, nonce ${s2.agreement.nonce}`
+    `${s2.agreement.amount} MYRC + ${c1.voucher.platformFee} platform fee = ` +
+    `${c1.voucher.amount} MYRC locked, nonce ${s2.agreement.nonce}`
   );
   console.log(`    ✅ dual ed25519 signatures verified ON-CHAIN, funds locked — tx ${c1.txDigest?.slice(0, 12)}…`);
 
@@ -73,10 +74,14 @@ async function main() {
   const dup = await service.commit(s2);
   console.log(`    duplicate blocked by nonce ${s2.agreement.nonce} — no second lock, no second payment`);
 
-  step("⚡ ", "Activation AVAILABLE → settlement");
+  step("⚡ ", "Activation AVAILABLE → split settlement");
   const settle1 = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 200 });
   const ttr = Date.now() - t0;
-  console.log(`    ✅ settled: ${s2.agreement.amount} MYRC → ${config.providers[s2.selectedProvider.providerId]?.slice(0, 18)}… tx ${settle1.txDigest?.slice(0, 12)}…`);
+  console.log(
+    `    ✅ split settlement: ${c1.voucher.providerAmount} MYRC → ${config.providers[s2.selectedProvider.providerId]?.slice(0, 18)}… · ` +
+    `${c1.voucher.platformFee} MYRC → platform fee wallet ${(process.env.PLATFORM_ADDRESS ?? "").slice(0, 18)}… — ` +
+    `tx ${settle1.txDigest?.slice(0, 12)}…`
+  );
 
   step("🔥 ", "INC-S7 (disaster, EMERGENCY): provider fails AFTER commitment");
   await service.commit(load("s7-disaster-selected-offer.json"));
@@ -86,7 +91,10 @@ async function main() {
   step("🛟 ", "Fallback takeover: B commits and settles");
   const fb = await service.commit(load("s7-fallback-selected-offer.json"));
   const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 300 });
-  console.log(`    ✅ ${fb.status} → ${settle3.status} — automatic failover proved (blueprint §6.1 Failover KPI)`);
+  console.log(
+    `    ✅ ${fb.status} → ${settle3.status} (provider ${fb.voucher.providerAmount} · fee ${fb.voucher.platformFee} MYRC) — ` +
+    `automatic failover proved (blueprint §6.1 Failover KPI)`
+  );
 
   step("📊 ", "Time-to-Recovery (measured, not assumed)");
   const kpis = incidentKpis(s2, {

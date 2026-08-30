@@ -43,6 +43,10 @@ export class EventLedger {
       state.idempotent = Boolean(event.data?.idempotent);
       state.amount = event.data?.amount ?? null;
       state.provider = event.data?.provider ?? null;
+      state.providerAmount = event.data?.providerAmount ?? null;
+      state.platformFee = event.data?.platformFee ?? null;
+      state.platformAddress = event.data?.platformAddress ?? null;
+      state.voucherDigest = event.data?.voucherDigest ?? null;
     }
     if (event.type === "SETTLED") { state.status = "SETTLED"; state.settledAtMs = event.ts; }
     if (event.type === "REFUNDED") { state.status = "REFUNDED"; state.refundedAtMs = event.ts; }

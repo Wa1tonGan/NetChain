@@ -5,9 +5,15 @@
 > integrate against this without reading Move code. Companion to
 > `person2-a2a-contract.md` (our input contract).
 >
-> **Status: IMPLEMENTED & GREEN.** 13/13 Move unit tests, 8/8 harness checks,
+> **Status: IMPLEMENTED & GREEN.** 16/16 Move unit tests, 11/11 harness
+> checks (incl. split settlement + on-chain event read-back), 50/50 JS tests,
 > full demo runs via `npm run demo:sui`. Localnet proven end-to-end; testnet
 > pending faucet funding.
+>
+> **New (2026-08-30): platform fee split settlement** (blueprint §1.3/§3.3/§12)
+> — see §3a and the `platform`/`platform_fee` rows below. Configured via
+> `.env` (copy `.env.example`); the platform fee wallet is
+> `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4`.
 
 ## 0. Answer to Person 2's integration message (`msg-to-person3.md`)
 
@@ -80,11 +86,24 @@ commitment. Ack-after-broadcast keeps P2's 1.5 s budget.
 
 ### Commit checks (in order)
 1. Nonce known? digest match ⇒ **idempotent no-op** (`Committed{idempotent:true}`); mismatch ⇒ abort `NONCE_REPLAY`.
-2. Provider offer signature over canonical offer bytes.
-3. Buyer signature over canonical `{incidentId, selectedProvider, agreement}` bytes.
-4. Authority enabled + `amount ≤ max_per_voucher`.
-5. `Clock.timestamp_ms() < expiry`.
-6. `available ≥ amount` → split into per-nonce lock.
+2. `platform_fee < amount` (provider share must stay positive) ⇒ else abort `INVALID_FEE`.
+3. Provider offer signature over canonical offer bytes.
+4. Buyer signature over canonical `{incidentId, selectedProvider, agreement}` bytes.
+5. Authority enabled + `amount ≤ max_per_voucher` (amount = plan + fee total).
+6. `Clock.timestamp_ms() < expiry`.
+7. `available ≥ amount` → split into per-nonce lock.
+
+### Split settlement (blueprint §1.3/§3.3/§12)
+- `amount` locked = **plan price + platform fee** (e.g. 300 + 15 = 315). The fee is
+  env-configured (`PLATFORM_FEE_PERCENT`, charged ON TOP and shown openly — never
+  on the wallet balance). Providers keep their FULL quoted price (blueprint §1.2).
+- `settle` pays **provider = amount − fee** and **platform = fee** in ONE
+  transaction; the `Settled` event carries `amount`, `provider_amount`,
+  `platform`, `platform_fee` as evidence.
+- `refund`/`reclaim` return the FULL locked total to the buyer — the platform
+  fee only ever leaves escrow on a successful settlement.
+- `fee == 0` (no `PLATFORM_ADDRESS` configured) → single payout to the
+  provider, no zero-value platform coin.
 
 ### Error codes (Move abort codes)
 | Code | Name | Raised in |
@@ -98,6 +117,7 @@ commitment. Ack-after-broadcast keeps P2's 1.5 s budget.
 | 7 | `UNKNOWN_COMMITMENT` | escrow |
 | 8 | `ALREADY_FINALIZED` | escrow |
 | 9 | `NOT_EXPIRED` | escrow |
+| 10 | `INVALID_FEE` | escrow |
 
 Commitment status: `0 COMMITTED → 1 SETTLED | 2 REFUNDED | 3 RECLAIMED` (`255` unknown).
 On-chain events: `EscrowFunded`, `Committed`, `Settled`, `Refunded`, `Reclaimed`.
@@ -112,16 +132,45 @@ different-bytes forgeries. Both layers independently proven in the harness.
 | Move `commit` arg | Source |
 | --- | --- |
 | `incident_id`, `provider_id` | `selectedOffer.incidentId`, `selectedProvider.providerId` (UTF-8) |
-| `amount` | `agreement.amount` (MYRC = 0 decimals; 1 unit = 1 MYR; non-integers rejected) |
+| `amount` | **TOTAL locked = `agreement.amount` + platform fee** (MYRC = 0 decimals; 1 unit = 1 MYR; non-integers rejected) |
 | `expiry_ms` | `Date.parse(agreement.expiry)` |
 | `nonce` | `agreement.nonce` bytes — THE idempotency key |
 | `provider` | provider Sui address (identity registry below) |
+| `platform` | `PLATFORM_ADDRESS` (env / `.env`; falls back to provider address — unused when fee is 0) |
+| `platform_fee` | `floor(agreement.amount × PLATFORM_FEE_PERCENT% / 100)`; 0 when no platform wallet configured |
 | `buyer_msg` / `buyer_sig` / `buyer_pk` | canonical `buyerAgreementPayload` bytes / `signatures.buyerSignature` / buyer raw pubkey (32 B) |
 | `provider_msg` / `provider_sig` / `provider_pk` | canonical winning-offer-minus-signature bytes / `signatures.offerSignature` / provider raw pubkey (32 B) |
 
 The original signed offer is looked up by `offerId` in `fixtures/sui/offers/`
 (the Selected Offer carries only a projection). Off-chain pre-verify uses
-Person 2's own `src/a2a/signing.js`.
+Person 2's own `src/a2a/signing.js`. The buyer signature still covers only
+Person 2's `{incidentId, selectedProvider, agreement}` — the platform fee is
+platform-set (env), charged on top and disclosed; it is NOT smuggled into the
+signed payload.
+
+### 3a. Voucher transport — what is (and isn't) on chain, and why it's the fast path
+
+The **voucher is not an on-chain object**. It is an off-chain, dual-signed
+JSON document; the chain stores only `blake2b256(buyer bytes)` plus the term
+fields in the escrow's nonce-keyed `commitments` Table. Per voucher the trust
+layer executes **exactly one transaction** (`escrow::commit` — verify both
+signatures, hash, lock funds) and one more at resolution (`settle`/`refund`).
+That is the minimum the trust model allows: signatures must be verified
+somewhere (off-chain is the fast-fail pre-check so bad vouchers never pay the
+tx round trip; the chain re-verifies so trust doesn't rest on our server), and
+funds must be locked by exactly one tx.
+
+Research conclusion (2026-08-30, Sui SDK/docs review): there is no Sui-native
+"voucher cache" primitive that beats this — minting a per-voucher object
+would ADD object-creation gas per deal, and off-chain sig verification alone
+(`@mysten/sui/verify` `verifyPersonalMessageSignature`) doesn't lock funds.
+**Walrus** (Sui blob store) was evaluated as full-voucher archival storage
+(`walrus store voucher.json → blob id` referenced on-chain): it adds an extra
+storage step with zero speed benefit → **rejected**; future work only. The
+audit trail stays: JSONL ledger (working copy, carries the same
+`voucherDigest` hex) + on-chain `Committed` events (durable half) — the
+harness proves they match byte-for-byte. Gas per recovery ≈ 2 txs
+(cents-level), against platform-fee revenue of ~5% of plan price.
 
 ## 4. Identity registry (one identity, A2A + Sui)
 
@@ -159,8 +208,15 @@ One JSON object per line, append-only (dashboard: tail the file; SSE mirrors):
 
 ```json
 {"seq":7,"ts":1788004802500,"type":"SETTLED","incidentId":"INC-S2",
- "nonce":"INC-S2:PROVIDER-B:001","txDigest":"ABCD…","data":{"amount":60,"provider":"PROVIDER-B"}}
+ "nonce":"INC-S2:PROVIDER-B:001","txDigest":"ABCD…",
+ "data":{"amount":63,"providerAmount":60,"platformFee":3,
+         "platformAddress":"0xabc6…","recoveredCapacityMbps":200}}
 ```
+
+`COMMITTED` rows carry the same split fields plus `voucherDigest` (hex) —
+the exact 32 bytes the Move commit stored on-chain, so any ledger row can be
+correlated with its on-chain `Committed` event (the harness asserts this
+byte-for-byte via a gRPC event read-back).
 
 Types: `ESCROW_READY`, `VERIFIED`, `VERIFICATION_FAILED`, `COMMITTED`,
 `DUPLICATE_BLOCKED`, `SETTLED`, `REFUNDED`, `RECLAIMED`, `COMMIT_RETRY`,
@@ -179,12 +235,13 @@ TTR aggregation (`src/sui/ttr.js`) → blueprint §6.1 KPIs →
 ## 8. Commands
 
 ```bash
+cp .env.example .env     # then set SUI_NETWORK, PLATFORM_ADDRESS, fee %
 npm run sui:setup       # readiness: publish + mint + fund escrow + authority
 npm run sui:fixtures    # fresh short-lived signed fixtures (reused every run)
 npm run demo:sui        # one-command demo — all blueprint §10 beats
-npm run harness:sui     # 8-check reliability battery → reliability-report
+npm run harness:sui     # 11-check reliability battery → reliability-report
 npm run trust -- …      # CLI operations
-sui move test --path move   # 13 Move unit tests
+sui move test --path move   # 16 Move unit tests
 npm test                # Persons 1+2 tests (Sui JS tests gated by SUI_NETWORK)
 ```
 

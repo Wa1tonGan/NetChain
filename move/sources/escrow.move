@@ -37,6 +37,7 @@ module netchain::escrow {
     const E_UNKNOWN_COMMITMENT: u64 = 7;
     const E_ALREADY_FINALIZED: u64 = 8;
     const E_NOT_EXPIRED: u64 = 9;
+    const E_INVALID_FEE: u64 = 10;
 
     // ---- commitment status
     const STATUS_COMMITTED: u8 = 0;
@@ -48,11 +49,13 @@ module netchain::escrow {
     public struct Commitment has store {
         incident_id: vector<u8>,
         provider_id: vector<u8>,
-        amount: u64,
+        amount: u64, // TOTAL locked = provider share + platform fee (blueprint §1.3)
         expiry_ms: u64,
         voucher_digest: vector<u8>, // blake2b256(canonical buyer-agreement bytes)
         buyer: address,
         provider: address,
+        platform: address, // fee recipient; unused for payout when fee == 0
+        fee: u64, // platform fee portion of amount; provider receives amount - fee
         status: u8,
     }
 
@@ -75,11 +78,14 @@ module netchain::escrow {
         escrow_id: ID, incident_id: vector<u8>, provider_id: vector<u8>,
         nonce: vector<u8>, amount: u64, expiry_ms: u64,
         voucher_digest: vector<u8>, buyer: address, provider: address,
+        platform: address, platform_fee: u64,
         idempotent: bool, status: u8,
     }
     public struct Settled has copy, drop {
         escrow_id: ID, incident_id: vector<u8>, nonce: vector<u8>,
-        amount: u64, provider: address,
+        amount: u64, // total locked
+        provider: address, provider_amount: u64, // amount - fee
+        platform: address, platform_fee: u64,
     }
     public struct Refunded has copy, drop {
         escrow_id: ID, incident_id: vector<u8>, nonce: vector<u8>,
@@ -126,6 +132,8 @@ module netchain::escrow {
         expiry_ms: u64,
         nonce: vector<u8>,
         provider: address,
+        platform: address,
+        platform_fee: u64,
         buyer_msg: vector<u8>,
         buyer_sig: vector<u8>,
         buyer_pk: vector<u8>,
@@ -152,12 +160,17 @@ module netchain::escrow {
                 voucher_digest: digest,
                 buyer: existing.buyer,
                 provider: existing.provider,
+                platform: existing.platform,
+                platform_fee: existing.fee,
                 idempotent: true,
                 status: existing.status,
             });
             return
         };
 
+        // Provider share must stay positive (blueprint §1.2: providers
+        // receive their FULL quoted price — the fee is charged on top).
+        assert!(platform_fee < amount, E_INVALID_FEE);
         assert!(
             ed25519::ed25519_verify(&provider_sig, &provider_pk, &provider_msg),
             E_SIGNATURE_INVALID
@@ -180,6 +193,8 @@ module netchain::escrow {
             voucher_digest: digest,
             buyer,
             provider,
+            platform,
+            fee: platform_fee,
             status: STATUS_COMMITTED,
         });
 
@@ -193,13 +208,18 @@ module netchain::escrow {
             voucher_digest: digest,
             buyer,
             provider,
+            platform,
+            platform_fee,
             idempotent: false,
             status: STATUS_COMMITTED,
         });
     }
 
-    /// Buyer releases the locked payment to the provider after the recovery
-    /// was verified (activation AVAILABLE). Gated by the AuthorityCap so the
+    /// Buyer releases the locked payment after the recovery was verified
+    /// (activation AVAILABLE): provider receives its full quoted price
+    /// (amount − fee), the platform fee address receives the fee
+    /// (blueprint §1.3/§3.3 split settlement). fee == 0 → single payout,
+    /// no zero-value platform coin. Gated by the AuthorityCap so the
     /// provider cannot self-claim past verification.
     #[allow(lint(unused_object_with_fields))]
     public fun settle<T>(
@@ -215,19 +235,29 @@ module netchain::escrow {
         };
         assert!(table::contains(&escrow.locked, nonce), E_UNKNOWN_COMMITMENT);
         let locked = table::remove(&mut escrow.locked, nonce);
-        let payment = coin::from_balance(locked, ctx);
-        let (provider, amount, incident_id) = {
+        let (provider, platform, fee, amount, incident_id) = {
             let c = table::borrow_mut(&mut escrow.commitments, nonce);
             c.status = STATUS_SETTLED;
-            (c.provider, c.amount, c.incident_id)
+            (c.provider, c.platform, c.fee, c.amount, c.incident_id)
         };
-        transfer::public_transfer(payment, provider);
+        let mut payment = coin::from_balance(locked, ctx);
+        let provider_amount = amount - fee;
+        if (fee == 0) {
+            transfer::public_transfer(payment, provider);
+        } else {
+            let fee_coin = coin::split(&mut payment, fee, ctx);
+            transfer::public_transfer(fee_coin, platform);
+            transfer::public_transfer(payment, provider);
+        };
         event::emit(Settled {
             escrow_id: object::id(escrow),
             incident_id,
             nonce,
             amount,
             provider,
+            provider_amount,
+            platform,
+            platform_fee: fee,
         });
     }
 

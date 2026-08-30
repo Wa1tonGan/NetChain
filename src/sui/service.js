@@ -53,7 +53,12 @@ export class TrustService {
     this.ledger.emit("VERIFIED", {
       incidentId: voucher.incidentId,
       nonce: voucher.nonce,
-      data: { provider: voucher.providerId, amount: voucher.amount, verifiedAtMs: voucher.verifiedAtMs }
+      data: {
+        provider: voucher.providerId,
+        amount: voucher.amount,
+        platformFee: voucher.platformFee,
+        verifiedAtMs: voucher.verifiedAtMs
+      }
     });
 
     const result = await commitVoucher(this.client, this.keypair, this.config, voucher);
@@ -66,6 +71,12 @@ export class TrustService {
       data: {
         idempotent,
         amount: voucher.amount,
+        providerAmount: voucher.providerAmount,
+        platformFee: voucher.platformFee,
+        platformAddress: voucher.platformAddress,
+        // Same 32 bytes Move stores on-chain — correlates this row with the
+        // on-chain Committed event (hex).
+        voucherDigest: Buffer.from(voucher.voucherDigest).toString("hex"),
         provider: voucher.providerId,
         providerAddress: voucher.providerAddress,
         expiryMs: voucher.expiryMs
@@ -86,7 +97,14 @@ export class TrustService {
       const result = await settleVoucher(this.client, this.keypair, this.config, voucherLike);
       this.ledger.emit("SETTLED", {
         incidentId, nonce: commitment.nonce, txDigest: result.digest,
-        data: { amount: this.ledger.lookup(commitment.nonce)?.amount ?? null, recoveredCapacityMbps, confirmedAtMs }
+        data: {
+          amount: commitment.amount,
+          providerAmount: commitment.providerAmount,
+          platformFee: commitment.platformFee,
+          platformAddress: commitment.platformAddress,
+          recoveredCapacityMbps,
+          confirmedAtMs
+        }
       });
       await this.postSettlement(incidentId, "SETTLED", commitment.nonce, result.digest);
       return { status: "SETTLED", txDigest: result.digest };
@@ -121,7 +139,7 @@ export class TrustService {
    * Fire-and-forget — a callback failure must never fail the settlement.
    */
   async postSettlement(incidentId, status, nonce, txDigest) {
-    const url = this.config?.p2CallbackUrl;
+    const url = this.config?.p2CallbackUrl ?? process.env.P2_CALLBACK_URL;
     if (!url) return;
     try {
       await fetch(url, {

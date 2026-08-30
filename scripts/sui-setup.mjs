@@ -22,7 +22,8 @@ import { suiAddressFromPem } from "../src/sui/keys.js";
 import { loadProviderProfiles } from "../src/sui/voucher.js";
 
 function findSui() {
-  return process.env.SUI_BIN ?? path.join(process.env.USERPROFILE ?? process.env.HOME, "sui-cli", "sui.exe");
+  // Empty-string env values (e.g. `SUI_BIN=` in .env) must fall through to the default.
+  return process.env.SUI_BIN || path.join(process.env.USERPROFILE ?? process.env.HOME, "sui-cli", "sui.exe");
 }
 
 const config = { ...(loadConfig() ?? {}), network: network() };

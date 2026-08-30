@@ -187,10 +187,12 @@ export async function commitVoucher(client, keypair, config, voucher) {
       tx.object(SUI_CLOCK_ID),
       utf8Vector(tx, voucher.incidentId),
       utf8Vector(tx, voucher.providerId),
-      tx.pure.u64(voucher.amount),
+      tx.pure.u64(voucher.amount), // TOTAL = plan + platform fee
       tx.pure.u64(voucher.expiryMs),
       utf8Vector(tx, voucher.nonce),
       tx.pure.address(voucher.providerAddress),
+      tx.pure.address(voucher.platformAddress),
+      tx.pure.u64(voucher.platformFee),
       rawVector(tx, voucher.buyerMsg),
       rawVector(tx, voucher.buyerSig),
       rawVector(tx, voucher.buyerPk),
@@ -267,8 +269,10 @@ async function signAndRun(client, keypair, tx) {
 }
 
 export async function queryEscrowEvents(client, config, { limit = 200 } = {}) {
+  // gRPC v2 filter format: "package::module" (the old JSON-RPC MoveModule
+  // object shape is rejected by the ledger service).
   const { events } = await client.listEvents({
-    query: { MoveModule: { package: config.packageId, module: "escrow" } },
+    filter: { emitModule: `${config.packageId}::escrow` },
     limit
   });
   return events;

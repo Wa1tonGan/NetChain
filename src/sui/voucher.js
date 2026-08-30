@@ -5,6 +5,7 @@
 // module is the fast-fail front door, not the trust anchor.
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { blake2b } from "@noble/hashes/blake2.js";
 import {
   buyerAgreementPayload,
   canonicalBytes,
@@ -21,6 +22,26 @@ export class VoucherError extends Error {
     this.name = "VoucherError";
     this.code = code; // mirrors documents/person3-trust-contract.md §5
   }
+}
+
+// blake2b256 — the exact hash the Move commit stores as voucher_digest
+// (hash::blake2b256 over the canonical buyer-agreement bytes). The JS ledger
+// row carries the same digest in hex, so an off-chain row can be correlated
+// with the on-chain Committed event byte for byte.
+export function voucherDigest(bytes) {
+  return blake2b(bytes, { dkLen: 32 });
+}
+
+/**
+ * Platform fee config (blueprint §1.3): env-configurable % charged ON TOP of
+ * the plan price and shown openly; providers keep their full quoted price
+ * (§1.2). No PLATFORM_ADDRESS → fee 0 → settle pays the provider everything.
+ */
+export function platformFeeConfig() {
+  const address = process.env.PLATFORM_ADDRESS ?? null;
+  if (!address) return { address: null, percent: 0 };
+  const percent = Number(process.env.PLATFORM_FEE_PERCENT ?? 5);
+  return { address, percent };
 }
 
 function readJson(file) {
@@ -110,6 +131,13 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   }
 
   // 6. Assemble Move commit arguments: two (msg, sig, pk) triples + terms.
+  //    `amount` is the TOTAL locked (plan + fee, blueprint §3.3); the provider
+  //    share stays the full signed quote and the platform fee is charged on top.
+  const feeCfg = platformFeeConfig();
+  const platformFee = feeCfg.address ? Math.floor((amount * feeCfg.percent) / 100) : 0;
+  const buyerMsg = canonicalBytes(buyerAgreementPayload(selectedOffer));
+  const providerMsg = canonicalBytes(offerSigningPayload(originalOffer));
+  const providerAddress = paths.providerAddresses?.[selectedOffer.selectedProvider.providerId] ?? null;
   return {
     incidentId: selectedOffer.incidentId,
     customerId: selectedOffer.customerId,
@@ -117,17 +145,22 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
     providerId: selectedOffer.selectedProvider.providerId,
     brand: selectedOffer.selectedProvider.brand,
     offerId: selectedOffer.selectedProvider.offerId,
-    amount, // MYRC units (1 = 1 MYR)
+    planAmount: amount, // buyer-signed plan price (provider's full quote)
+    platformFee,
+    platformAddress: feeCfg.address ?? providerAddress, // unused on-chain when fee == 0
+    providerAmount: amount,
+    amount: amount + platformFee, // MYRC units (1 = 1 MYR); what the escrow locks
     expiryMs,
     nonce: selectedOffer.agreement.nonce,
-    buyerMsg: canonicalBytes(buyerAgreementPayload(selectedOffer)),
+    buyerMsg,
     buyerSig: base64ToBytes(selectedOffer.signatures.buyerSignature.value),
     buyerPk: pemRawPublicKey(buyerPublicPem),
-    providerMsg: canonicalBytes(offerSigningPayload(originalOffer)),
+    providerMsg,
     providerSig: base64ToBytes(originalOffer.signature.value),
     providerPk: pemRawPublicKey(profile.publicKey.value),
-    providerAddress: paths.providerAddresses?.[selectedOffer.selectedProvider.providerId] ?? null,
+    providerAddress,
     buyerAddress: paths.buyerAddress ?? null,
+    voucherDigest: voucherDigest(buyerMsg),
     verifiedAtMs: nowMs
   };
 }

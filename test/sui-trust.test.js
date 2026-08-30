@@ -3,15 +3,19 @@
 // Move unit tests (sui move test) and the harness battery.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import { EventLedger } from "../src/sui/events.js";
 import { incidentKpis, summarize } from "../src/sui/ttr.js";
 import { pemSeed, pemRawPublicKey, keypairFromPem, suiAddressFromPem } from "../src/sui/keys.js";
-import { buildVoucher, findOriginalOffer, VoucherError } from "../src/sui/voucher.js";
+import { buildVoucher, findOriginalOffer, voucherDigest, VoucherError } from "../src/sui/voucher.js";
+import { TrustService } from "../src/sui/service.js";
 
 const BUYER_ADDRESS = "0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24";
+// Platform fee address (blueprint §1.3/§3.3) — the team's real testnet wallet.
+const PLATFORM_WALLET = "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4";
 const PATHS = {
   offersDir: "fixtures/sui/offers",
   providersDir: "fixtures/providers",
@@ -55,7 +59,9 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
     const voucher = buildVoucher(selected, PATHS, { nowMs });
     assert.equal(voucher.incidentId, "INC-S2");
     assert.equal(voucher.nonce, "INC-S2:PROVIDER-B:001");
-    assert.equal(voucher.amount, 60);
+    assert.equal(voucher.planAmount, 60); // buyer-signed plan price
+    assert.equal(voucher.providerAmount, voucher.planAmount); // §1.2: full quote stays with provider
+    assert.equal(voucher.amount, voucher.planAmount + voucher.platformFee); // escrow locks plan + fee
     assert.equal(voucher.buyerPk.length, 32);
     assert.equal(voucher.providerPk.length, 32);
     assert.equal(voucher.buyerSig.length, 64);
@@ -92,6 +98,117 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
     const offer = findOriginalOffer(PATHS.offersDir, selected);
     assert.equal(offer.offerId, selected.selectedProvider.offerId);
     assert.ok(offer.signature.value.length >= 88); // 64-byte ed25519 = 88 base64 chars
+  });
+});
+
+describe("sui/voucher — platform fee split (blueprint §1.3/§3.3)", () => {
+  function withEnv(map, fn) {
+    const prev = {};
+    for (const [k, v] of Object.entries(map)) {
+      prev[k] = process.env[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      fn();
+    } finally {
+      for (const [k, v] of Object.entries(prev)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  }
+  const expiryIn = (selected) => Date.parse(selected.agreement.expiry) - 1000;
+
+  it("charges the fee on top: provider keeps the full quote, escrow locks plan + fee", () => {
+    withEnv({ PLATFORM_ADDRESS: PLATFORM_WALLET, PLATFORM_FEE_PERCENT: "5" }, () => {
+      const selected = load("s2-selected-offer.json");
+      const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
+      assert.equal(voucher.planAmount, 60); // buyer-signed plan price
+      assert.equal(voucher.platformFee, 3); // floor(60 × 5%)
+      assert.equal(voucher.amount, 63); // TOTAL locked on-chain
+      assert.equal(voucher.providerAmount, 60); // §1.2: providers keep the full quote
+      assert.equal(voucher.platformAddress, PLATFORM_WALLET);
+    });
+  });
+
+  it("defaults to PLATFORM_FEE_PERCENT=5 when only the wallet is configured", () => {
+    withEnv({ PLATFORM_ADDRESS: PLATFORM_WALLET }, () => {
+      const selected = load("s2-selected-offer.json");
+      const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
+      assert.equal(voucher.platformFee, 3);
+      assert.equal(voucher.amount, 63);
+    });
+  });
+
+  it("no PLATFORM_ADDRESS configured → fee 0, single payout (no split)", () => {
+    withEnv({ PLATFORM_ADDRESS: undefined, PLATFORM_FEE_PERCENT: undefined }, () => {
+      const selected = load("s2-selected-offer.json");
+      const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
+      assert.equal(voucher.platformFee, 0);
+      assert.equal(voucher.amount, 60);
+    });
+  });
+
+  it("voucherDigest = blake2b256(buyer bytes, 32) — correlates the ledger row with the on-chain event", () => {
+    // Known blake2b-256 vector for the empty input — pins dkLen=32 (blake2b512 would differ).
+    assert.equal(
+      Buffer.from(voucherDigest(new Uint8Array(0))).toString("hex"),
+      "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
+    );
+    const selected = load("s2-selected-offer.json");
+    const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
+    assert.equal(voucher.voucherDigest.length, 32);
+    assert.deepEqual(voucher.voucherDigest, voucherDigest(voucher.buyerMsg));
+  });
+});
+
+describe("sui/service — COMMITTED row carries the split (offline, stubbed chain)", () => {
+  it("ledger COMMITTED row exposes providerAmount/platformFee/platformAddress/voucherDigest", async () => {
+    // Fresh fixtures (offline regen, no chain) — service.commit has no clock override.
+    execSync("node scripts/sui-fixtures.mjs", { stdio: "ignore" });
+    rmSync("events/test-ledger-fee.jsonl", { force: true });
+    const ledger = new EventLedger("events/test-ledger-fee.jsonl");
+    const service = new TrustService({
+      ledger,
+      config: {
+        network: "localnet",
+        packageId: "0xtest",
+        escrowId: "0xescrow",
+        authorityId: "0xauthority",
+        buyer: BUYER_ADDRESS,
+        providers: PATHS.providerAddresses
+      }
+    });
+    service.client = {
+      signAndExecuteTransaction: async () => ({
+        status: { success: true },
+        digest: "TX-FEE",
+        events: [{ json: { idempotent: false } }],
+        objectTypes: {}
+      }),
+      waitForTransaction: async () => {}
+    };
+    const nonce = load("s2-selected-offer.json").agreement.nonce;
+    process.env.PLATFORM_ADDRESS = PLATFORM_WALLET;
+    process.env.PLATFORM_FEE_PERCENT = "5";
+    let result;
+    try {
+      result = await service.commit(load("s2-selected-offer.json"));
+    } finally {
+      delete process.env.PLATFORM_ADDRESS;
+      delete process.env.PLATFORM_FEE_PERCENT;
+    }
+    assert.equal(result.status, "COMMITTED");
+    assert.equal(result.voucher.platformFee, 3);
+    assert.equal(result.voucher.amount, 63);
+
+    const row = ledger.lookup(nonce);
+    assert.equal(row.amount, 63);
+    assert.equal(row.providerAmount, 60);
+    assert.equal(row.platformFee, 3);
+    assert.equal(row.platformAddress, PLATFORM_WALLET);
+    assert.match(row.voucherDigest, /^[0-9a-f]{64}$/);
   });
 });
 

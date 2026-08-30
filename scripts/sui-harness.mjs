@@ -20,7 +20,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { loadConfig, makeClient, setupEscrow, buyerKeypair, waitForObject } from "../src/sui/client.js";
+import { loadConfig, makeClient, setupEscrow, buyerKeypair, waitForObject, queryEscrowEvents } from "../src/sui/client.js";
 import { EventLedger } from "../src/sui/events.js";
 import { TrustService } from "../src/sui/service.js";
 import { summarize, writeReport } from "../src/sui/ttr.js";
@@ -62,6 +62,16 @@ async function main() {
   const settle1 = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 200 });
   check("case1: committed once, settled", c1.status === "COMMITTED" && settle1.status === "SETTLED");
   check("case1: duplicate commit blocked (no second tx)", dup.duplicate === true && dup.commitment.txDigest === c1.txDigest);
+  // Blueprint §1.3/§12 split settlement: provider keeps its full quoted price,
+  // the platform fee wallet receives the fee charged on top.
+  const s2Row = ledger.lookup(s2.agreement.nonce);
+  check(
+    "case1: split settlement — provider full quote + fee to platform wallet",
+    s2Row.providerAmount > 0 &&
+      s2Row.providerAmount + s2Row.platformFee === s2Row.amount &&
+      s2Row.platformAddress === process.env.PLATFORM_ADDRESS,
+    `${s2Row.providerAmount} + ${s2Row.platformFee} = ${s2Row.amount} MYRC`
+  );
 
   // 2 — provider failure → graceful refund
   console.log("[harness] case 2: emergency commit → activation FAILED → refund (INC-S7/PROVIDER-A)");
@@ -115,6 +125,28 @@ async function main() {
     expiredCode = err instanceof VoucherError ? err.code : null;
   }
   check("case5: expired voucher rejected with VOUCHER_EXPIRED", expiredCode === "VOUCHER_EXPIRED", `code=${expiredCode}`);
+
+  // On-chain event read-back (the durable audit half): query the escrow
+  // module's events from the node and correlate the voucher digest the Move
+  // commit emitted with the JSONL ledger row.
+  console.log("[harness] on-chain event read-back (escrow module)");
+  const chainEvents = (await queryEscrowEvents(client, config)).map((e) => e.json ?? e.data ?? e);
+  const chainCommitted = chainEvents.filter((e) => e?.idempotent !== undefined); // Committed only
+  const chainSettled = chainEvents.filter((e) => e?.provider_amount !== undefined); // Settled only
+  // gRPC returns vector<u8> fields as base64; the ledger row stores hex.
+  const onChainDigestHex = (d) =>
+    typeof d === "string" ? Buffer.from(d, "base64").toString("hex") : Buffer.from(d ?? []).toString("hex");
+  const match = chainCommitted.find((e) => onChainDigestHex(e.voucher_digest) === s2Row.voucherDigest);
+  check(
+    "onChain: Committed/Settled events readable back from the node",
+    chainCommitted.length >= 2 && chainSettled.length >= 2,
+    `Committed=${chainCommitted.length} Settled=${chainSettled.length}`
+  );
+  check(
+    "onChain: voucher_digest on-chain matches the ledger row byte for byte",
+    Boolean(match),
+    match ? `digest ${Buffer.from(match.voucher_digest).toString("hex").slice(0, 12)}…` : "no digest match"
+  );
 
   // incident KPIs from the run
   results.push({
