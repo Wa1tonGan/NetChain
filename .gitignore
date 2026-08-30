@@ -4,3 +4,5 @@ move/build/
 events/
 move/escrow.dis*
 .env
+.DS_Store
+*.log

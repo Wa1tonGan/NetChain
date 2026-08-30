@@ -27,6 +27,8 @@ import { signatureSchema } from "./providerOffer.js";
 export const rejectionReasonValues = [
   "PROVIDER_UNAVAILABLE",
   "RESPONSE_TIMEOUT",
+  "OFFER_INVALID",
+  "TAMPERED_OFFER",
   "INSUFFICIENT_CAPACITY",
   "LATENCY_EXCEEDED",
   "PACKET_LOSS_EXCEEDED",
@@ -35,7 +37,8 @@ export const rejectionReasonValues = [
   "ACTIVATION_TOO_SLOW",
   "OFFER_EXPIRED",
   "RANKED_BELOW",
-  "SUPERSEDED_BY_FIRST_VIABLE"
+  "SUPERSEDED_BY_FIRST_VIABLE",
+  "ACTIVATION_FAILED"
 ];
 
 const selectedProviderSchema = z
@@ -63,12 +66,24 @@ export const selectedOfferSchema = z
     selectedProvider: selectedProviderSchema,
     agreement: z
       .object({
+        // Fee economics (blueprint §1.3): the platform fee is computed on the
+        // plan price (the provider's quote) and added on top — the escrow
+        // locks plan + fee and settles as a split to two addresses.
+        //   amount        = planPrice + platformFee  (escrow lock, customer pays)
+        //   providerAmount = planPrice                (settles to provider)
+        //   platformFee    = planPrice × percent/100  (settles to platformAddress)
+        planPrice: z.number().finite().nonnegative(),
+        platformFee: z.number().finite().nonnegative(),
+        platformFeePercent: z.number().finite().min(0).max(100),
+        providerAmount: z.number().finite().nonnegative(),
+        platformAddress: z.string().min(1),
         amount: z.number().finite().nonnegative(),
         currency: z.enum(["MYR", "USD"]),
         durationMinutes: z.number().int().positive(),
         // Nonce format: `${incidentId}:${providerId}:${sequence}`. Re-running
         // the same incident must reuse the same nonce, not mint a new one —
-        // this is the repeatability guarantee Person 3 relies on.
+        // this is the repeatability guarantee Person 3 relies on. A failover
+        // attempt increments the sequence (:002 …).
         nonce: z.string().min(1),
         expiry: z.iso.datetime()
       })
@@ -91,7 +106,10 @@ export const selectedOfferSchema = z
     timing: z
       .object({
         tDetect: z.number().int().nonnegative(),
-        tDecide: z.number().int().nonnegative()
+        tDecide: z.number().int().nonnegative(),
+        // Filled in by the activation runtime (P4); absent in M1 fixtures.
+        tActivate: z.number().int().nonnegative().optional(),
+        tRecover: z.number().int().nonnegative().optional()
       })
       .strict(),
     // Filled in later by the activation runtime (M4). Absent at selection.
@@ -106,11 +124,40 @@ export const selectedOfferSchema = z
   })
   .strict()
   .superRefine((selected, context) => {
-    if (selected.agreement.amount !== selected.selectedProvider.price) {
+    if (selected.agreement.planPrice !== selected.selectedProvider.price) {
+      context.addIssue({
+        code: "custom",
+        path: ["agreement", "planPrice"],
+        message: "agreement.planPrice must equal selectedProvider.price (fee is computed on the plan price)"
+      });
+    }
+
+    const expectedFee =
+      Math.round(
+        selected.agreement.planPrice * (selected.agreement.platformFeePercent / 100) * 100
+      ) / 100;
+
+    if (selected.agreement.platformFee !== expectedFee) {
+      context.addIssue({
+        code: "custom",
+        path: ["agreement", "platformFee"],
+        message: `agreement.platformFee must equal ${expectedFee} (planPrice × percent/100, 2-dp)`
+      });
+    }
+
+    if (selected.agreement.providerAmount !== selected.agreement.planPrice) {
+      context.addIssue({
+        code: "custom",
+        path: ["agreement", "providerAmount"],
+        message: "agreement.providerAmount must equal the plan price"
+      });
+    }
+
+    if (selected.agreement.amount !== selected.agreement.planPrice + selected.agreement.platformFee) {
       context.addIssue({
         code: "custom",
         path: ["agreement", "amount"],
-        message: "agreement.amount must equal selectedProvider.price"
+        message: "agreement.amount must equal planPrice + platformFee (escrow lock)"
       });
     }
 

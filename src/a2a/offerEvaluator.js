@@ -98,37 +98,42 @@ export function rankOffers(viableArrivals) {
   });
 }
 
-// EMERGENCY mode: the first *viable* offer to arrive wins outright — the
-// Rescue Agent stops querying and commits. arrivals are
-// { offer, receivedAtMs } pairs, receivedAtMs measured from tDetect.
-export function selectOffer(arrivals, request) {
+// Full pipeline used by the runtime: evaluate every arrival, then order the
+// viable ones — EMERGENCY by arrival (first-viable), NORMAL by rank.
+export function orderedViable(arrivals, request) {
   const evaluated = arrivals.map((arrival) => ({
     ...arrival,
     evaluation: evaluateOffer(arrival.offer, request)
   }));
-
+  const nonViable = evaluated.filter((entry) => !entry.evaluation.viable);
   const viable = evaluated.filter((entry) => entry.evaluation.viable);
-  const rejected = evaluated
-    .filter((entry) => !entry.evaluation.viable)
-    .map((entry) => ({
-      providerId: entry.offer.providerId,
-      reason: entry.evaluation.reasons[0].code,
-      detail: entry.evaluation.reasons.map((item) => item.detail).join("; ")
-    }));
+  const ordered = request.emergencyOverride
+    ? [...viable].sort((left, right) => left.receivedAtMs - right.receivedAtMs)
+    : rankOffers(viable);
+  return { ordered, nonViable };
+}
 
-  if (viable.length === 0) {
+// Pure selection over { offer, receivedAtMs } pairs. The runtime orchestrator
+// supersedes this with orderedViable() for fallback looping; kept for
+// contract tests and offline tooling.
+export function selectOffer(arrivals, request) {
+  const { ordered, nonViable } = orderedViable(arrivals, request);
+
+  const rejected = nonViable.map((entry) => ({
+    providerId: entry.offer.providerId,
+    reason: entry.evaluation.reasons[0].code,
+    detail: entry.evaluation.reasons.map((item) => item.detail).join("; ")
+  }));
+
+  if (ordered.length === 0) {
     return { selected: null, rejected };
   }
 
-  const emergencyMode = request.emergencyOverride || viable.length === 1;
-  const winner = emergencyMode
-    ? [...viable].sort((left, right) => left.receivedAtMs - right.receivedAtMs)[0]
-    : rankOffers(viable)[0];
-
-  const losingViable = viable
-    .filter((entry) => entry.offer.providerId !== winner.offer.providerId)
+  const winner = ordered[0];
+  const losingViable = ordered
+    .slice(1)
     .map((entry) =>
-      emergencyMode && entry.receivedAtMs > winner.receivedAtMs
+      request.emergencyOverride && entry.receivedAtMs > winner.receivedAtMs
         ? {
             providerId: entry.offer.providerId,
             reason: "SUPERSEDED_BY_FIRST_VIABLE",
