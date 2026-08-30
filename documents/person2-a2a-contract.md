@@ -110,11 +110,23 @@ When building the Sui Voucher (blueprint §9 field mapping):
 | `incident_id` | `selectedOffer.incidentId` |
 | `buyer` | `selectedOffer.customerId` |
 | `provider` | `selectedOffer.selectedProvider.providerId` |
-| `amount` | `selectedOffer.agreement.amount` (= price; schema enforces equality) |
-| `nonce` | `selectedOffer.agreement.nonce`, format `INC-*:PROVIDER-*:001` — **re-running the same incident must reuse the same nonce** (idempotency guarantee) |
+| `amount` | `selectedOffer.agreement.amount` = **planPrice + platformFee** (the escrow lock; blueprint §1.3: plan 300 + fee 15 → 315) |
+| `provider_amount` | `selectedOffer.agreement.providerAmount` (= planPrice; settles to the provider address) |
+| `platform_fee` | `selectedOffer.agreement.platformFee` (= planPrice × `platformFeePercent`/100; settles to `platform_address`) |
+| `platform_address` | `selectedOffer.agreement.platformAddress` (env `PLATFORM_ADDRESS`; Person 3's Move split pays this slice to the platform) |
+| `nonce` | `selectedOffer.agreement.nonce`, format `INC-*:PROVIDER-*:001` — **re-running the same incident must reuse the same nonce** (idempotency guarantee); a failover attempt increments the sequence (`:002`), which means a second commitment and a refund of the failed attempt's escrow — Person 3 must handle both |
 | `expiry` | `selectedOffer.agreement.expiry` |
 | `buyer_signature` / `provider_signature` | `selectedOffer.signatures.buyerSignature / offerSignature` |
 | `authority_object` / `escrow_object` | Person 3's own objects (created before any incident) |
+
+> **Fee engine (§1.3 / §3.1 / §7.1):** the Rescue Agent computes the platform
+> fee on the **plan price only** (never a wallet balance) and adds it on top.
+> The provider side never sees the fee — offers quote the plan price, and the
+> viability check compares the plan price to the buyer's `maxBudget`. The
+> customer-visible fields are `agreement.planPrice` + `agreement.platformFee`
+> (+ `platformFeePercent`), so Person 1's UI can show the transparent split.
+> Percentage is env-configurable: `PLATFORM_FEE_PERCENT` (default 5, the
+> blueprint's own worked example).
 
 ## 6. File Map
 
@@ -190,6 +202,13 @@ node scripts/start-all.mjs --down=PROVIDER-B   # boot with a provider pre-killed
 
 ### 7.2 Runtime semantics (changes vs the M1 fixtures-only contract)
 
+- **Fee engine**: every Selected Offer's `agreement` now carries the full
+  escrow split — `planPrice` (= provider quote), `platformFee` (=
+  `PLATFORM_FEE_PERCENT` × planPrice, default 5%), `amount` (=
+  planPrice + platformFee, the escrow lock), `providerAmount` (= planPrice)
+  and `platformAddress` (env `PLATFORM_ADDRESS`). The schema enforces the
+  arithmetic, so a skimmed fee fails validation. Fixtures were regenerated
+  (S2: 60 plan + 3 fee = 63 escrowed).
 - **Nonce sequence**: attempt-derived — `INC-*:PROVIDER-*:001` for the first
   activation, `:002` when the first provider's activation fails and the next
   ordered offer takes over (msg-to-person3 §"4 defaults", demo beat "The
@@ -213,10 +232,12 @@ node scripts/start-all.mjs --down=PROVIDER-B   # boot with a provider pre-killed
 
 ## 8. Remaining Work for M5 (nice-to-have; contracts unchanged)
 
-- Salvage from the `stash@{0}` (jeff-person2 work, GitHub Desktop auto-stash):
-  `scripts/reliability-report.mjs` (repeated-run report) and
-  `scripts/demo-fallback.mjs` if wanted for the demo flow;
-- CAMARA sandbox activation (`CAMARA_MODE=sandbox` env seam is reserved in
-  `activationAdapter.js`; mock is the default backend);
+- ~~CAMARA sandbox activation~~ — **decided 2026-08-30: not buildable.** The
+  available sandbox does not expose the QoD API, so activation stays on the
+  CAMARA-shaped mock backend (`activationAdapter.js`); pitch: "adapter
+  implements the CAMARA QoD contract, sandboxed mock backend".
+- Salvage from the deleted stash branch if wanted (copies were saved to
+  `/tmp/person2-stash-scripts/`): `reliability-report.mjs` (repeated-run
+  report) and `demo-fallback.mjs`;
 - Real counter-offer quoting when a provider cannot satisfy a request
   (schema field already exists).

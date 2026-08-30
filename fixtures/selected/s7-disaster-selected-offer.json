@@ -17,7 +17,12 @@
     "packetLossPercent": 0.3
   },
   "agreement": {
-    "amount": 140,
+    "planPrice": 140,
+    "platformFee": 7,
+    "providerAmount": 140,
+    "amount": 147,
+    "platformFeePercent": 5,
+    "platformAddress": "0xPLATFORM_DEMO",
     "currency": "MYR",
     "durationMinutes": 120,
     "nonce": "INC-S7:PROVIDER-A:001",
@@ -32,7 +37,7 @@
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "dSLAfymFNJkl89LlFjbFxcklUgb3V1eF3vCrdfy6rQLpyDoX438mwXOJXtdeYb4fWeAebTTzju56nAxrfhVaCQ=="
+      "value": "7kMhjshxjLZGb1wcSlHqZL4D6dNEhAn6AIVp+F21Zg+V16T/QA1xK4Mq7ZysAPDfT3rHL/IRiCbM9UZ4GGPGAw=="
     }
   },
   "rejectedOffers": [

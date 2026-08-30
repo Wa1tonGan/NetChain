@@ -664,6 +664,57 @@ test("gonkaRanker: merges votes by Borda count with deterministic tie-break", as
   assert.deepEqual(merged, ["PROVIDER-B", "PROVIDER-A"]);
 });
 
+test("fee engine: plan price + 5% platform fee, split fields handed to Person 3", async () => {
+  const { rescue, cleanup } = await startStack({
+    rescueOptions: {
+      fees: { platformFeePercent: 5, platformAddress: "0xPLATFORM_TEST" }
+    }
+  });
+
+  try {
+    const envelope = await rescue.processIntent(
+      await loadJson("scenarios/s2-primary-down-backup-insufficient.json")
+    );
+    const agreement = envelope.selectedOffer.agreement;
+
+    // KilatLink plan price is 60 MYR (§1.3 worked example at a different
+    // base): fee is computed on the plan price only and added on top.
+    assert.equal(agreement.planPrice, 60);
+    assert.equal(agreement.platformFeePercent, 5);
+    assert.equal(agreement.platformFee, 3);
+    assert.equal(agreement.providerAmount, 60);
+    assert.equal(agreement.amount, 63); // escrow lock
+    assert.equal(agreement.platformAddress, "0xPLATFORM_TEST");
+
+    // Person 3's split-settlement proof: one escrow, two destinations.
+    assert.ok(agreement.amount > agreement.providerAmount);
+    assert.equal(agreement.providerAmount + agreement.platformFee, agreement.amount);
+
+    // The provider side never saw the fee — offers quote the plan price only.
+    assert.equal(envelope.selectedOffer.selectedProvider.price, 60);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("selected offer schema rejects a tampered fee split", async () => {
+  const selectedOfferSchema = (await import("../src/a2a/schemas/selectedOffer.js"))
+    .selectedOfferSchema;
+  const { rescue, cleanup } = await startStack();
+
+  try {
+    const envelope = await rescue.processIntent(
+      await loadJson("scenarios/s2-primary-down-backup-insufficient.json")
+    );
+    const tampered = structuredClone(envelope.selectedOffer);
+    tampered.agreement.platformFee = 99; // someone skimmed extra
+
+    assert.throws(() => selectedOfferSchema.parse(tampered), /platformFee must equal/);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("gonkaRanker: budget expiry, missing config and unusable answers all fall back", async () => {
   const arrivals = [
     { offer: { providerId: "PROVIDER-A" }, receivedAtMs: 10 },

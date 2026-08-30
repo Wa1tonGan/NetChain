@@ -32,9 +32,11 @@ import { createServer } from "node:http";
 
 import { validateRecoveryIntent } from "../schemas/recoveryIntent.js";
 import { buildProviderRequest } from "../a2a/buildProviderRequest.js";
+import { computeFeeSplit } from "../a2a/fees.js";
 import { orderedViable } from "../a2a/offerEvaluator.js";
 import { rankWithConsensus } from "../a2a/gonkaRanker.js";
 import { createActivationAdapter } from "../a2a/activationAdapter.js";
+import { feeConfigFromEnv } from "../a2a/fees.js";
 import { providerOfferSchema } from "../a2a/schemas/providerOffer.js";
 import { selectedOfferSchema } from "../a2a/schemas/selectedOffer.js";
 import {
@@ -69,9 +71,11 @@ export function createRescueAgent({
   healthCacheTtlMs = DEFAULT_HEALTH_CACHE_TTL_MS,
   person3 = {},
   gonkaOverrides = {},
+  fees,
   activationAdapter
 } = {}) {
   const adapter = activationAdapter ?? createActivationAdapter({ fetchImpl, logger });
+  const feeConfig = fees ?? feeConfigFromEnv();
   const person3AckUrl = person3.ackUrl ?? process.env.PERSON3_ACK_URL ?? "";
   const person3AckTimeoutMs =
     person3.ackTimeoutMs ?? DEFAULT_PERSON3_ACK_TIMEOUT_MS;
@@ -249,6 +253,7 @@ export function createRescueAgent({
   }
 
   function buildSelectedOffer(profile, candidate, request, rejectedOffers, timing, nonce) {
+    const feeSplit = computeFeeSplit(candidate.offer.price, feeConfig.platformFeePercent);
     const selectedProvider = {
       providerId: candidate.offer.providerId,
       brand: profile.brand,
@@ -270,7 +275,11 @@ export function createRescueAgent({
       selectionMode: request.emergencyOverride ? "EMERGENCY" : "NORMAL",
       selectedProvider,
       agreement: {
-        amount: candidate.offer.price,
+        // Fee engine (§1.3): fee on the PLAN PRICE only, added on top and
+        // shown openly; escrow locks plan + fee and settles as a split.
+        ...feeSplit,
+        platformFeePercent: feeConfig.platformFeePercent,
+        platformAddress: feeConfig.platformAddress,
         currency: candidate.offer.currency,
         durationMinutes: request.durationMinutes,
         // Incident + attempt derived: re-running the same incident
@@ -327,7 +336,7 @@ export function createRescueAgent({
             currency: candidate.offer.currency
           },
           agreement: {
-            amount: candidate.offer.price,
+            ...computeFeeSplit(candidate.offer.price, feeConfig.platformFeePercent),
             currency: candidate.offer.currency,
             durationMinutes: request.durationMinutes,
             nonce,
