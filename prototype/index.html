@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetChain — Connectivity Protection</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --line: #e8ecf1;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --faint: #94a3b8;
+    --accent: #1d4ed8;
+    --accent-soft: #eef4ff;
+    --ok: #16a34a;
+    --ok-soft: #f0fdf4;
+    --warn: #d97706;
+    --warn-soft: #fffbeb;
+    --rec: #2563eb;
+    --rec-soft: #eff6ff;
+    --bad: #dc2626;
+    --bad-soft: #fef2f2;
+    --shadow: 0 1px 2px rgba(15,23,42,.05), 0 1px 3px rgba(15,23,42,.04);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", sans-serif;
+    font-size: 15px; line-height: 1.5; min-height: 100vh;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* ---------- shell ---------- */
+  .topbar {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .topbar-in {
+    max-width: 1060px; margin: 0 auto; padding: 0 24px;
+    display: flex; align-items: center; gap: 28px; height: 60px;
+  }
+  .logo { font-weight: 700; font-size: 17px; letter-spacing: .2px; white-space: nowrap; }
+  .logo .dot { color: var(--accent); }
+  nav.main { display: flex; gap: 4px; flex: 1; }
+  nav.main a {
+    text-decoration: none; color: var(--muted); font-size: 14px; font-weight: 500;
+    padding: 7px 13px; border-radius: 9px; white-space: nowrap;
+  }
+  nav.main a:hover { color: var(--ink); background: #f1f5f9; }
+  nav.main a.on { color: var(--ink); background: #eef2f7; }
+  .top-funds { display:flex; align-items:center; gap:8px; font-size: 13.5px; color: var(--muted); white-space: nowrap; }
+  .top-funds b { color: var(--ink); font-weight: 600; }
+  .dev-link { font-size: 12px; color: var(--faint); text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+  .dev-link:hover { color: var(--muted); background: #f1f5f9; }
+
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 36px 24px 80px; }
+  .wrap.narrow { max-width: 760px; }
+
+  /* ---------- type scale ---------- */
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+  h1.hero { font-size: 32px; font-weight: 700; letter-spacing: -.02em; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .hero-sub { color: var(--muted); margin-top: 8px; max-width: 560px; }
+  h2.sec { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 34px 0 14px; }
+
+  /* ---------- status ---------- */
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.protected { background: var(--ok); }
+  .dot.recovered { background: var(--ok); }
+  .dot.degraded { background: var(--warn); animation: pulse 1.6s infinite; }
+  .dot.recovering { background: var(--rec); animation: pulse 1.4s infinite; }
+  .dot.attention { background: var(--bad); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600;
+    padding: 4px 11px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip .dot { width: 7px; height: 7px; }
+  .chip.green { color: var(--ok); background: var(--ok-soft); }
+  .chip.amber { color: var(--warn); background: var(--warn-soft); }
+  .chip.blue { color: var(--rec); background: var(--rec-soft); }
+  .chip.red { color: var(--bad); background: var(--bad-soft); }
+  .chip.gray { color: var(--muted); background: #f1f5f9; }
+  .chip.plain { color: var(--ink); background: #f1f5f9; font-weight: 500; }
+
+  /* ---------- cards & rows ---------- */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+  .card .pad { padding: 22px 24px; }
+  .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .kv { padding: 16px 24px; border-bottom: 1px solid var(--line); }
+  .kv:nth-child(odd) { border-right: 1px solid var(--line); }
+  .kv:nth-last-child(1), .kv:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
+  .kv .k { font-size: 13px; color: var(--muted); }
+  .kv .v { font-size: 16px; font-weight: 600; margin-top: 3px; display: flex; align-items: center; gap: 8px; }
+  .kv .v .sub { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+  .list-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 15px 24px; border-bottom: 1px solid var(--line);
+  }
+  .list-row:last-child { border-bottom: 0; }
+  .list-row .grow { flex: 1; min-width: 0; }
+  .list-row .t { font-weight: 600; font-size: 14.5px; }
+  .list-row .s { font-size: 13px; color: var(--muted); margin-top: 1px; }
+
+  /* ---------- buttons & controls ---------- */
+  .btn {
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    padding: 8px 16px; border-radius: 10px;
+  }
+  .btn:hover { border-color: #d4dbe3; background: #fbfcfe; }
+  .btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.primary:hover { background: #1e293b; }
+  .btn.link { border: 0; background: none; color: var(--accent); padding: 4px 6px; font-weight: 600; }
+  .btn.sm { padding: 5px 12px; font-size: 13px; border-radius: 8px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .seg { display: inline-flex; background: #eef2f7; border-radius: 11px; padding: 3px; gap: 2px; }
+  .seg button {
+    font: inherit; font-size: 13.5px; font-weight: 600; border: 0; cursor: pointer;
+    background: transparent; color: var(--muted); padding: 6px 15px; border-radius: 8px;
+  }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+  .switch { position: relative; width: 44px; height: 26px; flex: none; cursor: pointer; }
+  .switch input { display: none; }
+  .switch i {
+    position: absolute; inset: 0; border-radius: 999px; background: #d7dee7; transition: .18s;
+  }
+  .switch i::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+    background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: .18s;
+  }
+  .switch input:checked + i { background: var(--ok); }
+  .switch input:checked + i::after { transform: translateX(18px); }
+  input.field {
+    font: inherit; font-size: 14px; border: 1px solid var(--line); border-radius: 9px;
+    padding: 8px 12px; width: 110px; background: #fff; color: var(--ink);
+  }
+  input.field:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  select.field { width: auto; }
+
+  /* ---------- disclosure ---------- */
+  .disc { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 14px; }
+  .disc .tech { display: grid; grid-template-columns: 170px 1fr; gap: 8px 16px; font-size: 13px; }
+  .disc .tech .k { color: var(--muted); }
+  .disc .tech .v { font-family: ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+
+  /* ---------- recovery steps ---------- */
+  .steps { display: flex; flex-direction: column; gap: 0; margin: 18px 0; }
+  .step { display: flex; align-items: center; gap: 13px; padding: 8px 0; color: var(--faint); font-size: 14.5px; }
+  .step .ic {
+    width: 24px; height: 24px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; border: 2px solid #d7dee7; background: #fff; color: #fff;
+  }
+  .step.done { color: var(--ink); }
+  .step.done .ic { background: var(--ok); border-color: var(--ok); }
+  .step.done .ic::after { content: "✓"; color: #fff; font-weight: 700; }
+  .step.now { color: var(--rec); font-weight: 600; }
+  .step.now .ic { border-color: var(--rec); box-shadow: 0 0 0 4px var(--rec-soft); animation: pulse 1.4s infinite; }
+  .timer { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 30px; font-weight: 700; letter-spacing: .02em; }
+  .timer .u { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+
+  /* ---------- banner ---------- */
+  .banner {
+    display: flex; align-items: center; gap: 12px;
+    border-radius: 14px; padding: 14px 18px; margin-bottom: 22px; font-size: 14px;
+  }
+  .banner.blue { background: var(--rec-soft); border: 1px solid #dbeafe; }
+  .banner.amber { background: var(--warn-soft); border: 1px solid #fde68a; }
+  .banner a { margin-left: auto; font-weight: 600; font-size: 13.5px; text-decoration: none; white-space: nowrap; }
+
+  /* ---------- overlay ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,.35);
+    display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .overlay .card { width: 100%; max-width: 460px; }
+  .overlay .pad { padding: 28px; }
+
+  /* ---------- onboarding ---------- */
+  .ob { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 20px; }
+  .ob h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 26px 0 6px; }
+  .ob p { color: var(--muted); }
+  .ob-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; width: 100%; max-width: 680px; }
+  .ob-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    padding: 30px 26px; cursor: pointer; text-align: left; font: inherit;
+    box-shadow: var(--shadow); transition: .15s;
+  }
+  .ob-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(15,23,42,.08); }
+  .ob-card .ic { font-size: 26px; }
+  .ob-card .t { font-size: 17px; font-weight: 700; margin: 14px 0 6px; }
+  .ob-card .d { color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+  /* ---------- priority chips ---------- */
+  .prio { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 7px; }
+  .prio.P0 { color: #b91c1c; background: #fee2e2; }
+  .prio.P1 { color: #c2410c; background: #ffedd5; }
+  .prio.P2 { color: #a16207; background: #fef9c3; }
+  .prio.P3 { color: #475569; background: #e2e8f0; }
+
+  /* ---------- big number ---------- */
+  .big { font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
+  .big .u { font-size: 15px; color: var(--muted); font-weight: 500; }
+
+  /* ---------- demo ---------- */
+  .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .demo-grid button { text-align: left; padding: 13px 15px; line-height: 1.45; }
+  .demo-grid button b { display: block; font-size: 14px; }
+  .demo-grid button span { display: block; font-size: 12.5px; color: var(--muted); font-weight: 400; }
+  .note { font-size: 12.5px; color: var(--faint); margin-top: 14px; line-height: 1.6; }
+
+  @media (max-width: 760px) {
+    .topbar-in { gap: 12px; padding: 0 16px; overflow-x: auto; }
+    .top-funds { display: none; }
+    .wrap { padding: 24px 16px 70px; }
+    .kv-grid { grid-template-columns: 1fr; }
+    .kv:nth-child(odd) { border-right: 0; }
+    .ob-cards { grid-template-columns: 1fr; }
+    .demo-grid { grid-template-columns: 1fr; }
+    h1.hero { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="overlay"></div>
+
+<script>
+"use strict";
+
+/* ================================================================
+   NetChain customer-interface prototype
+   - customer-language UI, shared recovery state machine underneath
+   - mock store only; no backend required
+   ================================================================ */
+
+/* ---------------- mock store ---------------- */
+const store = {
+  customerType: null,            // "individual" | "business"
+  protectionState: "protected",  // protected | degraded | recovering | recovered | attention
+  incident: null,                // live incident
+  overlayDismissed: false,
+  demoContext: null,             // which UI a demo scenario drives
+  running: false,
+
+  individual: {
+    plan: "VIP",
+    device: "My Phone",
+    auto: true,
+    maxSpend: 50,
+    funds: 250,
+    reserved: 0,
+    network: "5G",
+    quality: "Excellent",
+    activity: [
+      { date: "28 Aug 2026", cause: "Connection degraded", time: "2.8 sec", cap: 50,
+        cost: 12.50, provider: "NetGo 5G", tx: "0x9c4f…b21a", state: "Settled" }
+    ]
+  },
+
+  business: {
+    site: "Stadium Alpha",
+    primary: "1 Gbps Fibre",
+    backup: "500 Mbps",
+    demand: 620,
+    auto: true,
+    reserve: { available: 9250, reserved: 500, spentMonth: 250, funded: 10000 },
+    orgLimit: 3000,
+    perIncident: 1000,
+    serviceSeq: 7,
+    editingService: null,
+    addingService: false,
+    services: [
+      { id: "svc-1", name: "Emergency Communications", prio: "P0", cap: 50,  lat: 50,  auto: true, spend: 1000 },
+      { id: "svc-2", name: "Security Cameras",         prio: "P1", cap: 60,  lat: 100, auto: true, spend: 300 },
+      { id: "svc-3", name: "Broadcast",                prio: "P1", cap: 300, lat: 80,  auto: true, spend: 500 },
+      { id: "svc-4", name: "Point of Sale",            prio: "P1", cap: 100, lat: 100, auto: true, spend: 1000 },
+      { id: "svc-5", name: "Guest Wi-Fi",              prio: "P3", cap: 250, lat: 150, auto: true, spend: 100 },
+      { id: "svc-6", name: "AR Experience",            prio: "P3", cap: 150, lat: 80,  auto: true, spend: 200 }
+    ],
+    providers: [
+      { name: "Provider A", state: "Ready" },
+      { name: "Provider B", state: "Ready" },
+      { name: "Provider C", state: "Ready" }
+    ],
+    incidents: [
+      { id: "INC-1038", site: "Stadium Alpha", cause: "Provider Degradation",
+        status: "Recovered", time: "4.1 sec", cost: 18, archived: true }
+    ]
+  },
+
+  disclosures: { indFunds: false, bizReserve: false }
+};
+
+/* ---------------- demo scenarios (§29–30) ---------------- */
+const SCENARIOS = {
+  s1: { key: "S1", name: "Backup Insufficient", cause: "Backup Capacity Insufficient",
+        required: 700, available: 500, additional: 300, provider: "Provider B", cost: 32, time: 2.8,
+        why: ["Meets the 200 Mbps capacity requirement", "Within latency policy", "Within budget", "Currently available"],
+        impact: [["Emergency Communications","Protected"],["Security Cameras","Protected"],["Broadcast","Protected"],["Point of Sale","Protected"],["Guest Wi-Fi","Reduced"],["AR Experience","Reduced"]] },
+  s2: { key: "S2", name: "Provider Degradation", cause: "Provider Degradation",
+        required: 700, available: 500, additional: 200, provider: "Provider C", cost: 18, time: 4.1,
+        why: ["Stable latency on alternative path", "Within budget", "Available now"],
+        impact: [["Emergency Communications","Protected"],["Broadcast","Protected"],["Point of Sale","Protected"],["Guest Wi-Fi","Reduced"],["AR Experience","Reduced"]] },
+  s3: { key: "S3", name: "Demand Surge", cause: "Sudden Demand Surge",
+        required: 1300, available: 1000, additional: 300, provider: "Provider B", cost: 24, time: 3.4,
+        why: ["Burst capacity available immediately", "Within budget", "Meets capacity requirement"],
+        impact: [["Emergency Communications","Protected"],["Broadcast","Protected"],["Point of Sale","Protected"],["Guest Wi-Fi","Reduced"],["AR Experience","Reduced"]] },
+  s4: { key: "S4", name: "Physical Link Failure", cause: "Physical Link Failure",
+        required: 700, available: 500, additional: 300, provider: "Provider C", cost: 41, time: 3.6,
+        why: ["Failover exhausted first", "Next viable provider", "Meets capacity requirement"],
+        impact: [["Emergency Communications","Protected"],["Security Cameras","Protected"],["Broadcast","Protected"],["Point of Sale","Protected"],["Guest Wi-Fi","Reduced"],["AR Experience","Reduced"]] },
+  s5: { key: "S5", name: "Emergency (P0)", cause: "Disaster — Emergency Traffic Surge", emergency: true,
+        required: 900, available: 400, additional: 500, provider: "Providers B + C", cost: 58, time: 3.2,
+        why: ["P0 safety override applied", "Combined provider capacity", "Pre-authorised emergency path"],
+        impact: [["Emergency Communications","Protected · P0"],["Security Cameras","Protected"],["Broadcast","Protected"],["Point of Sale","Reduced"],["Guest Wi-Fi","Reduced"],["AR Experience","Reduced"]] },
+  s6: { key: "S6", name: "Individual Queue", individual: true, cause: "High demand — recovery queue",
+        additional: 50, provider: "NetGo 5G", cost: 12.50, time: 4.6, queue: [5, 3, 2] }
+};
+
+/* demo timing (§30) — simulated values, not real-world guarantees */
+const PHASES = [
+  ["detected", 200], ["protecting", 350], ["searching", 600], ["provider_selected", 1100],
+  ["activating", 2100], ["verifying", 2800], ["recovered", 2850], ["settling", 3100], ["completed", 3450]
+];
+
+let machineTimers = [];
+let timerInterval = null;
+
+/* ---------------- state → customer language (§25, mandatory) ---------------- */
+const LANG = {
+  individual: {
+    detected: "Problem detected",
+    protecting: "Important traffic protected",
+    searching: "Finding additional connectivity",
+    provider_selected: "Recovery option found",
+    activating: "Restoring connection",
+    verifying: "Checking connection",
+    recovered: "Connection restored",
+    settling: "Finalizing recovery",
+    completed: "Connection restored"
+  },
+  business: {
+    detected: "Connectivity incident detected",
+    protecting: "Critical services protected",
+    searching: "Finding additional capacity",
+    provider_selected: "Provider selected",
+    activating: "Activating additional capacity",
+    verifying: "Verifying service KPIs",
+    recovered: "Critical services restored",
+    settling: "Finalizing settlement",
+    completed: "Incident resolved"
+  }
+};
+
+const money = (n) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+
+/* ---------------- state machine ---------------- */
+function startScenario(scenarioKey) {
+  if (store.running) return;
+  const sc = SCENARIOS[scenarioKey];
+  const asIndividual = sc.individual || store.demoContext === "individual";
+  store.overlayDismissed = false;
+  store.running = true;
+
+  const incident = {
+    id: "INC-" + (store.incidentSeq = (store.incidentSeq || 1041) + 1),
+    customerType: asIndividual ? "individual" : "business",
+    scenario: scenarioKey,
+    cause: asIndividual ? sc.cause : sc.cause,
+    required: sc.required, available: sc.available,
+    shortfall: sc.required ? sc.required - sc.available : 0,
+    additional: sc.additional, provider: sc.provider,
+    why: sc.why || [], impact: sc.impact || [],
+    cost: sc.cost, recoveryTime: sc.time,
+    emergency: !!sc.emergency, queue: sc.queue || null,
+    status: "detected", startedAt: Date.now(), events: []
+  };
+
+  store.incident = incident;
+  store.protectionState = asIndividual ? "degraded" : "attention";
+  if (!asIndividual) navigate("#/business/incidents/" + incident.id);
+  render();
+
+  machineTimers.forEach(clearTimeout);
+  machineTimers = PHASES.map(([status, ms]) => setTimeout(() => {
+    incident.status = status;
+    incident.events.push({ status, at: ((Date.now() - incident.startedAt) / 1000) });
+    if (status === "recovered") store.protectionState = "recovered";
+    if (status === "completed") finishIncident(incident);
+    render();
+  }, ms));
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const el = document.querySelectorAll("[data-timer]");
+    if (!el.length || !store.incident) return clearInterval(timerInterval);
+    const s = Math.min((Date.now() - store.incident.startedAt) / 1000, store.incident.recoveryTime);
+    el.forEach((n) => { n.textContent = s.toFixed(1); });
+  }, 100);
+}
+
+function finishIncident(incident) {
+  store.running = false;
+  if (incident.customerType === "individual") {
+    store.individual.funds = Math.max(0, +(store.individual.funds - incident.cost).toFixed(2));
+    store.individual.activity.unshift({
+      date: "29 Aug 2026", cause: incident.cause, time: incident.recoveryTime + " sec",
+      cap: incident.additional, cost: incident.cost,
+      provider: incident.provider, tx: "0x" + Math.random().toString(16).slice(2, 6) + "…f3c2", state: "Settled"
+    });
+  } else {
+    const r = store.business.reserve;
+    r.available = r.available - incident.cost;
+    r.spentMonth = r.spentMonth + incident.cost;
+    store.business.incidents.unshift({
+      id: incident.id, site: store.business.site, cause: incident.cause,
+      status: "Recovered", time: incident.recoveryTime + " sec", cost: incident.cost,
+      archived: false,
+      detail: incident
+    });
+    store.incident = null;
+  }
+  setTimeout(() => {
+    if (!store.running) {
+      store.protectionState = "protected";
+      render();
+    }
+  }, 6000);
+}
+
+function resetSim() {
+  machineTimers.forEach(clearTimeout); machineTimers = [];
+  clearInterval(timerInterval);
+  store.running = false;
+  store.incident = null;
+  store.protectionState = "protected";
+  store.overlayDismissed = false;
+  render();
+}
+
+/* ---------------- router ---------------- */
+function navigate(hash) { location.hash = hash; }
+window.addEventListener("hashchange", render);
+
+function currentRoute() {
+  const h = location.hash || "#/onboarding";
+  const parts = h.replace(/^#\//, "").split("/");
+  return { parts, raw: h };
+}
+
+/* ---------------- views ---------------- */
+function el(id) { return document.getElementById(id); }
+
+function render() {
+  const { parts } = currentRoute();
+  const app = el("app");
+  const ov = el("overlay");
+
+  if (!store.customerType && parts[0] !== "demo") { app.innerHTML = viewOnboarding(); ov.innerHTML = ""; return; }
+
+  const R = parts[0];
+  let html = "";
+  if (R === "onboarding") html = viewOnboarding();
+  else if (R === "individual") html = shell("individual", parts, viewIndividual(parts));
+  else if (R === "business") html = shell("business", parts, viewBusiness(parts));
+  else if (R === "demo") html = viewDemo();
+  else html = shell(store.customerType, parts, viewHomeGuard());
+  app.innerHTML = html;
+
+  const inc = store.incident;
+  const showOv = inc && inc.customerType === "individual" && !store.overlayDismissed
+                 && (inc.status !== "completed" || !store.overlayDismissed);
+  ov.innerHTML = (inc && inc.customerType === "individual" && !store.overlayDismissed)
+    ? viewRecoveryOverlay(inc) : "";
+}
+
+function viewHomeGuard() {
+  return `<div class="wrap narrow"><div class="card"><div class="pad">
+    <p class="hero-sub">Choose a session type on the <a href="#/onboarding" style="color:var(--accent)">onboarding page</a> first.</p>
+  </div></div></div>`;
+}
+
+/* ----- onboarding (§3) ----- */
+function viewOnboarding() {
+  return `
+  <div class="ob">
+    <div class="logo" style="font-size:20px"><span class="dot">·</span>NetChain</div>
+    <h1>How will you use NetChain?</h1>
+    <p>Both experiences share the same automatic recovery engine.</p>
+    <div class="ob-cards">
+      <button class="ob-card" onclick="NC.choose('individual')">
+        <div class="ic">📱</div>
+        <div class="t">Individual</div>
+        <div class="d">Protect my personal connectivity — my device, my plan, my recovery funds.</div>
+      </button>
+      <button class="ob-card" onclick="NC.choose('business')">
+        <div class="ic">🏟️</div>
+        <div class="t">Business</div>
+        <div class="d">Protect sites and critical business services — venues, offices, operations.</div>
+      </button>
+    </div>
+  </div>`;
+}
+
+/* ----- shell ----- */
+function shell(type, parts, content) {
+  const navs = type === "individual"
+    ? [["Home", "#/individual"], ["Protection", "#/individual/protection"], ["Funds", "#/individual/funds"], ["Activity", "#/individual/activity"]]
+    : [["Overview", "#/business"], ["Sites", "#/business/sites"], ["Services", "#/business/services"], ["Protection", "#/business/protection"], ["Incidents", "#/business/incidents"], ["Recovery Reserve", "#/business/reserve"]];
+  const active = "#" + parts.join("/");
+  const isBiz = type === "business";
+  const funds = isBiz
+    ? `Reserve <b>${money(store.business.reserve.available + store.business.reserve.reserved)}</b>`
+    : `Recovery Funds <b>${money(store.individual.funds)}</b>`;
+  const stateLabel = { protected: "Protected", degraded: "Degraded", recovering: "Recovering", recovered: "Recovered", attention: "Attention" }[store.protectionState];
+
+  return `
+  <div class="topbar"><div class="topbar-in">
+    <div class="logo"><span class="dot">·</span>NetChain</div>
+    <nav class="main">
+      ${navs.map(([label, href]) => `<a href="${href}" class="${href === active ? "on" : ""}">${label}</a>`).join("")}
+    </nav>
+    <span class="chip ${store.protectionState === "protected" ? "green" : store.protectionState === "recovered" ? "green" : store.protectionState === "degraded" ? "amber" : "blue"}">
+      <span class="dot ${store.protectionState}"></span>${stateLabel}
+    </span>
+    <div class="top-funds">${funds}</div>
+    <a class="dev-link" href="#/demo" title="Development only">Demo</a>
+  </div></div>
+  ${content}
+  ${liveIncidentBanner()}
+  `;
+}
+
+function liveIncidentBanner() {
+  const inc = store.incident;
+  if (!inc || inc.customerType !== "business") return "";
+  if (["recovered", "completed"].includes(inc.status)) {
+    return `<div class="wrap"><div class="banner" style="background:var(--ok-soft);border:1px solid #bbf7d0">
+      <span class="dot recovered"></span><b>Connection restored.</b>&nbsp;Critical services are back on the recovered path.
+      <a href="#/business/incidents/${inc.id}" style="color:var(--ok)">View incident →</a></div></div>`;
+  }
+  return `<div class="wrap"><div class="banner blue">
+    <span class="dot recovering"></span><b>${LANG.business[inc.status] || "Recovery in progress"}</b>&nbsp;— ${inc.cause}
+    <a href="#/business/incidents/${inc.id}" style="color:var(--rec)">View incident →</a></div></div>`;
+}
+
+/* ================= INDIVIDUAL (Part A) ================= */
+function viewIndividual(parts) {
+  const sub = parts[1] || "home";
+  const wrap = (inner) => `<div class="wrap narrow">${inner}</div>`;
+
+  if (!sub || sub === "home") {
+    const I = store.individual;
+    const heroText = {
+      protected: "You're protected",
+      degraded: "Your connection is degraded",
+      recovering: "We're restoring your connectivity",
+      recovered: "Connection restored",
+      attention: "We're restoring your connectivity"
+    }[store.protectionState];
+    const heroSub = store.protectionState === "protected"
+      ? "NetChain is ready to restore additional connectivity automatically if your current network becomes insufficient."
+      : "NetChain is handling it automatically. You don't need to do anything.";
+    return wrap(`
+      <p class="eyebrow">Individual · Connectivity protection</p>
+      <h1 class="hero"><span class="dot ${store.protectionState}"></span>${heroText}</h1>
+      <p class="hero-sub">${heroSub}</p>
+
+      <h2 class="sec">Current connection</h2>
+      <div class="card"><div class="kv-grid">
+        <div class="kv"><div class="k">Connection status</div><div class="v">${I.quality}</div></div>
+        <div class="kv"><div class="k">Current network</div><div class="v">${I.network}</div></div>
+        <div class="kv"><div class="k">Automatic recovery</div><div class="v">${I.auto ? "ON" : "OFF"}</div></div>
+        <div class="kv"><div class="k">Protected device</div><div class="v">${I.device}</div></div>
+      </div></div>
+
+      <h2 class="sec">Your protection</h2>
+      <div class="card"><div class="kv-grid">
+        <div class="kv"><div class="k">Protection plan</div><div class="v">${I.plan} <span class="sub">priority queue</span></div></div>
+        <div class="kv"><div class="k">Recovery funds</div><div class="v">${money(I.funds)}</div></div>
+        <div class="kv"><div class="k">Maximum recovery spend</div><div class="v">${money(I.maxSpend)} <span class="sub">/ incident</span></div></div>
+        <div class="kv"><div class="k">Recovery activity</div><div class="v">${I.activity.length} <span class="sub">recovery ${I.activity.length === 1 ? "record" : "records"}</span></div></div>
+      </div></div>
+      <p class="note">Paid plans only affect queueing and search breadth. Emergency traffic always has priority over any plan.</p>
+    `);
+  }
+
+  if (sub === "protection") {
+    const I = store.individual;
+    return wrap(`
+      <p class="eyebrow">Individual</p>
+      <h1 class="hero">Protection</h1>
+      <div style="height:22px"></div>
+      <div class="card">
+        <div class="list-row">
+          <div class="grow"><div class="t">Plan</div><div class="s">Determines your recovery queue priority</div></div>
+          <div class="seg">
+            ${["Normal", "VIP", "VVIP"].map((p) => `<button class="${I.plan === p ? "on" : ""}" onclick="NC.setPlan('${p}')">${p}</button>`).join("")}
+          </div>
+        </div>
+        <div class="list-row">
+          <div class="grow"><div class="t">Protected device</div>
+            ${store.editingDevice
+              ? `<div style="margin-top:6px;display:flex;gap:8px"><input class="field" id="deviceInput" value="${I.device}"><button class="btn sm primary" onclick="NC.saveDevice()">Save</button></div>`
+              : `<div class="s">${I.device} <button class="btn link sm" onclick="NC.editDevice()">Edit</button></div>`}
+          </div>
+        </div>
+        <div class="list-row">
+          <div class="grow"><div class="t">Automatic recovery</div><div class="s">Restore connectivity without asking, within your spending limit</div></div>
+          <label class="switch"><input type="checkbox" ${I.auto ? "checked" : ""} onchange="NC.toggleAuto(this.checked)"><i></i></label>
+        </div>
+        <div class="list-row">
+          <div class="grow"><div class="t">Maximum recovery spend</div><div class="s">Per incident, deducted from recovery funds</div></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="mono" style="font-weight:700">${money(I.maxSpend)}</span>
+            <button class="btn sm" onclick="NC.cycleLimit()">Adjust</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">Queue order when capacity is scarce: P0 emergency → VVIP → VIP → Normal. A paid plan never outranks emergency traffic.</p>
+    `);
+  }
+
+  if (sub === "funds") {
+    const I = store.individual;
+    const d = store.disclosures.indFunds;
+    return wrap(`
+      <p class="eyebrow">Individual</p>
+      <h1 class="hero">Recovery Funds</h1>
+      <div style="height:22px"></div>
+      <div class="card"><div class="pad">
+        <div class="big">${money(I.funds)}</div>
+        <div style="display:flex;gap:26px;margin-top:10px;font-size:14px;color:var(--muted)">
+          <span>Available <b style="color:var(--ink)">${money(I.funds - I.reserved)}</b></span>
+          <span>Reserved <b style="color:var(--ink)">${money(I.reserved)}</b></span>
+        </div>
+        <div style="margin-top:18px"><button class="btn primary" onclick="NC.addFunds()">Add funds · +$50</button></div>
+      </div></div>
+
+      <h2 class="sec">Automatic recovery limit</h2>
+      <div class="card"><div class="list-row">
+        <div class="grow"><div class="t">Maximum spend per incident</div><div class="s">Recovery above this amount needs your approval</div></div>
+        <b class="mono">${money(I.maxSpend)}</b>
+      </div></div>
+
+      <h2 class="sec">Payment</h2>
+      <div class="card"><div class="pad">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div><div class="k" style="font-size:13px;color:var(--muted)">Payment wallet</div>
+          <div class="mono" style="margin-top:2px">0x71F…82C</div></div>
+          <button class="btn sm" style="margin-left:auto" onclick="NC.disclose('indFunds')">${d ? "Hide" : "Payment details"}</button>
+        </div>
+        ${d ? `<div class="disc"><div class="tech">
+          <span class="k">Wallet</span><span class="v">0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C</span>
+          <span class="k">Recovery authority</span><span class="v">Scoped · max ${money(I.maxSpend)} / incident</span>
+          <span class="k">Escrow</span><span class="v">Pre-funded · released on verified recovery</span>
+          <span class="k">Last settlement</span><span class="v">Sui tx 0x9c4f…b21a · 28 Aug 2026</span>
+        </div></div>` : ""}
+      </div></div>
+      <p class="note">Funds are reserved only while a recovery is running. Unused reservations return automatically.</p>
+    `);
+  }
+
+  if (sub === "activity") {
+    const I = store.individual;
+    return wrap(`
+      <p class="eyebrow">Individual</p>
+      <h1 class="hero">Recovery Activity</h1>
+      <div style="height:22px"></div>
+      ${I.activity.length ? I.activity.map((a) => `
+      <div class="card" style="margin-bottom:12px"><div class="pad">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-weight:700">Connection Restored</div>
+            <div style="color:var(--muted);font-size:13px;margin-top:2px">${a.date} · ${a.cause}</div>
+          </div>
+          <div style="text-align:right;font-size:13.5px;color:var(--muted)">
+            Recovery time <b style="color:var(--ink)">${a.time}</b><br>
+            ${a.cap} Mbps · cost <b style="color:var(--ink)">${money(a.cost)}</b>
+          </div>
+          <button class="btn sm" onclick="NC.discloseAct('${a.tx}')">View details</button>
+        </div>
+        ${store.disclosures["act_" + a.tx] ? `<div class="disc"><div class="tech">
+          <span class="k">Provider</span><span class="v">${a.provider}</span>
+          <span class="k">Additional capacity</span><span class="v">${a.cap} Mbps</span>
+          <span class="k">Duration</span><span class="v">${a.time}</span>
+          <span class="k">Cost</span><span class="v">${money(a.cost)}</span>
+          <span class="k">Transaction state</span><span class="v">${a.state} · ${a.tx}</span>
+        </div></div>` : ""}
+      </div></div>`).join("")
+      : `<div class="card"><div class="pad"><p class="hero-sub">No recovery activity yet.</p></div></div>`}
+    `);
+  }
+  return "";
+}
+
+/* ----- individual recovery overlay (§11, auto-appears) ----- */
+function viewRecoveryOverlay(inc) {
+  const done = ["recovered", "settling", "completed"].includes(inc.status);
+  const stepOf = { detected: 0, protecting: 1, searching: 2, provider_selected: 3, activating: 4, verifying: 5, recovered: 6, settling: 6, completed: 6 };
+  const cur = stepOf[inc.status] ?? 0;
+  const queueHtml = inc.queue && inc.status === "searching"
+    ? `<div style="margin:10px 0 2px;font-size:14px;color:var(--muted)">Queue position <b style="color:var(--ink)" class="mono">${inc.queue[Math.min(cur - 2, inc.queue.length - 1)] || 2} / 7</b> <span style="font-size:12.5px">(${store.individual.plan} plan)</span></div>` : "";
+
+  if (done) {
+    return `<div class="overlay"><div class="card"><div class="pad">
+      <span class="chip green"><span class="dot recovered"></span>Recovered</span>
+      <h1 style="font-size:24px;font-weight:700;margin:14px 0 6px">Connection Restored</h1>
+      <p class="hero-sub">Your connection has been recovered automatically.</p>
+      <div style="display:flex;gap:34px;margin:20px 0 6px">
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Recovery time</div>
+          <div class="timer" style="font-size:24px"><span data-timer>${inc.recoveryTime.toFixed(1)}</span><span class="u">sec</span></div></div>
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Additional connectivity</div>
+          <div style="font-size:24px;font-weight:700">${inc.additional} <span style="font-size:14px;color:var(--muted);font-weight:500">Mbps</span></div></div>
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Cost</div>
+          <div style="font-size:24px;font-weight:700">${money(inc.cost)}</div></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn primary" onclick="NC.dismissOverlay()">Done</button>
+        <button class="btn" onclick="NC.disclose('techOverlay')">${store.disclosures.techOverlay ? "Hide details" : "View recovery details"}</button>
+      </div>
+      ${store.disclosures.techOverlay ? `<div class="disc"><div class="tech">
+        <span class="k">Provider</span><span class="v">${inc.provider}</span>
+        <span class="k">Capacity</span><span class="v">${inc.additional} Mbps</span>
+        <span class="k">Recovery authorized</span><span class="v">Within your ${money(store.individual.maxSpend)} limit</span>
+        <span class="k">Settlement</span><span class="v">Sui tx 0x7d21…e409 · Settled</span>
+        <span class="k">Incident</span><span class="v">${inc.id}</span>
+      </div></div>` : ""}
+    </div></div></div>`;
+  }
+
+  const steps = [
+    ["Problem detected", "detected"], ["Important traffic protected", "protecting"],
+    ["Finding additional connectivity", "searching"], ["Recovery option found", "provider_selected"],
+    ["Restoring connection", "activating"], ["Checking connection", "verifying"]
+  ];
+  return `<div class="overlay"><div class="card"><div class="pad">
+    <span class="chip blue"><span class="dot recovering"></span>Recovering</span>
+    <h1 style="font-size:23px;font-weight:700;margin:14px 0 4px">We're restoring connectivity for you</h1>
+    <p class="hero-sub">${inc.cause}. No action needed — recovery is within your ${money(store.individual.maxSpend)} automatic limit.</p>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-top:14px">
+      <div class="timer"><span data-timer>0.0</span><span class="u">sec</span></div>
+    </div>
+    ${queueHtml}
+    <div class="steps">
+      ${steps.map(([label], i) => {
+        const cls = i < cur ? "done" : i === cur ? "now" : "";
+        return `<div class="step ${cls}"><span class="ic"></span>${label}</div>`;
+      }).join("")}
+    </div>
+  </div></div></div>`;
+}
+
+/* ================= BUSINESS (Part B) ================= */
+function viewBusiness(parts) {
+  const sub = parts[1] || "overview";
+  const B = store.business;
+  const wrap = (inner, w) => `<div class="wrap${w ? " " + w : ""}">${inner}</div>`;
+
+  if (sub === "overview" || !sub) {
+    const heroText = {
+      protected: "Your critical services are protected",
+      degraded: "We're watching a degraded path",
+      recovering: "We're restoring your services",
+      recovered: "Services restored",
+      attention: "Connectivity incident — recovering"
+    }[store.protectionState];
+    const active = B.incidents.filter((i) => !i.archived && !["Recovered"].includes(i.status)).length;
+    return wrap(`
+      <p class="eyebrow">Business · ${B.site}</p>
+      <h1 class="hero"><span class="dot ${store.protectionState}"></span>${heroText}</h1>
+      <p class="hero-sub">NetChain protects your critical services and acquires additional capacity automatically when existing connections are not enough.</p>
+
+      <h2 class="sec">Site status</h2>
+      <div class="card"><div class="kv-grid">
+        <div class="kv"><div class="k">Primary connection</div><div class="v">${B.primary}</div></div>
+        <div class="kv"><div class="k">Backup connection</div><div class="v">${B.backup}</div></div>
+        <div class="kv"><div class="k">Current demand</div><div class="v">${B.demand} <span class="sub">Mbps</span></div></div>
+        <div class="kv"><div class="k">Critical services</div><div class="v">${B.services.length} <span class="sub">protected</span></div></div>
+        <div class="kv"><div class="k">Automatic recovery</div><div class="v">${B.auto ? "Enabled" : "Disabled"}</div></div>
+        <div class="kv"><div class="k">Recovery reserve</div><div class="v">${money(B.reserve.available + B.reserve.reserved)}</div></div>
+        <div class="kv"><div class="k">Active incidents</div><div class="v">${store.incident && store.incident.customerType === "business" && !["completed"].includes(store.incident.status) ? 1 : 0}</div></div>
+        <div class="kv"><div class="k">Providers ready</div><div class="v">${B.providers.filter((p) => p.state === "Ready").length} <span class="sub">of ${B.providers.length}</span></div></div>
+      </div></div>
+    `);
+  }
+
+  if (sub === "sites") {
+    return wrap(`
+      <p class="eyebrow">Business</p>
+      <h1 class="hero">Sites</h1>
+      <div style="height:22px"></div>
+      <div class="card"><div class="pad">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <div style="font-weight:700;font-size:16px">${B.site}</div>
+            <div style="color:var(--muted);font-size:13.5px;margin-top:3px">
+              Primary ${B.primary} · Backup ${B.backup} · ${B.services.length} protected services
+            </div>
+          </div>
+          <span class="chip green"><span class="dot ${store.protectionState}"></span>${store.protectionState === "protected" ? "Protected" : store.protectionState}</span>
+          <button class="btn sm" onclick="navigate('#/business')">View site</button>
+        </div>
+      </div></div>
+      <p class="note">Data model supports multiple sites; the hackathon runs one site.</p>
+    `);
+  }
+
+  if (sub === "services") {
+    const editing = B.editingService ? B.services.find((s) => s.id === B.editingService) : null;
+    return wrap(`
+      <p class="eyebrow">Business · ${B.site}</p>
+      <h1 class="hero">Protected Services</h1>
+      <p class="hero-sub">You protect services, not just internet connections. Priority decides who is protected first when capacity is short.</p>
+      <div class="card">
+        ${B.services.map((s) => `
+        <div class="list-row">
+          <div class="grow">
+            <div class="t">${s.name} <span class="prio ${s.prio}">${s.prio}</span></div>
+            <div class="s">min ${s.cap} Mbps · max ${s.lat} ms · auto recovery ${s.auto ? "ON" : "OFF"} · spend ≤ ${money(s.spend)}</div>
+          </div>
+          <button class="btn sm" onclick="NC.editService('${s.id}')">Edit</button>
+        </div>`).join("")}
+      </div>
+      <div style="margin-top:16px"><button class="btn primary" onclick="NC.openAddService()">+ Add protected service</button></div>
+      ${(B.addingService || editing) ? serviceForm(editing) : ""}
+    `);
+  }
+
+  if (sub === "protection") {
+    return wrap(`
+      <p class="eyebrow">Business · ${B.site}</p>
+      <h1 class="hero">Recovery Policy</h1>
+      <div style="height:22px"></div>
+      <div class="card">
+        <div class="list-row"><div class="grow"><div class="t">Automatic recovery</div><div class="s">Acquire additional capacity without manual approval, within policy</div></div>
+          <label class="switch"><input type="checkbox" ${B.auto ? "checked" : ""} onchange="NC.toggleBizAuto(this.checked)"><i></i></label></div>
+        <div class="list-row"><div class="grow"><div class="t">Critical services</div><div class="s">Always protect — P0/P1 first, low-priority traffic reduced when needed</div></div>
+          <span class="chip plain">Always protect</span></div>
+        <div class="list-row"><div class="grow"><div class="t">Maximum per incident</div><div class="s">Largest single recovery purchase</div></div><b class="mono">${money(B.perIncident)}</b></div>
+        <div class="list-row"><div class="grow"><div class="t">Daily recovery limit</div><div class="s">Organisation-wide cap</div></div><b class="mono">${money(B.orgLimit)} / day</b></div>
+      </div>
+
+      <h2 class="sec">Recovery providers</h2>
+      <div class="card">
+        ${B.providers.map((p) => `
+        <div class="list-row">
+          <div class="grow"><div class="t">${p.name}</div></div>
+          <span class="chip ${p.state === "Ready" ? "green" : "amber"}"><span class="dot ${p.state === "Ready" ? "protected" : "degraded"}"></span>${p.state}</span>
+        </div>`).join("")}
+      </div>
+      <p class="note">Providers are onboarded and health-checked before incidents happen, so recovery never starts from zero.</p>
+    `);
+  }
+
+  if (sub === "incidents") {
+    if (parts[2]) return incidentDetail(parts[2]);
+    return wrap(`
+      <p class="eyebrow">Business · ${B.site}</p>
+      <h1 class="hero">Incidents</h1>
+      <div style="height:22px"></div>
+      <div class="card">
+        ${store.incident && store.incident.customerType === "business" ? incidentRow(store.incident, false) : ""}
+        ${B.incidents.map((i) => incidentRow(i, true)).join("") || (store.incident ? "" : `<div class="list-row"><div class="grow"><div class="s">No incidents yet.</div></div></div>`)}
+      </div>
+    `);
+  }
+
+  if (sub === "reserve") {
+    const r = B.reserve;
+    const d = store.disclosures.bizReserve;
+    return wrap(`
+      <p class="eyebrow">Business · ${B.site}</p>
+      <h1 class="hero">Recovery Reserve</h1>
+      <div style="height:22px"></div>
+      <div class="card"><div class="pad">
+        <div class="big">${money(r.available + r.reserved)}</div>
+        <div style="display:flex;gap:26px;margin-top:10px;font-size:14px;color:var(--muted);flex-wrap:wrap">
+          <span>Available <b style="color:var(--ink)">${money(r.available)}</b></span>
+          <span>Reserved <b style="color:var(--ink)">${money(r.reserved)}</b></span>
+          <span>Spent this month <b style="color:var(--ink)">${money(r.spentMonth)}</b></span>
+        </div>
+        <div style="margin-top:18px"><button class="btn primary" onclick="NC.addReserve()">Add to reserve · +$1,000</button></div>
+      </div></div>
+
+      <h2 class="sec">Spending policy</h2>
+      <div class="card">
+        <div class="list-row"><div class="grow"><div class="t">Organisation limit</div></div><b class="mono">${money(B.orgLimit)} / day</b></div>
+        <div class="list-row"><div class="grow"><div class="t">Per incident</div></div><b class="mono">${money(B.perIncident)}</b></div>
+      </div>
+
+      <h2 class="sec">Service-specific limits</h2>
+      <div class="card">
+        ${B.services.slice(0, 4).map((s) => `<div class="list-row"><div class="grow"><div class="t">${s.name}</div></div><b class="mono">${money(s.spend)}</b></div>`).join("")}
+      </div>
+
+      <h2 class="sec">Payment</h2>
+      <div class="card"><div class="pad">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div><div class="k" style="font-size:13px;color:var(--muted)">Settlement wallet</div>
+          <div class="mono" style="margin-top:2px">0x44A…9dF</div></div>
+          <button class="btn sm" style="margin-left:auto" onclick="NC.disclose('bizReserve')">${d ? "Hide" : "Payment & settlement details"}</button>
+        </div>
+        ${d ? `<div class="disc"><div class="tech">
+          <span class="k">Wallet</span><span class="v">0x44A07bc1D5e2093f8aC770b2E411dF3390c19dF</span>
+          <span class="k">Recovery authority</span><span class="v">Organisation-scoped · ${money(B.perIncident)} / incident</span>
+          <span class="k">Escrow</span><span class="v">Pre-funded reserve · released on verified recovery</span>
+          <span class="k">Last settlement</span><span class="v">Sui tx 0x51b8…77de · ${money(18)} · 27 Aug 2026</span>
+        </div></div>` : ""}
+      </div></div>
+    `);
+  }
+  return "";
+}
+
+function incidentRow(i, archived) {
+  const live = !archived;
+  const chip = live
+    ? `<span class="chip blue"><span class="dot recovering"></span>${LANG.business[i.status] || "In progress"}</span>`
+    : `<span class="chip green"><span class="dot recovered"></span>Recovered</span>`;
+  return `
+  <div class="list-row" style="cursor:pointer" onclick="navigate('#/business/incidents/${i.id}')">
+    <div class="grow">
+      <div class="t">${i.id} <span style="color:var(--muted);font-weight:400">· ${i.cause}</span></div>
+      <div class="s">${i.site || store.business.site}</div>
+    </div>
+    <span style="font-size:13.5px;color:var(--muted)">${live ? "now" : i.time}</span>
+    <span style="font-size:13.5px;color:var(--muted)">${money(i.cost)}</span>
+    ${chip}
+  </div>`;
+}
+
+/* ----- business incident detail (§19–21) ----- */
+function incidentDetail(id) {
+  const B = store.business;
+  const live = store.incident && store.incident.id === id ? store.incident : null;
+  const arch = B.incidents.find((i) => i.id === id);
+  const inc = live || (arch && arch.detail) || arch;
+  if (!inc) return `<div class="wrap narrow"><div class="card"><div class="pad">Incident not found.</div></div></div>`;
+
+  const liveStates = ["detected", "protecting", "searching", "provider_selected", "activating", "verifying", "recovered", "settling"];
+  const isLive = live && liveStates.includes(live.status);
+  const done = !isLive;
+  const d = store.disclosures["tech_" + id];
+
+  const stepMap = [
+    ["Issue detected", ["detected"]],
+    ["Critical services protected", ["protecting"]],
+    ["Additional capacity found", ["searching", "provider_selected"]],
+    ["Activating connectivity", ["activating"]],
+    ["Verifying service", ["verifying", "recovered"]],
+    ["Settlement", ["settling", "completed"]]
+  ];
+  const order = ["detected", "protecting", "searching", "provider_selected", "activating", "verifying", "recovered", "settling", "completed"];
+  const curIdx = isLive ? order.indexOf(live.status) : 99;
+  const stepState = (states) => {
+    const maxIdx = Math.max(...states.map((s) => order.indexOf(s)));
+    if (!isLive) return "done";
+    return curIdx > maxIdx ? "done" : curIdx === maxIdx ? "now" : "";
+  };
+
+  return `
+  <div class="wrap">
+    <a href="#/business/incidents" style="font-size:13px;color:var(--muted);text-decoration:none">← All incidents</a>
+    <div style="height:14px"></div>
+    <p class="eyebrow">Connectivity Incident · ${B.site}</p>
+    <h1 class="hero">${inc.cause} ${inc.emergency ? `<span class="chip red">P0 emergency override</span>` : ""}</h1>
+    <p class="hero-sub">${inc.id} · ${live ? "happening now" : "resolved"}</p>
+
+    <h2 class="sec">Capacity</h2>
+    <div class="card"><div class="kv-grid">
+      <div class="kv"><div class="k">Required</div><div class="v">${inc.required} <span class="sub">Mbps</span></div></div>
+      <div class="kv"><div class="k">Available after failover</div><div class="v">${inc.available} <span class="sub">Mbps</span></div></div>
+      <div class="kv"><div class="k">Shortfall</div><div class="v" style="color:var(--bad)">${inc.shortfall} <span class="sub">Mbps</span></div></div>
+      <div class="kv"><div class="k">Acquired</div><div class="v" style="color:var(--ok)">+${inc.additional} <span class="sub">Mbps</span></div></div>
+    </div></div>
+
+    <h2 class="sec">Service impact</h2>
+    <div class="card">
+      ${inc.impact.map(([name, st]) => `
+      <div class="list-row">
+        <div class="grow"><div class="t">${name}</div></div>
+        <span class="chip ${st.includes("Reduced") ? "amber" : "green"}">${st}</span>
+      </div>`).join("")}
+    </div>
+
+    <h2 class="sec">Recovery</h2>
+    <div class="card"><div class="pad">
+      ${isLive ? `
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <div class="timer"><span data-timer>0.0</span><span class="u">sec</span></div>
+        <span style="color:var(--muted);font-size:13.5px">${LANG.business[live.status]}</span>
+      </div>` : ""}
+      <div class="steps">
+        ${stepMap.map(([label, states]) => `
+        <div class="step ${stepState(states)}"><span class="ic"></span>${label}
+          ${label === "Settlement" && !isLive ? `<span style="margin-left:auto;font-size:13px;color:var(--muted)">Settled · ${money(inc.cost)}</span>` : ""}
+        </div>`).join("")}
+      </div>
+
+      ${["provider_selected", "activating", "verifying", "recovered", "settling", "completed"].includes(live ? live.status : "completed") ? `
+      <div style="border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:8px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <b>Recovery option selected</b>
+          <span style="color:var(--muted);font-size:14px">${inc.provider}</span>
+          <span class="chip green" style="margin-left:auto">Within policy ✓</span>
+        </div>
+        <div style="display:flex;gap:30px;margin-top:10px;font-size:14px;color:var(--muted);flex-wrap:wrap">
+          <span>Additional capacity <b style="color:var(--ink)">+${inc.additional} Mbps</b></span>
+          <span>Estimated cost <b style="color:var(--ink)">${money(inc.cost)}</b></span>
+        </div>
+        <button class="btn link" style="margin-top:6px;padding-left:0" onclick="NC.disclose('why_${id}')">${store.disclosures["why_" + id] ? "Hide" : "Why this option?"}</button>
+        ${store.disclosures["why_" + id] ? `<div class="disc">
+          ${inc.why.map((w) => `<div style="font-size:13.5px;color:var(--muted);padding:2px 0">✓ ${w}</div>`).join("")}
+        </div>` : ""}
+      </div>` : ""}
+
+      ${done ? `
+      <div style="display:flex;gap:30px;margin-top:16px;flex-wrap:wrap">
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Available capacity</div><div style="font-weight:700;font-size:17px">${inc.available + inc.additional} Mbps</div></div>
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Recovery time</div><div style="font-weight:700;font-size:17px">${inc.recoveryTime} sec</div></div>
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Recovery cost</div><div style="font-weight:700;font-size:17px">${money(inc.cost)}</div></div>
+        <div><div class="k" style="font-size:13px;color:var(--muted)">Payment</div><div><span class="chip green">Settled</span></div></div>
+      </div>
+      <div style="margin-top:16px">
+        <button class="btn sm" onclick="NC.disclose('tech_${id}')">${d ? "Hide technical details" : "View technical details"}</button>
+      </div>
+      ${d ? `<div class="disc"><div class="tech">
+        <span class="k">Provider ID</span><span class="v">PROVIDER-B</span>
+        <span class="k">Voucher</span><span class="v">VCH-771 · buyer + provider signed</span>
+        <span class="k">Sui transaction</span><span class="v">0x7d21…e409 · settled</span>
+        <span class="k">Incident ID</span><span class="v">${inc.id}</span>
+        <span class="k">Activation adapter</span><span class="v">qod-profile-2 · acknowledgement OK</span>
+        <span class="k">Verification</span><span class="v">latency 42 ms · loss 0.3% · KPI pass</span>
+      </div></div>` : ""}` : ""}
+    </div></div>
+  </div>`;
+}
+
+/* ----- service add/edit form (§16) ----- */
+function serviceForm(editing) {
+  const s = editing || { name: "", prio: "P1", cap: 100, lat: 80, auto: true, spend: 100 };
+  return `
+  <div class="card" style="margin-top:16px"><div class="pad">
+    <b style="font-size:15px">${editing ? "Edit protected service" : "Add protected service"}</b>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-top:16px">
+      <label style="font-size:13px;color:var(--muted)">Service name
+        <input class="field" id="fName" style="width:100%;margin-top:5px" value="${s.name}" placeholder="e.g. Broadcast"></label>
+      <label style="font-size:13px;color:var(--muted)">Priority
+        <select class="field" id="fPrio" style="width:100%;margin-top:5px">
+          ${["P0", "P1", "P2", "P3"].map((p) => `<option ${s.prio === p ? "selected" : ""}>${p}</option>`).join("")}
+        </select></label>
+      <label style="font-size:13px;color:var(--muted)">Minimum capacity (Mbps)
+        <input class="field" id="fCap" style="width:100%;margin-top:5px" type="number" value="${s.cap}"></label>
+      <label style="font-size:13px;color:var(--muted)">Maximum latency (ms)
+        <input class="field" id="fLat" style="width:100%;margin-top:5px" type="number" value="${s.lat}"></label>
+      <label style="font-size:13px;color:var(--muted)">Maximum recovery spend ($)
+        <input class="field" id="fSpend" style="width:100%;margin-top:5px" type="number" value="${s.spend}"></label>
+      <div style="font-size:13px;color:var(--muted)">Automatic recovery
+        <div style="margin-top:8px"><label class="switch"><input type="checkbox" id="fAuto" ${s.auto ? "checked" : ""}><i></i></label></div></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn primary" onclick="NC.saveService('${editing ? editing.id : ""}')">Save service</button>
+      <button class="btn" onclick="NC.closeServiceForm()">Cancel</button>
+    </div>
+    <p class="note">These fields map to the recovery intent: service, severity, min_capacity_mbps, max_latency_ms, max_budget.</p>
+  </div></div>`;
+}
+
+/* ----- demo / simulator (§29, dev-only) ----- */
+function viewDemo() {
+  const ctx = store.demoContext || store.customerType || "business";
+  return `
+  <div class="topbar"><div class="topbar-in">
+    <div class="logo"><span class="dot">·</span>NetChain</div>
+    <nav class="main"></nav>
+    <a class="dev-link" href="#/${store.customerType || "business"}">Back to app</a>
+  </div></div>
+  <div class="wrap narrow">
+    <p class="eyebrow">Development only</p>
+    <h1 class="hero">Recovery Simulator</h1>
+    <p class="hero-sub">Hidden dev route — not part of customer navigation. Scenarios drive the same recovery state machine the real backend would.</p>
+
+    <h2 class="sec">Run scenarios as</h2>
+    <div class="seg">
+      <button class="${ctx === "individual" ? "on" : ""}" onclick="NC.setContext('individual')">Individual</button>
+      <button class="${ctx === "business" ? "on" : ""}" onclick="NC.setContext('business')">Business</button>
+    </div>
+
+    <h2 class="sec">Scenarios</h2>
+    <div class="demo-grid">
+      <button class="btn" onclick="NC.run('s1')"><b>S1 · Backup Insufficient ${ctx === "business" ? "· primary demo" : ""}</b>
+        <span>Primary fails · backup 500 · demand 700 → +300 Mbps from Provider B · 800 total · $32</span></button>
+      <button class="btn" onclick="NC.run('s2')"><b>S2 · Provider Degradation</b>
+        <span>Path degraded, latency violates policy → move critical traffic early · $18</span></button>
+      <button class="btn" onclick="NC.run('s3')"><b>S3 · Demand Surge</b>
+        <span>No line fails · demand exceeds backhaul → throttle guest Wi-Fi + burst capacity · $24</span></button>
+      <button class="btn" onclick="NC.run('s4')"><b>S4 · Physical Link Failure</b>
+        <span>Failover first, then autonomous acquisition from next provider · $41</span></button>
+      <button class="btn" onclick="NC.run('s5')"><b>S5 · Emergency (P0)</b>
+        <span>Multiple paths degraded · medical/rescue traffic surge · P0 override above all plans · $58</span></button>
+      <button class="btn" onclick="NC.run('s6')"><b>S6 · Individual Queue</b>
+        <span>Individual experience · many requests compete · VVIP → VIP → Normal queue · $12.50</span></button>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:10px">
+      <button class="btn" onclick="NC.reset()" ${store.running ? "disabled" : ""}>Reset to protected</button>
+      <button class="btn" onclick="NC.choose('${ctx}')">Open ${ctx} app</button>
+    </div>
+    <p class="note">Timing values on this page are simulated demo values. They must not be presented as guaranteed real-world recovery speeds.</p>
+  </div>`;
+}
+
+/* ---------------- actions ---------------- */
+window.NC = {
+  choose(type) { store.customerType = type; store.demoContext = store.demoContext || type; navigate(type === "individual" ? "#/individual" : "#/business"); render(); },
+  setContext(c) { store.demoContext = c; render(); },
+  run(key) { startScenario(key); },
+  reset() { resetSim(); },
+  dismissOverlay() { store.overlayDismissed = true; render(); },
+  disclose(key) { store.disclosures[key] = !store.disclosures[key]; render(); },
+  discloseAct(tx) { const k = "act_" + tx; store.disclosures[k] = !store.disclosures[k]; render(); },
+  setPlan(p) { store.individual.plan = p; render(); },
+  editDevice() { store.editingDevice = true; render(); },
+  saveDevice() { const v = el("deviceInput").value.trim(); if (v) store.individual.device = v; store.editingDevice = false; render(); },
+  toggleAuto(v) { store.individual.auto = v; },
+  toggleBizAuto(v) { store.business.auto = v; },
+  cycleLimit() { const opts = [25, 50, 100]; store.individual.maxSpend = opts[(opts.indexOf(store.individual.maxSpend) + 1) % 3]; render(); },
+  addFunds() { store.individual.funds += 50; render(); },
+  addReserve() { store.business.reserve.available += 1000; render(); },
+  openAddService() { store.business.addingService = true; store.business.editingService = null; render(); },
+  editService(id) { store.business.editingService = id; store.business.addingService = false; render(); },
+  closeServiceForm() { store.business.addingService = false; store.business.editingService = null; render(); },
+  saveService(id) {
+    const s = {
+      name: el("fName").value.trim() || "New Service", prio: el("fPrio").value,
+      cap: +el("fCap").value || 0, lat: +el("fLat").value || 0,
+      spend: +el("fSpend").value || 0, auto: el("fAuto").checked
+    };
+    if (id) { Object.assign(store.business.services.find((x) => x.id === id), s); }
+    else { store.business.services.push({ id: "svc-" + store.business.serviceSeq++, ...s }); }
+    store.business.addingService = false; store.business.editingService = null; render();
+  }
+};
+
+render();
+</script>
+</body>
+</html>
