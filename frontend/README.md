@@ -39,13 +39,41 @@ Variants: **Auto** (NetChain sends the SMS for you), **Under-delivery**
 
 ```
 src/
-  services/   types, pricing rules, flow definitions, formatting
+  services/   types, pricing rules, flow definitions, formatting, live adapter
   store/      zustand store + recovery state machine (module-level timers)
   components/ Shell (nav), RecoveryOverlay
   pages/      Onboarding, Home, Protection, Wallet, Activity, Receipt, Profile, Dev
   styles.css  design tokens ported 1:1 from the approved prototype
 ```
 
-The mock data layer is isolated in `services/` + `store/` so it can later be
-replaced with the real adapters (Person 2's gateway SSE + Person 3's trust
-server at `:8200 /v1/events`) without touching the UI.
+## Live mode (real agents + Sui escrow) — WIRED
+
+The **Demo simulator** (`#/dev`) has a *Live backend* card that runs a real
+scenario through the wired pipeline instead of the scripted simulation:
+
+- Your SMS reply becomes the intent's `constraints.durationMinutes` +
+  `maxBudget` → `POST :8082/recovery/intents`
+- Gateway SSE (`/incidents/:id/events`) drives the phase machine: QUERYING →
+  SELECTED → ACTIVATING → AVAILABLE, with each arrival/rejection narrated in
+  the SMS thread in plain language
+- On SELECTED the signed Selected Offer is pulled from
+  `GET /incidents/:id/result` — the purchase card shows the REAL provider,
+  plan price, platform fee and escrow total from the signed agreement
+- The artifact is committed on Sui via `POST :8200/v1/commit`, `AVAILABLE`
+  releases the escrow via `POST /v1/activation`, and chain SSE
+  (`/v1/events`) narrates VERIFIED → COMMITTED → SETTLED / REFUNDED
+- Without the trust service the recovery still completes and is honestly
+  marked "chain offline"; `S0`-style scenarios (no external recovery needed)
+  end in a zero-charge "All clear" sheet
+
+To run: `node scripts/start-all.mjs` (agent market) + `npm run trust:server`
+(Sui escrow — needs `sui start` / testnet + `npm run sui:setup` first), then
+`npm run dev` → `#/dev` → pick a scenario → **Run live**.
+
+Override endpoints with `VITE_GATEWAY_URL` / `VITE_TRUST_URL` if the servers
+run elsewhere.
+
+The remaining simulated pieces (per design): wallet balance/top-up
+(frontend-local), the SMS channel, provider activation (CAMARA-shaped mock),
+and the four scripted demo stories (auto / under-delivery / provider-failed /
+main) — those keep working as hands-free fallbacks.

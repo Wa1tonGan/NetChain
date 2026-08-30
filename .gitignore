@@ -9,3 +9,4 @@ move/escrow.dis*
 
 # frontend build output
 frontend/dist/
+.playwright-mcp/

@@ -717,6 +717,17 @@ export function createRescueAgent({
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://localhost");
 
+    // Browser dashboards (Person 1's UI) live on other origins — answer the
+    // CORS preflight so their JSON POSTs get through.
+    if (request.method === "OPTIONS") {
+      response.statusCode = 204;
+      response.setHeader("access-control-allow-origin", "*");
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      response.setHeader("access-control-allow-headers", "content-type");
+      response.end();
+      return;
+    }
+
     const json = (statusCode, payload) => {
       response.statusCode = statusCode;
       response.setHeader("content-type", "application/json");

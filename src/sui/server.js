@@ -10,7 +10,12 @@ import { TrustService } from "./service.js";
 const PORT = Number(process.env.TRUST_PORT ?? 8200);
 
 function json(res, code, body) {
-  res.writeHead(code, { "content-type": "application/json" });
+  // CORS open like the agent gateway — the browser dashboards live on other
+  // ports and subscribe to this API directly.
+  res.writeHead(code, {
+    "content-type": "application/json",
+    "access-control-allow-origin": "*"
+  });
   res.end(JSON.stringify(body, null, 2));
 }
 
@@ -29,6 +34,16 @@ export function startServer({ service = new TrustService(), port = PORT } = {}) 
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
+    // Browser dashboards live on other origins — answer the CORS preflight.
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type"
+      });
+      res.end();
+      return;
+    }
     try {
       if (req.method === "POST" && url.pathname === "/v1/commit") {
         const selected = JSON.parse(await readBody(req));
@@ -44,7 +59,8 @@ export function startServer({ service = new TrustService(), port = PORT } = {}) 
         res.writeHead(200, {
           "content-type": "text/event-stream",
           "cache-control": "no-cache",
-          connection: "keep-alive"
+          connection: "keep-alive",
+          "access-control-allow-origin": "*"
         });
         res.write(": connected\n\n");
         sseClients.add(res);

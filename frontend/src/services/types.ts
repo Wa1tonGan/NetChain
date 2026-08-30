@@ -4,7 +4,7 @@
 
 export type ProtectionState = "protected" | "recovering" | "attention";
 
-export type RecoveryKind = "main" | "auto" | "under" | "failed";
+export type RecoveryKind = "main" | "auto" | "under" | "failed" | "live";
 
 export type Outcome = "ok" | "under" | "failed";
 
@@ -22,6 +22,12 @@ export interface RecoveryRequest {
   cost: number;
   adjusted: boolean;
   text: string;
+  /** live mode: filled from the real Selected Offer once a provider wins */
+  provider?: string;
+  planPrice?: number;
+  platformFee?: number;
+  escrow?: number;
+  nonce?: string;
 }
 
 export interface IncidentEvent {
@@ -40,6 +46,8 @@ export interface Incident {
   id: string;
   kind: RecoveryKind;
   outcome: Outcome;
+  /** live mode: which backend scenario file this incident runs */
+  scenarioKey?: string;
   /** phase the machine pauses at, waiting for the user's SMS reply */
   pauseAt: string;
   autoSend: string | null;
@@ -75,6 +83,10 @@ export interface RecoveryRecord {
   tx: string;
   restored: boolean;
   delivered: number;
+  /** live mode extras (absent in simulation) */
+  nonce?: string;
+  commitTx?: string;
+  comparison?: { name: string; state: string; sel: boolean }[];
 }
 
 export interface Payment {

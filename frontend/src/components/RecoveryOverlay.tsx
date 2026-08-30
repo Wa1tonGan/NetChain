@@ -81,20 +81,26 @@ function Composer({ shortage }: { shortage: number }) {
 function Purchase({ incident }: { incident: Incident }) {
   const r = incident.req;
   if (!r) return null;
+  // live mode fills these from the real Selected Offer; simulation falls
+  // back to the local pricing preview
+  const provider = r.provider ?? "Provider B";
+  const fee = r.platformFee ?? PLATFORM_FEE;
+  const planPrice = r.planPrice ?? +(r.cost - PLATFORM_FEE).toFixed(2);
+  const escrow = r.escrow ?? r.cost;
   return (
     <>
       <div className="purchase">
         <div className="ph">Purchase approved · {r.text}</div>
-        <div className="pr"><span className="k">Provider</span><span className="v">Provider B</span></div>
+        <div className="pr"><span className="k">Provider</span><span className="v">{provider}</span></div>
         <div className="pr"><span className="k">Capacity</span><span className="v">{incident.shortage} Mbps</span></div>
         <div className="pr"><span className="k">Duration</span><span className="v">{r.min} min</span></div>
-        <div className="pr"><span className="k">Provider price</span><span className="v">{rm(+(r.cost - PLATFORM_FEE).toFixed(2))}</span></div>
-        <div className="pr"><span className="k">Platform fee</span><span className="v">{rm(PLATFORM_FEE)}</span></div>
-        <div className="pr"><span className="k">Total</span><span className="v">{rm(r.cost)}</span></div>
+        <div className="pr"><span className="k">Provider price</span><span className="v">{rm(planPrice)}</span></div>
+        <div className="pr"><span className="k">Platform fee</span><span className="v">{rm(fee)}</span></div>
+        <div className="pr"><span className="k">Total escrowed</span><span className="v">{rm(escrow)}</span></div>
       </div>
-      <DecisionCard cap={incident.shortage} cost={r.cost} budget={r.budget} />
+      {incident.kind !== "live" && <DecisionCard cap={incident.shortage} cost={r.cost} budget={r.budget} />}
       <div className="money-state">
-        🔒 {rm(r.cost)} locked in escrow — released only after verification passes
+        🔒 {rm(escrow)} locked in escrow — released only after verification passes
       </div>
     </>
   );
@@ -127,6 +133,26 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const running = useAppStore((s) => s.running);
 
   useTicker(running || incident.status === "sms");
+
+  // live healthy-day ending: the watcher said no purchase is needed
+  if (incident.status === "noop") {
+    return (
+      <div className="overlay">
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="No recovery needed">
+          <span className="chip green"><span className="dot" />ALL CLEAR</span>
+          <h2>No recovery needed</h2>
+          <p className="lede">
+            The watcher checked your network and the existing links already cover the shortfall. The agent market was
+            not asked to buy anything — nothing was locked and nothing was charged.
+          </p>
+          <div className="money-state ok">✓ No escrow, no purchase — healthy-day check complete</div>
+          <div style={{ marginTop: 14 }}>
+            <button className="btn primary" onClick={dismissOverlay}>Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (incident.status === "restored") {
     const r = records[incident.id];
@@ -189,7 +215,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               <div className="pr"><span className="k">Platform fee</span><span className="v">{rm(r.fee)}</span></div>
               <div className="pr"><span className="k">Total</span><span className="v">{rm(r.cost)}</span></div>
             </div>
-            <DecisionCard cap={r.cap} cost={r.cost} budget={r.budget} />
+            <DecisionCard cap={r.cap} cost={r.cost} budget={r.budget} provider={r.provider} comparison={r.comparison} />
             {disclosures["ov_" + incident.id] ? (
               <div className="disc">
                 <div className="tech">
@@ -230,12 +256,16 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </p>
           <div className="result-grid">
             <div className="rg"><div className="rk">Your charge</div><div className="rv ok">{rm(0)}</div></div>
-            <div className="rg"><div className="rk">Reservation</div><div className="rv" style={{ fontSize: 15 }}>{rm(r.cost)} refunded</div></div>
+            <div className="rg"><div className="rk">Reservation</div><div className="rv" style={{ fontSize: 15 }}>
+              {r.refund > 0 ? `${rm(r.refund)} refunded` : "Nothing locked"}
+            </div></div>
             <div className="rg"><div className="rk">Available now</div><div className="rv">{capacity.current} Mbps</div></div>
             <div className="rg"><div className="rk">Recovery time</div><div className="rv">{r.time} sec</div></div>
           </div>
           <div className="money-state ok">
-            ✓ {rm(r.cost)} refunded — the locked amount returned to your balance automatically
+            {r.refund > 0
+              ? `✓ ${rm(r.refund)} refunded — the locked amount returned to your balance automatically`
+              : "✓ Nothing was charged — no escrow was committed"}
           </div>
           <p className="note">NetChain keeps watching. Send a new recovery request from Home anytime.</p>
           <div style={{ marginTop: 14 }}>
@@ -276,6 +306,11 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               <p className="note" style={{ marginTop: 12 }}>
                 Your reply approves this recovery up to the budget you send. Auto recovery can send it for you.
               </p>
+            </>
+          ) : incident.kind === "live" && !incident.req?.provider ? (
+            <>
+              <Thread incident={incident} />
+              <div className="money-state">📡 Provider agents are quoting — ranking the signed offers…</div>
             </>
           ) : (
             <>

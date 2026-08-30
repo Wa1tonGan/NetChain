@@ -33,6 +33,14 @@ export interface Flow {
 export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
   auto: { key: "auto", outcome: "ok", autoSend: "30 min, RM 14", phases: [...PRE_SMS, ...POST_SMS] },
+  live: {
+    // Live backend mode: only the pre-SMS phases are timed locally — after
+    // the user's SMS reply the real gateway + trust SSE events drive the
+    // machine (see services/live.ts). No post-SMS timers.
+    key: "live",
+    outcome: "ok",
+    phases: [...PRE_SMS],
+  },
   under: {
     key: "under", outcome: "under", autoSend: "30 min, RM 14",
     phases: [...PRE_SMS, ...POST_SMS],
@@ -71,6 +79,7 @@ export const EVENT_LABELS: Record<string, string> = {
   verifying: "Connection verified",
   restored: "Connection restored",
   failed: "Activation failed",
+  noop: "No recovery needed",
 };
 
 export const STEP_INDEX: Record<string, number> = {

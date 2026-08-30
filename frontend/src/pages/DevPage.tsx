@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { GATEWAY_URL, SCENARIOS, TRUST_URL } from "../services/live";
 
 export default function DevPage() {
   const s = useAppStore();
+  const [scenario, setScenario] = useState("s2");
   return (
     <div className="app-col">
       <div className="topbar full">
@@ -21,7 +24,45 @@ export default function DevPage() {
 
         <div className="cols" style={{ marginTop: 10 }}>
           <div>
-            <div className="card-title" style={{ marginTop: 16 }}>Main demo story</div>
+            <div className="card-title" style={{ marginTop: 16 }}>Live backend — real agents + Sui escrow</div>
+            <div className="card">
+              <div className="row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+                <span className="t">Run a real scenario through the wired pipeline</span>
+                <div className="s">
+                  Your SMS reply becomes the intent's duration + budget → agent market races real provider agents →
+                  the signed deal is committed on Sui → settlement releases the escrow. Streams:
+                  {" "}<code>{GATEWAY_URL.replace(/^https?:\/\//, "")}</code> + <code>{TRUST_URL.replace(/^https?:\/\//, "")}</code>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select
+                    value={scenario}
+                    onChange={(e) => setScenario(e.target.value)}
+                    className="btn sm"
+                    style={{ color: "var(--ink)", padding: "8px 10px" }}
+                    aria-label="Scenario to run live"
+                  >
+                    {SCENARIOS.map((sc) => (
+                      <option key={sc.key} value={sc.key}>{sc.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn sm primary"
+                    disabled={s.running}
+                    onClick={() => s.startLiveRecovery(scenario)}
+                  >
+                    Run live
+                  </button>
+                </div>
+                <div className="s">
+                  Needs the agent market (<code>node scripts/start-all.mjs</code>) and, for the Sui escrow steps, the
+                  trust service (<code>npm run trust:server</code> + a localnet/testnet Sui node). Without the chain,
+                  the recovery still completes and is marked “chain offline”. Re-running the same scenario replays the
+                  previous incident.
+                </div>
+              </div>
+            </div>
+
+            <div className="card-title" style={{ marginTop: 16 }}>Simulated demo stories</div>
             <div className="card">
               <div className="row">
                 <span className="grow">
@@ -41,7 +82,7 @@ export default function DevPage() {
               </div>
             </div>
 
-            <div className="card-title">Other endings</div>
+            <div className="card-title">Other endings (simulated)</div>
             <div className="card">
               <div className="row">
                 <span className="grow">
