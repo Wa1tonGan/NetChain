@@ -56,8 +56,8 @@ export default function DevPage() {
                 <div className="s">
                   Needs the agent market (<code>node scripts/start-all.mjs</code>) and, for the Sui escrow steps, the
                   trust service (<code>npm run trust:server</code> + a localnet/testnet Sui node). Without the chain,
-                  the recovery still completes and is marked “chain offline”. Re-running the same scenario replays the
-                  previous incident.
+                  the recovery still completes and is marked “chain offline”. Every Run gets a fresh incident id
+                  (<code>…-L1, -L2, …</code>) so re-testing never replays an old run.
                 </div>
               </div>
             </div>

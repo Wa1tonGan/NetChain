@@ -538,6 +538,7 @@ interface LiveState {
 }
 
 let live: LiveState | null = null;
+let liveRunSeq = 0;
 
 function closeLive() {
   live?.closers.forEach((close) => close());
@@ -558,10 +559,15 @@ function beginLive(req: RecoveryRequest): Promise<void> {
   const inc = useAppStore.getState().incident;
   if (!inc?.scenarioKey) return Promise.resolve();
 
+  // Fresh incident id per run: the gateway dedups by incidentId (same id =
+  // replay of the recorded run — that's the idempotency guarantee), so
+  // re-testing a scenario with a different reply needs a new id.
+  const scenario = getScenario(inc.scenarioKey);
   const intent: Record<string, unknown> = {
-    ...getScenario(inc.scenarioKey),
+    ...scenario,
+    incidentId: `${String(scenario.incidentId)}-L${++liveRunSeq}`,
     constraints: {
-      ...((getScenario(inc.scenarioKey).constraints as Record<string, unknown>) ?? {}),
+      ...((scenario.constraints as Record<string, unknown>) ?? {}),
       durationMinutes: req.min,
       maxBudget: req.budget,
     },
