@@ -41,11 +41,16 @@ function Thread({ incident }: { incident: Incident }) {
   );
 }
 
-function Composer({ shortage }: { shortage: number }) {
+function Composer({ shortage, live }: { shortage: number; live?: boolean }) {
   const sendSms = useAppStore((s) => s.sendSms);
   const [value, setValue] = useState("");
   const price = (min: number) => +(shortage * min * 0.00084).toFixed(2);
-  const chips = [15, 30, 60].map((m) => `${m} min, RM ${price(m) % 1 === 0 ? price(m).toFixed(0) : price(m).toFixed(2)}`);
+  // Live mode: real provider agents price at ~RM 40-80 for half an hour of
+  // 200-300 Mbps — suggesting the local demo-rate budgets (RM 5-10) would
+  // reject every offer, so chips suggest realistic ones instead.
+  const chips = live
+    ? ["30 min, RM 80", "60 min, RM 120", "120 min, RM 200"]
+    : [15, 30, 60].map((m) => `${m} min, RM ${price(m) % 1 === 0 ? price(m).toFixed(0) : price(m).toFixed(2)}`);
   const send = () => {
     if (value.trim()) {
       sendSms(value.trim());
@@ -64,7 +69,7 @@ function Composer({ shortage }: { shortage: number }) {
       <div className="smsbar">
         <input
           value={value}
-          placeholder="e.g. 30 min, RM 14"
+          placeholder={live ? "e.g. 60 min, RM 120" : "e.g. 30 min, RM 14"}
           aria-label="Reply with duration and budget"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
@@ -303,7 +308,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           {waiting ? (
             <>
               <Thread incident={incident} />
-              <Composer shortage={incident.shortage} />
+              <Composer shortage={incident.shortage} live={incident.kind === "live"} />
               <p className="note" style={{ marginTop: 12 }}>
                 Your reply approves this recovery up to the budget you send. Auto recovery can send it for you.
               </p>
