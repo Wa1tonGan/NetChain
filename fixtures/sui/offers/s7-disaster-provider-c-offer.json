@@ -4,6 +4,7 @@
   "providerId": "PROVIDER-C",
   "available": true,
   "capacityMbps": 150,
+  "durationMinutes": 120,
   "expectedActivationClass": "INSTANT",
   "expectedActivationTimeMs": 500,
   "activationLane": "P0_FAST",
@@ -12,10 +13,10 @@
   "reliabilityScore": 0.98,
   "latencyMs": 120,
   "packetLossPercent": 1.2,
-  "offerExpiry": "2026-08-30T12:01:26.854Z",
+  "offerExpiry": "2026-08-30T10:15:55.400Z",
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-c-demo",
-    "value": "Q98pnwNiHvktXWD8OkYWukcw4bqZ54qSj08zRvcKie1oMr/dQzTVa1OLUyThankBAu/1NzA5PD6+q/p+nFvzCw=="
+    "value": "gEcsWK/6+FVrOxZakGpb6ajlUtH9G5xaX5Qtvt7S87yNNLOpCW3qq9CFayQCbK6Zd3rmDhPLA+EjZ34aAJu7Bw=="
   }
 }

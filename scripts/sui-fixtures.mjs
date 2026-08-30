@@ -19,6 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildProviderRequest } from "../src/a2a/buildProviderRequest.js";
+import { computeFeeSplit, feeConfigFromEnv } from "../src/a2a/fees.js";
 import { selectOffer } from "../src/a2a/offerEvaluator.js";
 import {
   signBuyerAgreement,
@@ -34,14 +35,9 @@ const EPOCH_MS = Number(process.env.SUI_FIXTURE_EPOCH_MS ?? Date.now());
 const TTL_MS = Number(process.env.SUI_FIXTURE_TTL_MS ?? 300_000);
 const ARRIVALS = { "PROVIDER-A": 600, "PROVIDER-B": 900, "PROVIDER-C": 300 };
 
-// Two-track asset sizing: on testnet the escrow holds REAL Circle USDC (6
-// decimals), and the buyer only has faucet drips — so testnet fixtures scale
-// the quoted prices down (default ×0.05 → S2 ≈ 3 USDC) and denominate in USD.
-// Localnet keeps the MYRC demo coin at profile prices, untouched.
-const NETWORK = process.env.SUI_NETWORK ?? "localnet";
-const PRICE_SCALE =
-  NETWORK === "testnet" ? Number(process.env.SUI_TESTNET_PRICE_SCALE ?? 0.05) : 1;
-const TESTNET_CURRENCY = process.env.SUI_TESTNET_CURRENCY ?? "USD";
+// Fee economics baked into the buyer-signed agreement (blueprint §1.3) —
+// Person 2's fee engine, same env contract the Rescue Agent uses live.
+const FEES = feeConfigFromEnv();
 
 const offerExpiry = new Date(EPOCH_MS + TTL_MS).toISOString();
 
@@ -61,14 +57,10 @@ function buildOffer(profile, request) {
     : { ...profile.activation.standard, lane: "STANDARD" };
   const capacityMbps = profile.policy.maxCapacityMbps;
   const hours = request.durationMinutes / 60;
-  const policyPrice = Math.round(
+  const price = Math.round(
     (profile.policy.baseFee +
       profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) * 100
   ) / 100;
-  // Scale in the cents domain so 0.05 × 105 = 5.25 lands exactly (no float dust).
-  const price = PRICE_SCALE === 1
-    ? policyPrice
-    : Math.round(policyPrice * 100 * PRICE_SCALE) / 100;
 
   const offer = {
     offerId: `OFF-${request.incidentId}-${profile.providerId}`,
@@ -76,11 +68,12 @@ function buildOffer(profile, request) {
     providerId: profile.providerId,
     available: true,
     capacityMbps,
+    durationMinutes: request.durationMinutes,
     expectedActivationClass: lane.class,
     expectedActivationTimeMs: lane.timeMs,
     activationLane: lane.lane,
     price,
-    currency: NETWORK === "testnet" ? TESTNET_CURRENCY : profile.policy.currency,
+    currency: profile.policy.currency,
     reliabilityScore: profile.performance.reliabilityScore,
     latencyMs: profile.performance.latencyMs,
     packetLossPercent: profile.performance.packetLossPercent,
@@ -92,6 +85,7 @@ function buildOffer(profile, request) {
 }
 
 function buildSelected(profile, winner, request, rejected, timing) {
+  const feeSplit = computeFeeSplit(winner.offer.price, FEES.platformFeePercent);
   const selected = {
     incidentId: request.incidentId,
     customerId: request.customerId,
@@ -111,7 +105,12 @@ function buildSelected(profile, winner, request, rejected, timing) {
       packetLossPercent: winner.offer.packetLossPercent
     },
     agreement: {
-      amount: winner.offer.price,
+      // Fee-split shape (blueprint §1.3): amount = planPrice + platformFee is
+      // the escrow lock; the provider keeps the full plan price. Must match
+      // selectedOfferSchema's cross-checks exactly.
+      ...feeSplit,
+      platformFeePercent: FEES.platformFeePercent,
+      platformAddress: FEES.platformAddress,
       currency: winner.offer.currency,
       durationMinutes: request.durationMinutes,
       nonce: `${request.incidentId}:${winner.offer.providerId}:001`,
@@ -141,9 +140,6 @@ function generate(label, scenarioFile, { exclude = [], intentOverride = null } =
     : JSON.parse(readFileSync(path.join(root, "scenarios", scenarioFile), "utf8"));
   const request = buildProviderRequest(intent);
   if (!request) throw new Error(`${scenarioFile} needs no external recovery`);
-  // The request builder hardcodes MYR (P2's documented MVP assumption); on
-  // testnet the offers are quoted in the real stablecoin's currency.
-  if (NETWORK === "testnet") request.currency = TESTNET_CURRENCY;
 
   const profiles = ["PROVIDER-A", "PROVIDER-B", "PROVIDER-C"]
     .filter((id) => !exclude.includes(id))

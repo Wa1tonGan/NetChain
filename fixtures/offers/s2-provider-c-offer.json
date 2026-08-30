@@ -4,6 +4,7 @@
   "providerId": "PROVIDER-C",
   "available": true,
   "capacityMbps": 150,
+  "durationMinutes": 60,
   "expectedActivationClass": "FAST",
   "expectedActivationTimeMs": 2000,
   "activationLane": "STANDARD",
@@ -16,6 +17,6 @@
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-c-demo",
-    "value": "K/AiH/6KYKh2KsFmv1QSvUruZzBizPoGbYAioLK9SZtjSj/rY7/W0bgR36Xq8rNbcLvQwPVQYJLk03cSockODg=="
+    "value": "dfasI7m1KvsJZRvfQkQgU7zKXDs/5fNjdYvOv++QmmH5mRvtj6Y7sJ4Da+luttSiuWki8O/4bbwNtvhlx62rCw=="
   }
 }

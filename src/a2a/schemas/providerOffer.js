@@ -20,6 +20,10 @@ export const providerOfferSchema = z
     providerId: z.string().min(1),
     available: z.boolean(),
     capacityMbps: z.number().finite().positive(),
+    // Duration is first-class (blueprint: "Duration as a first-class field in
+    // intents, provider plans and offers"): every offer quotes the length of
+    // service it covers, mirroring the request's durationMinutes it answers.
+    durationMinutes: z.number().int().positive(),
     expectedActivationClass: z.enum(activationClassValues),
     expectedActivationTimeMs: z.number().int().positive(),
     activationLane: z.enum(activationLaneValues),
@@ -29,6 +33,24 @@ export const providerOfferSchema = z
     latencyMs: z.number().finite().nonnegative(),
     packetLossPercent: z.number().finite().nonnegative(),
     offerExpiry: z.iso.datetime(),
+    // Optional Gonka-generated extras. Included pre-signature when they make
+    // it in before the bid deadline, absent otherwise — schema stays valid
+    // either way. Display-only for the Rescue Agent (MVP): "LLM enriches,
+    // determinism decides."
+    enrichment: z
+      .object({
+        pitch: z.string().min(1).optional(),
+        counterOffer: z
+          .object({
+            capacityMbps: z.number().finite().positive(),
+            price: z.number().finite().nonnegative(),
+            expectedActivationTimeMs: z.number().int().positive()
+          })
+          .strict()
+          .optional()
+      })
+      .strict()
+      .optional(),
     signature: signatureSchema
   })
   .strict()

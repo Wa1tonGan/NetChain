@@ -15,7 +15,6 @@ import {
 } from "../a2a/signing.js";
 import { selectedOfferSchema } from "../a2a/schemas/selectedOffer.js";
 import { pemRawPublicKey } from "./keys.js";
-import { stablecoinConfig, toBaseUnits } from "./stablecoin.js";
 
 export class VoucherError extends Error {
   constructor(code, message) {
@@ -90,25 +89,17 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   // 1. Schema (strict + cross-checks: amount==price, nonce prefix, timing).
   selectedOfferSchema.parse(selectedOffer);
 
-  // 2. Asset: the network's configured stablecoin. Localnet = MYRC demo coin
-  //    (0 decimals); testnet = real Circle USDC (6 decimals, currency USD).
-  //    Money of record is integer BASE units — human floats would round the
-  //    platform fee away on USDC.
-  const { amount, currency } = selectedOffer.agreement;
-  const asset = stablecoinConfig();
-  if (currency !== asset.currency) {
-    throw new VoucherError(
-      "UNSUPPORTED_CURRENCY",
-      `escrow settles ${asset.currency} (${asset.name}), got ${currency}`
-    );
+  // 2. Currency: the demo MYRC asset settles integer MYR only. planPrice is
+  //    the buyer-signed provider quote; agreement.amount adds the platform
+  //    fee on top (blueprint §1.3) and is the customer-facing escrow total.
+  const { planPrice, currency } = selectedOffer.agreement;
+  if (currency !== "MYR") {
+    throw new VoucherError("UNSUPPORTED_CURRENCY", `escrow demo settles MYR, got ${currency}`);
   }
-  let amountBase;
-  try {
-    amountBase = toBaseUnits(amount, asset.decimals);
-  } catch {
+  if (!Number.isInteger(planPrice) || planPrice <= 0) {
     throw new VoucherError(
       "NON_INTEGRAL_AMOUNT",
-      `agreement.amount ${amount} exceeds ${asset.decimals}-decimal precision (${asset.currency})`
+      `MYRC has 0 decimals; agreement.planPrice must be an integer MYR value, got ${planPrice}`
     );
   }
 
@@ -142,12 +133,12 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   }
 
   // 6. Assemble Move commit arguments: two (msg, sig, pk) triples + terms.
-  //    `amount` is the TOTAL locked in BASE units (plan + fee, blueprint
-  //    §3.3); the provider share stays the full signed quote and the platform
-  //    fee is charged on top. On localnet (0 decimals) base == human, so all
-  //    existing flows/assertions are unchanged.
+  //    The fee is recomputed from the service env (the same env the Rescue
+  //    Agent used at signing time) rather than trusted from the artifact; the
+  //    provider share stays the full signed quote and the platform fee is
+  //    charged on top (blueprint §3.3).
   const feeCfg = platformFeeConfig();
-  const platformFee = feeCfg.address ? Math.floor((amountBase * feeCfg.percent) / 100) : 0;
+  const platformFee = feeCfg.address ? Math.floor((planPrice * feeCfg.percent) / 100) : 0;
   const buyerMsg = canonicalBytes(buyerAgreementPayload(selectedOffer));
   const providerMsg = canonicalBytes(offerSigningPayload(originalOffer));
   const providerAddress = paths.providerAddresses?.[selectedOffer.selectedProvider.providerId] ?? null;
@@ -158,13 +149,11 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
     providerId: selectedOffer.selectedProvider.providerId,
     brand: selectedOffer.selectedProvider.brand,
     offerId: selectedOffer.selectedProvider.offerId,
-    planAmount: amount, // buyer-signed plan price (provider's full quote), human
-    assetName: asset.name,
-    assetDecimals: asset.decimals,
+    planAmount: planPrice, // buyer-signed plan price (provider's full quote)
     platformFee,
     platformAddress: feeCfg.address ?? providerAddress, // unused on-chain when fee == 0
-    providerAmount: amountBase,
-    amount: amountBase + platformFee, // BASE units; what the escrow locks
+    providerAmount: planPrice,
+    amount: planPrice + platformFee, // MYRC units (1 = 1 MYR); what the escrow locks
     expiryMs,
     nonce: selectedOffer.agreement.nonce,
     buyerMsg,

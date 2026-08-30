@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildProviderRequest } from "../src/a2a/buildProviderRequest.js";
+import { computeFeeSplit, feeConfigFromEnv } from "../src/a2a/fees.js";
 import { selectOffer } from "../src/a2a/offerEvaluator.js";
 import { signBuyerAgreement, signOffer } from "../src/a2a/signing.js";
 import { providerProfileSchema } from "../src/a2a/schemas/providerProfile.js";
@@ -31,6 +32,9 @@ const selectedDirectory = path.join(projectRoot, "fixtures", "selected");
 // Fixed demo clock so regenerated fixtures stay diff-stable.
 const DEMO_EPOCH_MS = Date.parse("2026-08-29T12:00:00Z");
 const OFFER_TTL_MS = 60_000;
+
+// Fee economics baked into the fixtures (blueprint §1.3 example: 5%).
+const FEES = feeConfigFromEnv();
 
 // Simulated A2A arrival times (ms after tDetect). OrbitSat is always first
 // to answer, NusaNet second, KilatLink last.
@@ -73,6 +77,7 @@ function buildOffer(profile, request, offerExpiry) {
     providerId: profile.providerId,
     available: true,
     capacityMbps,
+    durationMinutes: request.durationMinutes,
     expectedActivationClass: lane.class,
     expectedActivationTimeMs: lane.timeMs,
     activationLane: lane.lane,
@@ -95,6 +100,7 @@ function buildOffer(profile, request, offerExpiry) {
 }
 
 function buildSelectedOffer(profile, winner, request, rejected, timing) {
+  const feeSplit = computeFeeSplit(winner.offer.price, FEES.platformFeePercent);
   const selectedProvider = {
     providerId: winner.offer.providerId,
     brand: profile.brand,
@@ -116,7 +122,9 @@ function buildSelectedOffer(profile, winner, request, rejected, timing) {
     selectionMode: request.emergencyOverride ? "EMERGENCY" : "NORMAL",
     selectedProvider,
     agreement: {
-      amount: winner.offer.price,
+      ...feeSplit,
+      platformFeePercent: FEES.platformFeePercent,
+      platformAddress: FEES.platformAddress,
       currency: winner.offer.currency,
       durationMinutes: request.durationMinutes,
       nonce: `${request.incidentId}:${winner.offer.providerId}:001`,

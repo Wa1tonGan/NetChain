@@ -17,7 +17,12 @@
     "packetLossPercent": 0.5
   },
   "agreement": {
-    "amount": 60,
+    "planPrice": 60,
+    "platformFee": 3,
+    "providerAmount": 60,
+    "amount": 63,
+    "platformFeePercent": 5,
+    "platformAddress": "0xPLATFORM_DEMO",
     "currency": "MYR",
     "durationMinutes": 60,
     "nonce": "INC-S2:PROVIDER-B:001",
@@ -27,12 +32,12 @@
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-b-demo",
-      "value": "H8tkf19oeJLhDFohLWQKv68Q9qUKZ6oDIeZvl0Wrlz3fLR6R1GybMZ5Fz1MJ2Hr/lAt+Rdi14CJaYyWV7/tUCA=="
+      "value": "WPXZeRjONn6d58HAP0rBYK37NY+/WOqySAjzF1YECQgdI0nb2xs/bv4Hk7nISq3z/xH2Jc6275Vuw2e9tnBPAA=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "JDcDPKCZK2wiBCRLQhszJxWgKgfLAhkoOeJsbd18dqR3/cAbBrq8il/dOujla+/98ju2/tjRxrek6pbfeHvhAQ=="
+      "value": "4hp5RES73PzOKLlG+pvBgbFJJ/hwDqZPlWSmHKPnbeAzS9w2O+LyQyR6jiqKd8GZiIGiOdyO/8eKs39Zfn/MCw=="
     }
   },
   "rejectedOffers": [
