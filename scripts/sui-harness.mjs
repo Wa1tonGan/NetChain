@@ -25,6 +25,7 @@ import { EventLedger } from "../src/sui/events.js";
 import { TrustService } from "../src/sui/service.js";
 import { summarize, writeReport } from "../src/sui/ttr.js";
 import { VoucherError } from "../src/sui/voucher.js";
+import { formatAmount } from "../src/sui/stablecoin.js";
 
 const results = [];
 const F = (name) => `fixtures/sui/${name}`;
@@ -47,6 +48,8 @@ async function main() {
   await waitForObject(client, escrowId);
   await waitForObject(client, authorityId);
   const config = { ...baseConfig, escrowId, authorityId };
+  const st = baseConfig.stablecoin ?? { name: "MYRC", decimals: 0 };
+  const fmt = (base) => formatAmount(base, st.decimals);
   console.log(`[harness] harness escrow=${escrowId.slice(0, 12)}… authority=${authorityId.slice(0, 12)}…`);
 
   const ledgerPath = path.resolve(`events/harness-${net}.jsonl`);
@@ -82,7 +85,7 @@ async function main() {
     s2Row.providerAmount > 0 &&
       s2Row.providerAmount + s2Row.platformFee === s2Row.amount &&
       s2Row.platformAddress === process.env.PLATFORM_ADDRESS,
-    `${s2Row.providerAmount} + ${s2Row.platformFee} = ${s2Row.amount} MYRC`
+    `${fmt(s2Row.providerAmount)} + ${fmt(s2Row.platformFee)} = ${fmt(s2Row.amount)} ${st.name}`
   );
 
   // 2 — provider failure → graceful refund
@@ -123,7 +126,7 @@ async function main() {
       settle3.penaltyAmount > 0 &&
       s7fb.agreement.amount - settle3.penaltyAmount > 0 &&
       v3.penaltyAmount === settle3.penaltyAmount,
-    `penalty ${settle3.penaltyAmount} MYRC of ${fb.voucher.providerAmount} provider share`
+    `penalty ${fmt(settle3.penaltyAmount)} ${st.name} of ${fmt(fb.voucher.providerAmount)} provider share`
   );
 
   // 4 — re-run safety (registry short-circuits BEFORE the chain)

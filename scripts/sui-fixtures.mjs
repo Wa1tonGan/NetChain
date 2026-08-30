@@ -34,6 +34,15 @@ const EPOCH_MS = Number(process.env.SUI_FIXTURE_EPOCH_MS ?? Date.now());
 const TTL_MS = Number(process.env.SUI_FIXTURE_TTL_MS ?? 300_000);
 const ARRIVALS = { "PROVIDER-A": 600, "PROVIDER-B": 900, "PROVIDER-C": 300 };
 
+// Two-track asset sizing: on testnet the escrow holds REAL Circle USDC (6
+// decimals), and the buyer only has faucet drips — so testnet fixtures scale
+// the quoted prices down (default ×0.05 → S2 ≈ 3 USDC) and denominate in USD.
+// Localnet keeps the MYRC demo coin at profile prices, untouched.
+const NETWORK = process.env.SUI_NETWORK ?? "localnet";
+const PRICE_SCALE =
+  NETWORK === "testnet" ? Number(process.env.SUI_TESTNET_PRICE_SCALE ?? 0.05) : 1;
+const TESTNET_CURRENCY = process.env.SUI_TESTNET_CURRENCY ?? "USD";
+
 const offerExpiry = new Date(EPOCH_MS + TTL_MS).toISOString();
 
 function loadProfile(providerId) {
@@ -52,10 +61,14 @@ function buildOffer(profile, request) {
     : { ...profile.activation.standard, lane: "STANDARD" };
   const capacityMbps = profile.policy.maxCapacityMbps;
   const hours = request.durationMinutes / 60;
-  const price = Math.round(
+  const policyPrice = Math.round(
     (profile.policy.baseFee +
       profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) * 100
   ) / 100;
+  // Scale in the cents domain so 0.05 × 105 = 5.25 lands exactly (no float dust).
+  const price = PRICE_SCALE === 1
+    ? policyPrice
+    : Math.round(policyPrice * 100 * PRICE_SCALE) / 100;
 
   const offer = {
     offerId: `OFF-${request.incidentId}-${profile.providerId}`,
@@ -67,7 +80,7 @@ function buildOffer(profile, request) {
     expectedActivationTimeMs: lane.timeMs,
     activationLane: lane.lane,
     price,
-    currency: profile.policy.currency,
+    currency: NETWORK === "testnet" ? TESTNET_CURRENCY : profile.policy.currency,
     reliabilityScore: profile.performance.reliabilityScore,
     latencyMs: profile.performance.latencyMs,
     packetLossPercent: profile.performance.packetLossPercent,

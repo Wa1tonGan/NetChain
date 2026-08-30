@@ -29,6 +29,7 @@ import {
 import { EventLedger } from "../src/sui/events.js";
 import { TrustService } from "../src/sui/service.js";
 import { incidentKpis } from "../src/sui/ttr.js";
+import { formatAmount } from "../src/sui/stablecoin.js";
 
 const F = (name) => `fixtures/sui/${name}`;
 const load = (name) => JSON.parse(readFileSync(F(name), "utf8"));
@@ -52,8 +53,10 @@ async function main() {
   const { escrowId, authorityId } = await setupEscrow(client, keypair, baseConfig);
   await waitForObject(client, escrowId);
   const config = { ...baseConfig, escrowId, authorityId };
+  const st = baseConfig.stablecoin ?? { name: "MYRC", currency: "MYR", decimals: 0, fund: 2_000, maxPerVoucher: 500 };
+  const fmt = (base) => formatAmount(base, st.decimals);
   console.log(`    escrow ${escrowId.slice(0, 18)}… funded (fresh pool per run — replay-safe)`);
-  console.log(`    authority max/voucher ${baseConfig.maxPerVoucher ?? 500} MYRC (scoped, pre-incident)`);
+  console.log(`    ${st.name} pool ${fmt(st.fund)} · authority max/voucher ${fmt(st.maxPerVoucher)} (scoped, pre-incident)`);
 
   const ledgerPath = path.resolve(`events/demo-${net}.jsonl`);
   rmSync(ledgerPath, { force: true });
@@ -65,8 +68,8 @@ async function main() {
   const c1 = await service.commit(s2);
   console.log(
     `    ${s2.selectedProvider.brand} (${s2.selectedProvider.providerId}) — ` +
-    `${s2.agreement.amount} MYRC + ${c1.voucher.platformFee} platform fee = ` +
-    `${c1.voucher.amount} MYRC locked, nonce ${s2.agreement.nonce}`
+    `${s2.agreement.amount} ${st.currency} + ${fmt(c1.voucher.platformFee)} platform fee = ` +
+    `${fmt(c1.voucher.amount)} locked, nonce ${s2.agreement.nonce}`
   );
   console.log(`    ✅ dual ed25519 signatures verified ON-CHAIN, funds locked — tx ${c1.txDigest?.slice(0, 12)}…`);
 
@@ -83,15 +86,15 @@ async function main() {
   });
   console.log(
     `    ✅ avg ${v1.connectionLog.avg_delivered_mbps} / ${s2.selectedProvider.capacityMbps} Mbps — ` +
-    `verdict ${v1.verdict}, penalty ${v1.penaltyAmount} MYRC — connection log on-chain, tx ${v1.txDigest?.slice(0, 12)}…`
+    `verdict ${v1.verdict}, penalty ${fmt(v1.penaltyAmount)} ${st.currency} — connection log on-chain, tx ${v1.txDigest?.slice(0, 12)}…`
   );
 
   step("⚡ ", "Activation AVAILABLE → split settlement");
   const settle1 = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 200 });
   const ttr = Date.now() - t0;
   console.log(
-    `    ✅ split settlement: ${c1.voucher.providerAmount} MYRC → ${config.providers[s2.selectedProvider.providerId]?.slice(0, 18)}… · ` +
-    `${c1.voucher.platformFee} MYRC → platform fee wallet ${(process.env.PLATFORM_ADDRESS ?? "").slice(0, 18)}… — ` +
+    `    ✅ split settlement: ${fmt(c1.voucher.providerAmount)} ${st.currency} → ${config.providers[s2.selectedProvider.providerId]?.slice(0, 18)}… · ` +
+    `${fmt(c1.voucher.platformFee)} → platform fee wallet ${(process.env.PLATFORM_ADDRESS ?? "").slice(0, 18)}… — ` +
     `tx ${settle1.txDigest?.slice(0, 12)}…`
   );
 
@@ -114,8 +117,8 @@ async function main() {
   const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 240 });
   console.log(
     `    ✅ ${fb.status} → verdict ${v3.verdict} (avg ${v3.connectionLog.avg_delivered_mbps}/${s7fb.selectedProvider.capacityMbps} Mbps, ` +
-    `penalty ${v3.penaltyAmount} MYRC → buyer) → ${settle3.status} ` +
-    `(provider ${fb.voucher.providerAmount - fb.voucher.platformFee - v3.penaltyAmount} · fee ${fb.voucher.platformFee} MYRC) — ` +
+    `penalty ${fmt(v3.penaltyAmount)} ${st.currency} → buyer) → ${settle3.status} ` +
+    `(provider ${fmt(fb.voucher.providerAmount - fb.voucher.platformFee - v3.penaltyAmount)} · fee ${fmt(fb.voucher.platformFee)} ${st.currency}) — ` +
     `failover + verification proved (blueprint §6.1/§4.3)`
   );
 

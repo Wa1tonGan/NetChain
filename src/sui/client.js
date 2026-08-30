@@ -10,6 +10,7 @@ import { SuiGrpcClient } from "@mysten/sui/grpc";
 import { Transaction } from "@mysten/sui/transactions";
 import { getFaucetHost, requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
 import { keypairFromPem } from "./keys.js";
+import { stablecoinConfig, toBaseUnits } from "./stablecoin.js";
 
 const LOCALNET_GRPC = process.env.SUI_LOCALNET_URL ?? "http://127.0.0.1:9000";
 const SUI_CLOCK_ID = "0x6";
@@ -25,6 +26,12 @@ export function configPath(net = network()) {
 export function makeClient(net = network()) {
   const baseUrl = net === "localnet" ? LOCALNET_GRPC : `https://fullnode.${net}.sui.io`;
   return new SuiGrpcClient({ baseUrl, network: net });
+}
+
+/** The escrow's asset type: localnet demo MYRC, or the configured real stablecoin. */
+export function coinType(config) {
+  const cfg = stablecoinConfig(config.network);
+  return cfg.type ?? `${config.packageId}::myrc::MYRC`;
 }
 
 // v2 executes return a tagged union ({ $kind: "Transaction", Transaction }).
@@ -104,13 +111,14 @@ export async function publishPackage(client, keypair, moveDir = "move") {
   return { packageId, treasuryId: treasury.objectId, digest: result.digest };
 }
 
-/** Readiness phase: mint MYRC, create + fund escrow, create AuthorityCap. */
+/** Readiness phase: mint MYRC / fund from real stablecoin, create + fund escrow, create AuthorityCap. */
 export async function runSetup(client, keypair, config, opts = {}) {
-  const { escrowId, authorityId, digest } = await setupEscrow(client, keypair, config, opts);
+  const { escrowId, authorityId, digest, stablecoin } = await setupEscrow(client, keypair, config, opts);
   config.escrowId = escrowId;
   config.authorityId = authorityId;
   config.buyer = keypair.toSuiAddress();
   config.setupDigest = digest;
+  config.stablecoin = stablecoin;
   return config;
 }
 
@@ -118,33 +126,64 @@ export async function runSetup(client, keypair, config, opts = {}) {
  * Create a fresh escrow pool + authority. Nonces are keyed per escrow Table,
  * so callers that need clean replay state (the harness) spin their own pool
  * instead of reusing the demo escrow.
+ *
+ * Asset (two-track plan): localnet mints the MYRC demo coin; testnet funds
+ * from the buyer's REAL Circle USDC (faucet coins — no treasury exists).
+ * The escrow is SHARED (public_share_object): anyone may deposit (customer
+ * top-ups, blueprint §4.4), while commit/settle/refund stay gated by the
+ * buyer's AuthorityCap.
  */
 export async function setupEscrow(client, keypair, config, {
-  mintAmount = 10_000,
-  escrowFund = 2_000,
-  maxPerVoucher = 500
+  stablecoinFund = null, // human amount; defaults per network below
+  maxPerVoucher = null // human; testnet defaults to the fund size
 } = {}) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const asset = stablecoinConfig(config.network);
+  const coinT = coinType(config);
   const buyer = keypair.toSuiAddress();
+  const fundHuman = stablecoinFund
+    ?? (asset.type ? Number(process.env.STABLECOIN_ESCROW_FUND ?? 12) : 2_000);
+  const fundBase = toBaseUnits(fundHuman, asset.decimals);
+  const maxBase = maxPerVoucher ?? (asset.type ? fundBase : 500);
+
   const tx = new Transaction();
-  const minted = tx.moveCall({
-    target: "0x2::coin::mint",
-    typeArguments: [myrc],
-    arguments: [tx.object(config.treasuryId), tx.pure.u64(mintAmount)]
-  });
+  let funding;
+  if (asset.type === null) {
+    // Localnet: we own the TreasuryCap — mint the demo pool.
+    funding = tx.moveCall({
+      target: "0x2::coin::mint",
+      typeArguments: [coinT],
+      arguments: [tx.object(config.treasuryId), tx.pure.u64(fundBase)]
+    });
+  } else {
+    // Testnet: real stablecoin — gather the buyer's faucet coins, split the fund.
+    const { objects } = await client.listCoins({ owner: buyer, coinType: asset.type });
+    if (!objects?.length) {
+      throw new Error(
+        `no ${asset.name} coins owned by ${buyer} — request testnet ${asset.name} from faucet.circle.com first`
+      );
+    }
+    const primary = tx.object(objects[0].objectId);
+    const rest = objects.slice(1).map((c) => tx.object(c.objectId));
+    const merged = rest.length ? tx.mergeCoins(primary, rest) : primary;
+    funding = tx.splitCoins(merged, [tx.pure.u64(fundBase)])[0];
+  }
   const escrow = tx.moveCall({
     target: `${config.packageId}::escrow::new`,
-    typeArguments: [myrc]
+    typeArguments: [coinT]
   });
   tx.moveCall({
     target: `${config.packageId}::escrow::deposit`,
-    typeArguments: [myrc],
-    arguments: [escrow, minted]
+    typeArguments: [coinT],
+    arguments: [escrow, funding]
   });
-  tx.transferObjects([escrow], buyer);
+  tx.moveCall({
+    target: "0x2::transfer::public_share_object",
+    typeArguments: [`${config.packageId}::escrow::Escrow<${coinT}>`],
+    arguments: [escrow]
+  });
   tx.moveCall({
     target: `${config.packageId}::authority::new_to_sender`,
-    arguments: [tx.pure.u64(maxPerVoucher)]
+    arguments: [tx.pure.u64(maxBase)]
   });
   const result = unpack(await signAndRun(client, keypair, tx));
 
@@ -154,7 +193,15 @@ export async function setupEscrow(client, keypair, config, {
   if (!escrowObj || !authority) {
     throw new Error("setup ran but escrow/authority objects not found in tx objectTypes");
   }
-  return { escrowId: escrowObj.objectId, authorityId: authority.objectId, digest: result.digest };
+  return {
+    escrowId: escrowObj.objectId,
+    authorityId: authority.objectId,
+    digest: result.digest,
+    stablecoin: {
+      type: coinT, name: asset.name, currency: asset.currency,
+      decimals: asset.decimals, fund: fundBase, maxPerVoucher: maxBase
+    }
+  };
 }
 
 /** Fresh objects are not queryable for a moment after their tx — poll for them. */
@@ -180,7 +227,7 @@ function rawVector(tx, u8) {
 
 /** escrow::commit — on-chain dual ed25519 verification + nonce lock. */
 export async function commitVoucher(client, keypair, config, voucher) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::commit`,
@@ -209,7 +256,7 @@ export async function commitVoucher(client, keypair, config, voucher) {
 }
 
 export async function settleVoucher(client, keypair, config, voucher) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::settle`,
@@ -224,7 +271,7 @@ export async function settleVoucher(client, keypair, config, voucher) {
 }
 
 export async function refundVoucher(client, keypair, config, voucher) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::refund`,
@@ -240,7 +287,7 @@ export async function refundVoucher(client, keypair, config, voucher) {
 
 /** escrow::verify — record the deterministic delivery verdict on-chain. */
 export async function verifyDeliveryOnChain(client, keypair, config, { nonce, logDigest, penalty }) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::verify`,
