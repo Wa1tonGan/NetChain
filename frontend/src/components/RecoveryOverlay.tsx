@@ -267,6 +267,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               ? `✓ ${rm(r.refund)} refunded — the locked amount returned to your balance automatically`
               : "✓ Nothing was charged — no escrow was committed"}
           </div>
+          <p className="note">Reason: {r.state}. Full detail is in the SMS thread of the recovery attempt.</p>
           <p className="note">NetChain keeps watching. Send a new recovery request from Home anytime.</p>
           <div style={{ marginTop: 14 }}>
             <button className="btn primary" onClick={dismissOverlay}>Done</button>

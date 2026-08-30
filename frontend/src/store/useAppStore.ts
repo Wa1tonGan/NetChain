@@ -587,7 +587,7 @@ function beginLive(req: RecoveryRequest): Promise<void> {
     })
     .catch((err) => {
       sysBubble(`⚠️ Agent market unreachable (${String(err?.message ?? err).slice(0, 80)}) — start it with: node scripts/start-all.mjs`);
-      finishLive("failed");
+      finishLive("failed", undefined, "Agent market unreachable");
     });
 }
 
@@ -640,7 +640,7 @@ function onGatewayEvent(ev: GatewayEvent) {
       break;
     case "FAILED_NO_VIABLE_PROVIDER":
       sysBubble("❌ No provider could meet the request — every offer was rejected.");
-      finishLive("failed");
+      finishLive("failed", undefined, "No viable provider — every offer was rejected");
       break;
     case "FAILED_ALL_ACTIVATIONS":
       sysBubble("❌ Every provider failed to activate the backup path.");
