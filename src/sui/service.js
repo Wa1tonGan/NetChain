@@ -5,8 +5,9 @@
 // restart) short-circuits duplicates; the chain aborts same-nonce/different-
 // bytes replays and no-ops byte-identical ones (defense in depth).
 import { EventLedger } from "./events.js";
-import { loadConfig, makeClient, buyerKeypair, commitVoucher, settleVoucher, refundVoucher, reclaimVoucher } from "./client.js";
+import { loadConfig, makeClient, buyerKeypair, commitVoucher, settleVoucher, refundVoucher, reclaimVoucher, verifyDeliveryOnChain } from "./client.js";
 import { buildVoucher, VoucherError } from "./voucher.js";
+import { checkDelivery, connectionLog, connectionLogDigest } from "./verify.js";
 
 export class TrustService {
   constructor({ ledger = new EventLedger(), config = loadConfig(), paths = defaultPaths() } = {}) {
@@ -85,6 +86,66 @@ export class TrustService {
     return { status: "COMMITTED", duplicate: false, idempotent, txDigest: result.digest, voucher };
   }
 
+  /**
+   * Verification Agent hook (blueprint §4.3): run the deterministic tolerance
+   * check over the session's delivered samples, then commit the verdict
+   * (connection-log hash + penalty) ON-CHAIN before settlement. The penalty
+   * is deducted from the PROVIDER share at settle; the buyer is compensated.
+   */
+  async verifyDelivery(incidentId, {
+    promisedCapacity,
+    deliveredSamples,
+    sessionStart = null,
+    sessionEnd = Date.now(),
+    tolerancePercent = undefined
+  }) {
+    const commitments = this.ledger.byIncident(incidentId);
+    const commitment = commitments.find((c) => c.status === "COMMITTED");
+    if (!commitment) {
+      throw new Error(`no COMMITTED voucher for ${incidentId} (have: ${commitments.map((c) => c.status).join(",") || "none"})`);
+    }
+    const check = checkDelivery({
+      promisedCapacity,
+      deliveredSamples,
+      ...(tolerancePercent !== undefined ? { tolerancePercent } : {})
+    });
+    const providerAmount = commitment.providerAmount ?? 0;
+    const penaltyAmount = Math.floor((providerAmount * check.penaltyPct) / 100);
+    const log = connectionLog({
+      incidentId,
+      nonce: commitment.nonce,
+      promisedCapacity,
+      deliveredSamples,
+      sessionStart,
+      sessionEnd,
+      tolerancePercent: check.tolerancePercent,
+      shortfallPct: check.shortfallPct,
+      verdict: check.verdict,
+      penaltyAmount
+    });
+    const logDigest = connectionLogDigest(log);
+    const result = await verifyDeliveryOnChain(this.client, this.keypair, this.config, {
+      nonce: commitment.nonce,
+      logDigest,
+      penalty: penaltyAmount
+    });
+    const connectionLogHash = Buffer.from(logDigest).toString("hex");
+    this.ledger.emit("DELIVERY_VERIFIED", {
+      incidentId,
+      nonce: commitment.nonce,
+      txDigest: result.digest,
+      data: {
+        record: log,
+        connectionLogHash,
+        verdict: check.verdict,
+        penaltyAmount,
+        avgDeliveredMbps: check.avgDeliveredMbps,
+        shortfallPct: check.shortfallPct
+      }
+    });
+    return { status: "VERIFIED", verdict: check.verdict, penaltyAmount, connectionLogHash, connectionLog: log, txDigest: result.digest };
+  }
+
   /** Activation result hook: AVAILABLE → settle; FAILED → refund. */
   async activation({ incidentId, status, recoveredCapacityMbps = null, confirmedAtMs = Date.now() }) {
     const commitments = this.ledger.byIncident(incidentId);
@@ -95,11 +156,14 @@ export class TrustService {
     const voucherLike = { nonce: commitment.nonce };
     if (status === "AVAILABLE") {
       const result = await settleVoucher(this.client, this.keypair, this.config, voucherLike);
+      const penaltyAmount = commitment.penaltyAmount ?? 0;
       this.ledger.emit("SETTLED", {
         incidentId, nonce: commitment.nonce, txDigest: result.digest,
         data: {
           amount: commitment.amount,
           providerAmount: commitment.providerAmount,
+          providerNetAmount: (commitment.providerAmount ?? 0) - penaltyAmount,
+          penaltyAmount,
           platformFee: commitment.platformFee,
           platformAddress: commitment.platformAddress,
           recoveredCapacityMbps,
@@ -107,7 +171,7 @@ export class TrustService {
         }
       });
       await this.postSettlement(incidentId, "SETTLED", commitment.nonce, result.digest);
-      return { status: "SETTLED", txDigest: result.digest };
+      return { status: "SETTLED", txDigest: result.digest, penaltyAmount };
     }
     if (status === "FAILED") {
       const result = await refundVoucher(this.client, this.keypair, this.config, voucherLike);

@@ -238,6 +238,24 @@ export async function refundVoucher(client, keypair, config, voucher) {
   return signAndRun(client, keypair, tx);
 }
 
+/** escrow::verify — record the deterministic delivery verdict on-chain. */
+export async function verifyDeliveryOnChain(client, keypair, config, { nonce, logDigest, penalty }) {
+  const myrc = `${config.packageId}::myrc::MYRC`;
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${config.packageId}::escrow::verify`,
+    typeArguments: [myrc],
+    arguments: [
+      tx.object(config.escrowId),
+      tx.object(config.authorityId),
+      utf8Vector(tx, nonce),
+      rawVector(tx, logDigest),
+      tx.pure.u64(penalty)
+    ]
+  });
+  return signAndRun(client, keypair, tx);
+}
+
 export async function reclaimVoucher(client, keypair, config, nonce) {
   const myrc = `${config.packageId}::myrc::MYRC`;
   const tx = new Transaction();

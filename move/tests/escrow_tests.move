@@ -22,6 +22,7 @@ module netchain::escrow_tests {
     const E_ALREADY_FINALIZED: u64 = 8;
     const E_NOT_EXPIRED: u64 = 9;
     const E_INVALID_FEE: u64 = 10;
+    const E_INVALID_PENALTY: u64 = 11;
 
     // Commitment status mirrors.
     const STATUS_COMMITTED: u8 = 0;
@@ -320,6 +321,83 @@ module netchain::escrow_tests {
                 ctx,
             );
             clock::destroy_for_testing(clock);
+        };
+        finish(scenario, escrow, authority);
+    }
+
+    // Blueprint §4.3 verification loop: the deterministic verdict (connection-
+    // log hash + penalty) is recorded ON-CHAIN, then settle pays three ways —
+    // provider keeps (amount − fee − penalty), platform takes the fee, and the
+    // penalty is compensated back to the BUYER.
+    #[test]
+    fun verify_then_settle_three_way_split() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit(&mut escrow, &mut authority, &clock, ctx);
+            clock::destroy_for_testing(clock);
+        };
+        {
+            let ctx = scenario.ctx();
+            escrow::verify(&mut escrow, &authority, nonce(), buyer_msg(), 20, ctx);
+        };
+        {
+            let ctx = scenario.ctx();
+            escrow::settle(&mut escrow, &authority, nonce(), ctx);
+        };
+        scenario.next_tx(PROVIDER);
+        let provider_payout = scenario.take_from_address<coin::Coin<sui::SUI>>(PROVIDER);
+        assert!(coin::value(&provider_payout) == AMOUNT - FEE - 20, 160);
+        transfer::public_transfer(provider_payout, @0xBEEF);
+        scenario.next_tx(PLATFORM);
+        let platform_payout = scenario.take_from_address<coin::Coin<sui::SUI>>(PLATFORM);
+        assert!(coin::value(&platform_payout) == FEE, 161);
+        transfer::public_transfer(platform_payout, @0xBEEF);
+        // The penalty is compensated to the buyer, never kept by the platform.
+        scenario.next_tx(BUYER);
+        let penalty_payout = scenario.take_from_address<coin::Coin<sui::SUI>>(BUYER);
+        assert!(coin::value(&penalty_payout) == 20, 162);
+        transfer::public_transfer(penalty_payout, @0xBEEF);
+        assert!(escrow::locked_value(&escrow, nonce()) == 0, 163);
+        assert!(escrow::commitment_status(&escrow, nonce()) == STATUS_SETTLED, 164);
+        finish(scenario, escrow, authority);
+    }
+
+    // "Never a full refund" (blueprint §4.3): the provider payout must stay
+    // positive — penalty == full provider share aborts.
+    #[test]
+    #[expected_failure(abort_code = E_INVALID_PENALTY, location = netchain::escrow)]
+    fun verify_penalty_at_full_share_aborts() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit(&mut escrow, &mut authority, &clock, ctx);
+            clock::destroy_for_testing(clock);
+            escrow::verify(&mut escrow, &authority, nonce(), buyer_msg(), AMOUNT - FEE, ctx);
+        };
+        finish(scenario, escrow, authority);
+    }
+
+    // One verdict per nonce: re-verification (rebaked evidence) aborts.
+    #[test]
+    #[expected_failure(abort_code = E_ALREADY_FINALIZED, location = netchain::escrow)]
+    fun verify_twice_aborts() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let (mut escrow, mut authority) = setup(&mut scenario);
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit(&mut escrow, &mut authority, &clock, ctx);
+            clock::destroy_for_testing(clock);
+            escrow::verify(&mut escrow, &authority, nonce(), buyer_msg(), 0, ctx);
+            escrow::verify(&mut escrow, &authority, nonce(), buyer_msg(), 0, ctx);
         };
         finish(scenario, escrow, authority);
     }

@@ -55,13 +55,25 @@ async function main() {
   const service = new TrustService({ ledger, config });
 
   // 1 — happy path
-  console.log("[harness] case 1: happy path (INC-S2 commit → duplicate blocked → settle)");
+  console.log("[harness] case 1: happy path (INC-S2 commit → duplicate blocked → verify → settle)");
   const s2 = load("s2-selected-offer.json");
   const c1 = await service.commit(s2);
   const dup = await service.commit(s2);
+  // Blueprint §4.3 order: the deterministic verdict (connection-log hash +
+  // penalty) is committed ON-CHAIN while the commitment is still COMMITTED —
+  // settle then applies it. Within tolerance here: verdict OK, penalty 0.
+  const v1 = await service.verifyDelivery("INC-S2", {
+    promisedCapacity: s2.selectedProvider.capacityMbps,
+    deliveredSamples: [305, 298, 302, 300]
+  });
   const settle1 = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 200 });
   check("case1: committed once, settled", c1.status === "COMMITTED" && settle1.status === "SETTLED");
   check("case1: duplicate commit blocked (no second tx)", dup.duplicate === true && dup.commitment.txDigest === c1.txDigest);
+  check(
+    "case1: delivery verified within tolerance — verdict OK, penalty 0, log digest on-chain",
+    v1.verdict === "OK" && v1.penaltyAmount === 0 && Boolean(v1.txDigest),
+    `avg ${v1.connectionLog.avg_delivered_mbps}/${s2.selectedProvider.capacityMbps} Mbps`
+  );
   // Blueprint §1.3/§12 split settlement: provider keeps its full quoted price,
   // the platform fee wallet receives the fee charged on top.
   const s2Row = ledger.lookup(s2.agreement.nonce);
@@ -93,11 +105,26 @@ async function main() {
   }
   const fb = await service.commit(load("s7-fallback-selected-offer.json"));
   const fbRetry = await service.commit(load("s7-fallback-selected-offer.json"));
-  const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 300 });
+  // Under-delivery beyond tolerance → proportional penalty on B's payout
+  // (blueprint §4.3: never a full refund), compensated to the buyer.
+  const s7fb = load("s7-fallback-selected-offer.json");
+  const v3 = await service.verifyDelivery("INC-S7", {
+    promisedCapacity: s7fb.selectedProvider.capacityMbps,
+    deliveredSamples: [240, 235, 245]
+  });
+  const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 240 });
   check("case3: B takeover committed + settled", firstAttemptFailed && fb.status === "COMMITTED" && settle3.status === "SETTLED",
     `broken attempt failed: ${firstAttemptFailed}`);
   check("case3: retry after transient failure lands exactly once",
     fbRetry.duplicate === true && fbRetry.commitment.txDigest === fb.txDigest);
+  check(
+    "case3: under-delivery penalty deducted from provider, buyer compensated",
+    v3.verdict === "PENALTY" &&
+      settle3.penaltyAmount > 0 &&
+      s7fb.agreement.amount - settle3.penaltyAmount > 0 &&
+      v3.penaltyAmount === settle3.penaltyAmount,
+    `penalty ${settle3.penaltyAmount} MYRC of ${fb.voucher.providerAmount} provider share`
+  );
 
   // 4 — re-run safety (registry short-circuits BEFORE the chain)
   console.log("[harness] case 4: full re-run — duplicates blocked, zero new transactions");
@@ -133,6 +160,7 @@ async function main() {
   const chainEvents = (await queryEscrowEvents(client, config)).map((e) => e.json ?? e.data ?? e);
   const chainCommitted = chainEvents.filter((e) => e?.idempotent !== undefined); // Committed only
   const chainSettled = chainEvents.filter((e) => e?.provider_amount !== undefined); // Settled only
+  const chainVerified = chainEvents.filter((e) => e?.log_digest !== undefined); // Verified verdicts only
   // gRPC returns vector<u8> fields as base64; the ledger row stores hex.
   const onChainDigestHex = (d) =>
     typeof d === "string" ? Buffer.from(d, "base64").toString("hex") : Buffer.from(d ?? []).toString("hex");
@@ -146,6 +174,11 @@ async function main() {
     "onChain: voucher_digest on-chain matches the ledger row byte for byte",
     Boolean(match),
     match ? `digest ${Buffer.from(match.voucher_digest).toString("hex").slice(0, 12)}…` : "no digest match"
+  );
+  check(
+    "onChain: Verified verdicts readable — at least one connection-log digest + penalty on-chain",
+    chainVerified.length >= 1 && chainVerified.some((e) => Number(e.penalty) > 0),
+    `Verified=${chainVerified.length}, penalties>0: ${chainVerified.filter((e) => Number(e.penalty) > 0).length}`
   );
 
   // incident KPIs from the run

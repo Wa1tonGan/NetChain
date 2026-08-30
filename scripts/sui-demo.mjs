@@ -74,6 +74,18 @@ async function main() {
   const dup = await service.commit(s2);
   console.log(`    duplicate blocked by nonce ${s2.agreement.nonce} — no second lock, no second payment`);
 
+  step("🕵️ ", "Verification Agent: delivered session vs promise (deterministic, no LLM)");
+  const v1 = await service.verifyDelivery("INC-S2", {
+    promisedCapacity: s2.selectedProvider.capacityMbps,
+    deliveredSamples: [305, 298, 302, 300],
+    sessionStart: committedAt,
+    sessionEnd: Date.now()
+  });
+  console.log(
+    `    ✅ avg ${v1.connectionLog.avg_delivered_mbps} / ${s2.selectedProvider.capacityMbps} Mbps — ` +
+    `verdict ${v1.verdict}, penalty ${v1.penaltyAmount} MYRC — connection log on-chain, tx ${v1.txDigest?.slice(0, 12)}…`
+  );
+
   step("⚡ ", "Activation AVAILABLE → split settlement");
   const settle1 = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 200 });
   const ttr = Date.now() - t0;
@@ -88,12 +100,23 @@ async function main() {
   const refund = await service.activation({ incidentId: "INC-S7", status: "FAILED" });
   console.log(`    PROVIDER-A failed → refund ${refund.status}, money back to buyer, no duplicate payment`);
 
-  step("🛟 ", "Fallback takeover: B commits and settles");
-  const fb = await service.commit(load("s7-fallback-selected-offer.json"));
-  const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 300 });
+  step("🛟 ", "Fallback takeover: B commits, under-delivery penalized, settles");
+  const s7fb = load("s7-fallback-selected-offer.json");
+  const fb = await service.commit(s7fb);
+  // B recovered the incident but delivered below promise — the deterministic
+  // check deducts a proportional penalty from B's payout (never a full claw).
+  const v3 = await service.verifyDelivery("INC-S7", {
+    promisedCapacity: s7fb.selectedProvider.capacityMbps,
+    deliveredSamples: [240, 235, 245],
+    sessionStart: committedAt,
+    sessionEnd: Date.now()
+  });
+  const settle3 = await service.activation({ incidentId: "INC-S7", status: "AVAILABLE", recoveredCapacityMbps: 240 });
   console.log(
-    `    ✅ ${fb.status} → ${settle3.status} (provider ${fb.voucher.providerAmount} · fee ${fb.voucher.platformFee} MYRC) — ` +
-    `automatic failover proved (blueprint §6.1 Failover KPI)`
+    `    ✅ ${fb.status} → verdict ${v3.verdict} (avg ${v3.connectionLog.avg_delivered_mbps}/${s7fb.selectedProvider.capacityMbps} Mbps, ` +
+    `penalty ${v3.penaltyAmount} MYRC → buyer) → ${settle3.status} ` +
+    `(provider ${fb.voucher.providerAmount - fb.voucher.platformFee - v3.penaltyAmount} · fee ${fb.voucher.platformFee} MYRC) — ` +
+    `failover + verification proved (blueprint §6.1/§4.3)`
   );
 
   step("📊 ", "Time-to-Recovery (measured, not assumed)");

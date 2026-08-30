@@ -31,6 +31,16 @@ export class EventLedger {
 
   indexEvent(event) {
     if (!event.nonce) return;
+    // Verdict evidence annotates an EXISTING commitment without changing its
+    // lifecycle status (the commitment stays COMMITTED until settle/refund).
+    if (event.type === "DELIVERY_VERIFIED") {
+      const state = this.registry.get(event.nonce);
+      if (state) {
+        state.penaltyAmount = event.data?.penaltyAmount ?? 0;
+        state.connectionLogHash = event.data?.connectionLogHash ?? null;
+      }
+      return;
+    }
     // Only lifecycle events create registry state — VERIFIED alone must not
     // make a nonce look committed (that would block the real commit).
     if (!["COMMITTED", "SETTLED", "REFUNDED", "RECLAIMED"].includes(event.type)) return;
@@ -48,7 +58,12 @@ export class EventLedger {
       state.platformAddress = event.data?.platformAddress ?? null;
       state.voucherDigest = event.data?.voucherDigest ?? null;
     }
-    if (event.type === "SETTLED") { state.status = "SETTLED"; state.settledAtMs = event.ts; }
+    if (event.type === "SETTLED") {
+      state.status = "SETTLED";
+      state.settledAtMs = event.ts;
+      state.providerNetAmount = event.data?.providerNetAmount ?? null;
+      state.penaltyAmount = event.data?.penaltyAmount ?? state.penaltyAmount ?? 0;
+    }
     if (event.type === "REFUNDED") { state.status = "REFUNDED"; state.refundedAtMs = event.ts; }
     if (event.type === "RECLAIMED") { state.status = "RECLAIMED"; state.reclaimedAtMs = event.ts; }
     this.registry.set(event.nonce, state);

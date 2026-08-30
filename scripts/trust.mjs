@@ -34,6 +34,17 @@ async function main() {
       console.log(JSON.stringify(result, null, 2));
       break;
     }
+    case "verify": {
+      // verify <incidentId> <promisedMbps> <sample,sample,…> — deterministic
+      // tolerance check, verdict + connection-log hash committed on-chain.
+      const [incidentId, promised, samples] = args;
+      const result = await service.verifyDelivery(incidentId, {
+        promisedCapacity: Number(promised),
+        deliveredSamples: samples.split(",").map(Number)
+      });
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
     case "settle":
     case "refund": {
       const incidentId = args[0];

@@ -38,6 +38,7 @@ module netchain::escrow {
     const E_ALREADY_FINALIZED: u64 = 8;
     const E_NOT_EXPIRED: u64 = 9;
     const E_INVALID_FEE: u64 = 10;
+    const E_INVALID_PENALTY: u64 = 11;
 
     // ---- commitment status
     const STATUS_COMMITTED: u8 = 0;
@@ -56,6 +57,8 @@ module netchain::escrow {
         provider: address,
         platform: address, // fee recipient; unused for payout when fee == 0
         fee: u64, // platform fee portion of amount; provider receives amount - fee
+        log_digest: vector<u8>, // connection-log hash recorded by verify (empty until verified)
+        penalty: u64, // deduction from the provider payout, compensated to the buyer (0 until verified)
         status: u8,
     }
 
@@ -84,8 +87,15 @@ module netchain::escrow {
     public struct Settled has copy, drop {
         escrow_id: ID, incident_id: vector<u8>, nonce: vector<u8>,
         amount: u64, // total locked
-        provider: address, provider_amount: u64, // amount - fee
+        provider: address, provider_amount: u64, // amount - fee - penalty
         platform: address, platform_fee: u64,
+        penalty: u64, // compensated to the buyer
+    }
+    /// Deterministic delivery verdict recorded on-chain BEFORE settle
+    /// (blueprint §4.3): the connection-log hash is the tamper-evident
+    /// evidence; the penalty feeds the settlement split.
+    public struct Verified has copy, drop {
+        escrow_id: ID, nonce: vector<u8>, log_digest: vector<u8>, penalty: u64,
     }
     public struct Refunded has copy, drop {
         escrow_id: ID, incident_id: vector<u8>, nonce: vector<u8>,
@@ -195,6 +205,8 @@ module netchain::escrow {
             provider,
             platform,
             fee: platform_fee,
+            log_digest: vector::empty(),
+            penalty: 0,
             status: STATUS_COMMITTED,
         });
 
@@ -215,12 +227,43 @@ module netchain::escrow {
         });
     }
 
+    /// Record the deterministic delivery verdict on-chain (blueprint §4.3,
+    /// §12 "Verification proof"): the Verification Agent compares delivered
+    /// samples against the promise OFF-CHAIN (pure algorithm, no LLM), then
+    /// commits the connection-log hash + penalty here as tamper-evident
+    /// evidence. Buyer-gated (AuthorityCap); COMMITTED commitments only;
+    /// exactly one verdict per nonce. "Never a full refund": the penalty is
+    /// deducted from the PROVIDER share only and must leave it positive.
+    public fun verify<T>(
+        escrow: &mut Escrow<T>,
+        _authority: &AuthorityCap,
+        nonce: vector<u8>,
+        log_digest: vector<u8>,
+        penalty: u64,
+        ctx: &mut TxContext,
+    ) {
+        assert!(table::contains(&escrow.commitments, nonce), E_UNKNOWN_COMMITMENT);
+        let c = table::borrow_mut(&mut escrow.commitments, nonce);
+        assert!(c.status == STATUS_COMMITTED, E_ALREADY_FINALIZED);
+        assert!(c.log_digest.is_empty(), E_ALREADY_FINALIZED);
+        assert!(penalty < c.amount - c.fee, E_INVALID_PENALTY);
+        c.log_digest = log_digest;
+        c.penalty = penalty;
+        event::emit(Verified {
+            escrow_id: object::id(escrow),
+            nonce,
+            log_digest,
+            penalty,
+        });
+    }
+
     /// Buyer releases the locked payment after the recovery was verified
-    /// (activation AVAILABLE): provider receives its full quoted price
-    /// (amount − fee), the platform fee address receives the fee
-    /// (blueprint §1.3/§3.3 split settlement). fee == 0 → single payout,
-    /// no zero-value platform coin. Gated by the AuthorityCap so the
-    /// provider cannot self-claim past verification.
+    /// (activation AVAILABLE): provider receives its full quoted price minus
+    /// any verified penalty, the platform fee address receives the fee
+    /// (blueprint §1.3/§3.3 split settlement), and the penalty is compensated
+    /// to the BUYER — the platform never keeps it. fee == 0 → no platform
+    /// payout. Gated by the AuthorityCap so the provider cannot self-claim
+    /// past verification.
     #[allow(lint(unused_object_with_fields))]
     public fun settle<T>(
         escrow: &mut Escrow<T>,
@@ -235,20 +278,23 @@ module netchain::escrow {
         };
         assert!(table::contains(&escrow.locked, nonce), E_UNKNOWN_COMMITMENT);
         let locked = table::remove(&mut escrow.locked, nonce);
-        let (provider, platform, fee, amount, incident_id) = {
+        let (buyer, provider, platform, fee, penalty, amount, incident_id) = {
             let c = table::borrow_mut(&mut escrow.commitments, nonce);
             c.status = STATUS_SETTLED;
-            (c.provider, c.platform, c.fee, c.amount, c.incident_id)
+            (c.buyer, c.provider, c.platform, c.fee, c.penalty, c.amount, c.incident_id)
         };
         let mut payment = coin::from_balance(locked, ctx);
-        let provider_amount = amount - fee;
-        if (fee == 0) {
-            transfer::public_transfer(payment, provider);
-        } else {
+        let provider_amount = amount - fee - penalty;
+        if (penalty > 0) {
+            // Buyer compensation first (blueprint §4.3: 罚金 p 补偿回用户).
+            let compensation = coin::split(&mut payment, penalty, ctx);
+            transfer::public_transfer(compensation, buyer);
+        };
+        if (fee > 0) {
             let fee_coin = coin::split(&mut payment, fee, ctx);
             transfer::public_transfer(fee_coin, platform);
-            transfer::public_transfer(payment, provider);
         };
+        transfer::public_transfer(payment, provider);
         event::emit(Settled {
             escrow_id: object::id(escrow),
             incident_id,
@@ -258,6 +304,7 @@ module netchain::escrow {
             provider_amount,
             platform,
             platform_fee: fee,
+            penalty,
         });
     }
 
