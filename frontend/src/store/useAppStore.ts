@@ -583,7 +583,9 @@ function beginLive(req: RecoveryRequest): Promise<void> {
         `📡 Sent to the agent market as ${res.incidentId}${res.duplicate ? " (replaying a previous run)" : ""}`
       );
       live.closers.push(openIncidentStream(res.incidentId, onGatewayEvent));
-      live.closers.push(openChainStream(onChainRow));
+      // the chain stream opens only after a successful commit (see
+      // adoptSelectedOffer) — without the trust service there is nothing to
+      // listen to, and EventSource would just spam the console with retries
     })
     .catch((err) => {
       sysBubble(`⚠️ Agent market unreachable (${String(err?.message ?? err).slice(0, 80)}) — start it with: node scripts/start-all.mjs`);
@@ -716,7 +718,11 @@ async function adoptSelectedOffer(): Promise<void> {
 
   try {
     const res = await commitSelected(offer);
-    if (live) live.commit = res;
+    if (live) {
+      live.commit = res;
+      // trust service is real — now subscribe to the chain narration
+      live.closers.push(openChainStream(onChainRow));
+    }
   } catch (err) {
     if (!live) return;
     live.chainOffline = true;
