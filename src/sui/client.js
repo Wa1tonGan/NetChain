@@ -56,7 +56,11 @@ function compiledModules(moveDir = "move") {
     .map((f) => Array.from(readFileSync(path.join(dir, f))));
 }
 
-export async function ensureGas(client, keypair, { minBalance = 2_000_000_000n } = {}) {
+export async function ensureGas(client, keypair, {
+  // Tunable for tight-but-sufficient faucet top-ups (e.g. 1 SUI): the whole
+  // testnet proof costs well under 0.5 SUI (publish dominates).
+  minBalance = BigInt(process.env.SUI_MIN_GAS_MIST ?? 2_000_000_000)
+} = {}) {
   const address = keypair.toSuiAddress();
   const { balance } = await client.getBalance({ owner: address });
   const total = BigInt(balance.balance);

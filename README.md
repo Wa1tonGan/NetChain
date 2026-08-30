@@ -39,16 +39,34 @@ zero transactions, and the chain independently rejects replays.
 
 ## Sui objects & addresses (testnet)
 
-Filled after `SUI_NETWORK=testnet npm run sui:setup` — the script prints and
-saves them to `.sui/config.testnet.json`:
+Live on Sui **testnet** — published 2026-08-30, all demo/harness transactions
+verifiable on [SuiScan](https://suiscan.xyz/testnet) (or suivisor.xyz):
 
 | Object | ID |
 | --- | --- |
-| Package (`netchain`) | _pending faucet funding_ |
-| `TreasuryCap<MYRC>` | _pending_ |
-| `Escrow<MYRC>` | _pending_ |
-| `AuthorityCap` | _pending_ |
+| Package (`netchain`) | `0x4b275edf56d5c5d89c4237d7c13953382e9573f64d8708dee1f5d477a4e9ffe8` |
+| `TreasuryCap<MYRC>` | `0x6b58f769ce82c4e0bdb4ea404d12d3a22793ac771ebe36bafc364389d908f521` |
+| `Escrow<MYRC>` (readiness pool) | `0xef10856b0612fe381de6555e3b4421fc755cd39c7c169041f4b87c3efd400849` |
+| `AuthorityCap` | `0xc202c71200f8d4ee6f5d4bc4d213ab1cace1484219ee50505b84177b590fa54e` |
 | Buyer address | `0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24` |
+| Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
+
+### Proof transactions (blueprint §12 acceptance)
+
+| Beat | Tx digest | Proof |
+| --- | --- | --- |
+| Publish package | `55vNBKV4Nphnz37tPjpjRRpFYkBtvaaGt2DS88x4sSXj` | fee-split escrow live |
+| Readiness (mint + escrow + authority, 1 PTB) | `g1erABT8vinTCg4GxK7pWEpZCsbqS8LUAUyu22fETNN` | trust prepared before incidents |
+| Commit INC-S2 (dual on-chain sig verify, 63 MYRC locked = 60 + 3 fee) | `5NXGsNFDDAn9y9s17EEfapeSh4yYnZeqXue8gkrXVGvz` | nonce `INC-S2:PROVIDER-B:001` |
+| Duplicate replay blocked (0 new txs) | — (registry short-circuit) | idempotency |
+| **Split settlement** (60 → provider · 3 → platform fee wallet) | `4ri9GsiktNo8p6zpZpnG2cTUqVd5hi5iJEDnMqtBRAYs` | §12 split-settlement row |
+| Emergency refund (provider failed) | `BZtEYmjSf7V23Kkn5ttrpWUfAXS4irHTGE1k64bqzfco` | §6-F graceful refund |
+| Failover takeover commit + settle (105 + 5 fee) | `FCSpoVG9mncpFwZ8gEBEWyzikhVNZD2EwAgtzX1oRNPL` / `3HTL8rXfYeP6Ji5uvyxKxXF5EPdG1o7kiK8vMAoPW756` | §6.1 Failover KPI |
+
+Reliability harness: **11/11 checks on testnet** (incl. on-chain event
+read-back proving the ledger `voucherDigest` matches the on-chain
+`Committed` event byte-for-byte). Total gas for the entire testnet proof:
+**0.104 SUI** (~US$0.3) — publish + setup + 13 demo/harness transactions.
 
 Localnet addresses: `.sui/config.localnet.json`.
 
@@ -62,8 +80,9 @@ npm install
 # Persons 1+2 contracts + Person 3 offline tests
 npm test
 
-# Move unit tests (13): idempotent commit, replay abort, bad signature,
-# expiry, settle-twice, refund, permissionless reclaim, authority limits
+# Move unit tests (16): idempotent commit, replay abort, bad signature,
+# expiry, settle-twice, refund, permissionless reclaim, authority limits,
+# fee-split settlement (provider + platform), fee guards
 sui move test --path move
 
 # One command, full story (localnet): readiness → on-chain commit →
