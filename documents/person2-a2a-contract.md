@@ -209,6 +209,12 @@ node scripts/start-all.mjs --down=PROVIDER-B   # boot with a provider pre-killed
   and `platformAddress` (env `PLATFORM_ADDRESS`). The schema enforces the
   arithmetic, so a skimmed fee fails validation. Fixtures were regenerated
   (S2: 60 plan + 3 fee = 63 escrowed).
+- **Duration first-class**: Provider Offers now carry `durationMinutes` —
+  the length of service they cover, mirroring the request's
+  `constraints.durationMinutes` they answer (blueprint: "Duration as a
+  first-class field in intents, provider plans and offers"). The evaluator
+  rejects offers covering fewer minutes than requested
+  (`INSUFFICIENT_DURATION`).
 - **Nonce sequence**: attempt-derived — `INC-*:PROVIDER-*:001` for the first
   activation, `:002` when the first provider's activation fails and the next
   ordered offer takes over (msg-to-person3 §"4 defaults", demo beat "The

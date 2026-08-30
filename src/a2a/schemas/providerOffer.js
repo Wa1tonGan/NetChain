@@ -20,6 +20,10 @@ export const providerOfferSchema = z
     providerId: z.string().min(1),
     available: z.boolean(),
     capacityMbps: z.number().finite().positive(),
+    // Duration is first-class (blueprint: "Duration as a first-class field in
+    // intents, provider plans and offers"): every offer quotes the length of
+    // service it covers, mirroring the request's durationMinutes it answers.
+    durationMinutes: z.number().int().positive(),
     expectedActivationClass: z.enum(activationClassValues),
     expectedActivationTimeMs: z.number().int().positive(),
     activationLane: z.enum(activationLaneValues),

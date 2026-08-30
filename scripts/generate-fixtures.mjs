@@ -77,6 +77,7 @@ function buildOffer(profile, request, offerExpiry) {
     providerId: profile.providerId,
     available: true,
     capacityMbps,
+    durationMinutes: request.durationMinutes,
     expectedActivationClass: lane.class,
     expectedActivationTimeMs: lane.timeMs,
     activationLane: lane.lane,

@@ -4,6 +4,7 @@
   "providerId": "PROVIDER-A",
   "available": true,
   "capacityMbps": 400,
+  "durationMinutes": 60,
   "expectedActivationClass": "MEDIUM",
   "expectedActivationTimeMs": 8000,
   "activationLane": "STANDARD",
@@ -16,6 +17,6 @@
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-a-demo",
-    "value": "uhI0/xj3mPaqIidm9IxnHCle8YlYdkz9jrIVUVsG1QQFFIn1ELqjXBvcsJp979ZGp4LC4GVIL5tsCC5gJX4oCg=="
+    "value": "teKwgeOD+A2vsVuZlQgTFNZjAKEYmRoLW8KT5oGobz8PuX4AWlfvQYTAxhJO3z4urqPbUHqZFDDawiZDYVMeBQ=="
   }
 }

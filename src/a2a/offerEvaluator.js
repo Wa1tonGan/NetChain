@@ -27,6 +27,15 @@ export function evaluateOffer(offer, request) {
     );
   }
 
+  if (offer.durationMinutes < request.durationMinutes) {
+    reasons.push(
+      reason(
+        "INSUFFICIENT_DURATION",
+        `offered ${offer.durationMinutes} min < ${request.durationMinutes} min required`
+      )
+    );
+  }
+
   if (offer.latencyMs > request.requiredProfile.maxLatencyMs) {
     reasons.push(
       reason(

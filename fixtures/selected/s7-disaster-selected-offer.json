@@ -32,7 +32,7 @@
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-a-demo",
-      "value": "B/ViZwl8I8Y0r9FcuQJZUiXg0GbXIBVg2osxgjK9IYxRxWDeNmUrKh66Kevnr4xCphQgtGfeZZXYPPuHKWnqBA=="
+      "value": "KFKlr9heRTuXsHtOX42S52Agvm5yqN8nLA5k1dxDJI620R1cZ6T8bV8ousmaqzJHQD0K5ZJ1jotvJ6jP3B6vBA=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
