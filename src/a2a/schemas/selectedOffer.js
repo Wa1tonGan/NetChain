@@ -27,6 +27,8 @@ import { signatureSchema } from "./providerOffer.js";
 export const rejectionReasonValues = [
   "PROVIDER_UNAVAILABLE",
   "RESPONSE_TIMEOUT",
+  "OFFER_INVALID",
+  "TAMPERED_OFFER",
   "INSUFFICIENT_CAPACITY",
   "LATENCY_EXCEEDED",
   "PACKET_LOSS_EXCEEDED",
@@ -35,7 +37,8 @@ export const rejectionReasonValues = [
   "ACTIVATION_TOO_SLOW",
   "OFFER_EXPIRED",
   "RANKED_BELOW",
-  "SUPERSEDED_BY_FIRST_VIABLE"
+  "SUPERSEDED_BY_FIRST_VIABLE",
+  "ACTIVATION_FAILED"
 ];
 
 const selectedProviderSchema = z
@@ -91,7 +94,10 @@ export const selectedOfferSchema = z
     timing: z
       .object({
         tDetect: z.number().int().nonnegative(),
-        tDecide: z.number().int().nonnegative()
+        tDecide: z.number().int().nonnegative(),
+        // Filled in by the activation runtime (P4); absent in M1 fixtures.
+        tActivate: z.number().int().nonnegative().optional(),
+        tRecover: z.number().int().nonnegative().optional()
       })
       .strict(),
     // Filled in later by the activation runtime (M4). Absent at selection.
