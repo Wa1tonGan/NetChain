@@ -30,6 +30,9 @@ import { EventLedger } from "../src/sui/events.js";
 import { TrustService } from "../src/sui/service.js";
 import { incidentKpis } from "../src/sui/ttr.js";
 import { formatAmount } from "../src/sui/stablecoin.js";
+import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
+import { gaslessSend, sendCoin, gasUsedTotal } from "../src/sui/gasless.js";
+import { loadOrCreateSponsor, sponsoredDeposit } from "../src/sui/sponsored.js";
 
 const F = (name) => `fixtures/sui/${name}`;
 const load = (name) => JSON.parse(readFileSync(F(name), "utf8"));
@@ -50,10 +53,19 @@ async function main() {
 
   step("🛡️ ", `Readiness (${net}) — package ${baseConfig.packageId.slice(0, 12)}…`);
   execSync("npm run --silent sui:fixtures", { stdio: "inherit" });
-  const { escrowId, authorityId } = await setupEscrow(client, keypair, baseConfig);
-  await waitForObject(client, escrowId);
+  // SUI_REUSE_POOL=1 reuses the setup escrow instead of funding a fresh pool
+  // (conserves scarce testnet stablecoin; replay safety comes from nonces).
+  let escrowId, authorityId, stablecoin;
+  if (process.env.SUI_REUSE_POOL === "1") {
+    ({ escrowId, authorityId, stablecoin } = baseConfig);
+    if (!escrowId) throw new Error("SUI_REUSE_POOL=1 but config has no escrowId — run sui:setup");
+    console.log("    reusing the readiness pool (SUI_REUSE_POOL=1)");
+  } else {
+    ({ escrowId, authorityId, stablecoin } = await setupEscrow(client, keypair, baseConfig));
+    await waitForObject(client, escrowId);
+  }
   const config = { ...baseConfig, escrowId, authorityId };
-  const st = baseConfig.stablecoin ?? { name: "MYRC", currency: "MYR", decimals: 0, fund: 2_000, maxPerVoucher: 500 };
+  const st = stablecoin ?? baseConfig.stablecoin ?? { name: "MYRC", currency: "MYR", decimals: 0, fund: 2_000, maxPerVoucher: 500 };
   const fmt = (base) => formatAmount(base, st.decimals);
   console.log(`    escrow ${escrowId.slice(0, 18)}… funded (fresh pool per run — replay-safe)`);
   console.log(`    ${st.name} pool ${fmt(st.fund)} · authority max/voucher ${fmt(st.maxPerVoucher)} (scoped, pre-incident)`);
@@ -121,6 +133,63 @@ async function main() {
     `(provider ${fmt(fb.voucher.providerAmount - fb.voucher.platformFee - v3.penaltyAmount)} · fee ${fmt(fb.voucher.platformFee)} ${st.currency}) — ` +
     `failover + verification proved (blueprint §6.1/§4.3)`
   );
+
+  step("💸 ", "Gasless USDC payment: sender holds ZERO SUI (Sui Track 01)");
+  if (st.type && net === "testnet") {
+    // A fresh customer wallet is funded with a sliver of USDC — and NO SUI —
+    // then pays the platform wallet. Allowlisted-stablecoin transfers run at
+    // gasPrice 0 (docs: gasless-stablecoin-transfers).
+    const customer = new Ed25519Keypair();
+    await sendCoin(client, keypair, {
+      coinType: st.type, recipient: customer.toSuiAddress(), amountBase: 20_000
+    });
+    const g = await gaslessSend(client, customer, {
+      coinType: st.type,
+      recipient: process.env.PLATFORM_ADDRESS,
+      amountBase: 10_000 // protocol minimum 0.01
+    });
+    const gas = gasUsedTotal(g);
+    console.log(
+      `    ✅ ${fmt(10_000)} ${st.currency} → platform wallet, gas charged: ${gas === 0n ? "0 (gasless proven)" : String(gas)} — ` +
+      `tx ${g.digest?.slice(0, 12)}…`
+    );
+    ledger.emit("GASLESS_SENT", {
+      incidentId: null,
+      nonce: null,
+      txDigest: g.digest,
+      data: { amount: 10_000, sender: customer.toSuiAddress(), gasCharged: String(gas ?? "n/a") }
+    });
+  } else {
+    console.log(`    skipped — gasless transfers apply to the real allowlisted stablecoin (testnet USDC)`);
+  }
+
+  step("🤝 ", "Sponsored top-up: customer signs, PLATFORM pays gas (shared pool)");
+  if (st.type && net === "testnet") {
+    const sponsor = await loadOrCreateSponsor(client, keypair, net);
+    const customer2 = new Ed25519Keypair();
+    await sendCoin(client, keypair, {
+      coinType: st.type, recipient: customer2.toSuiAddress(), amountBase: 30_000
+    });
+    const s = await sponsoredDeposit({
+      client,
+      customerKeypair: customer2,
+      sponsorKeypair: sponsor.keypair,
+      config,
+      amountBase: 20_000
+    });
+    console.log(
+      `    ✅ ${fmt(20_000)} ${st.currency} deposited into the shared pool — customer had no SUI, ` +
+      `gas paid by sponsor ${sponsor.address.slice(0, 12)}… — tx ${s.digest?.slice(0, 12)}…`
+    );
+    ledger.emit("SPONSORED_TOPUP", {
+      incidentId: null,
+      nonce: null,
+      txDigest: s.digest,
+      data: { amount: 20_000, customer: customer2.toSuiAddress(), sponsor: sponsor.address }
+    });
+  } else {
+    console.log(`    skipped — sponsorship demo runs on testnet USDC (localnet MYRC flow unchanged)`);
+  }
 
   step("📊 ", "Time-to-Recovery (measured, not assumed)");
   const kpis = incidentKpis(s2, {

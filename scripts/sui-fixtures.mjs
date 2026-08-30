@@ -141,6 +141,9 @@ function generate(label, scenarioFile, { exclude = [], intentOverride = null } =
     : JSON.parse(readFileSync(path.join(root, "scenarios", scenarioFile), "utf8"));
   const request = buildProviderRequest(intent);
   if (!request) throw new Error(`${scenarioFile} needs no external recovery`);
+  // The request builder hardcodes MYR (P2's documented MVP assumption); on
+  // testnet the offers are quoted in the real stablecoin's currency.
+  if (NETWORK === "testnet") request.currency = TESTNET_CURRENCY;
 
   const profiles = ["PROVIDER-A", "PROVIDER-B", "PROVIDER-C"]
     .filter((id) => !exclude.includes(id))

@@ -29,6 +29,14 @@ const PATHS = {
 
 const load = (name) => JSON.parse(readFileSync(path.join("fixtures/sui", name), "utf8"));
 
+// Fixture stability for the offline suite: the last on-chain run may have
+// left USD fixtures on disk (testnet price-scaled). The offline suite always
+// tests the localnet MYRC path, so regenerate MYRC fixtures before any read.
+execSync("node scripts/sui-fixtures.mjs", {
+  stdio: "ignore",
+  env: { ...process.env, SUI_NETWORK: "localnet" }
+});
+
 describe("sui/keys — fixture PEM ↔ Sui identity", () => {
   it("derives the known buyer Sui address from the fixture key", () => {
     const pem = readFileSync("fixtures/keys/buyer.public.pem", "utf8");

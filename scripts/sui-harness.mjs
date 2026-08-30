@@ -44,11 +44,11 @@ async function main() {
   if (!baseConfig?.packageId) throw new Error("no config — run npm run sui:setup first");
   const client = makeClient(net);
   const keypair = buyerKeypair();
-  const { escrowId, authorityId } = await setupEscrow(client, keypair, baseConfig);
+  const { escrowId, authorityId, stablecoin } = await setupEscrow(client, keypair, baseConfig);
   await waitForObject(client, escrowId);
   await waitForObject(client, authorityId);
   const config = { ...baseConfig, escrowId, authorityId };
-  const st = baseConfig.stablecoin ?? { name: "MYRC", decimals: 0 };
+  const st = stablecoin ?? baseConfig.stablecoin ?? { name: "MYRC", decimals: 0 };
   const fmt = (base) => formatAmount(base, st.decimals);
   console.log(`[harness] harness escrow=${escrowId.slice(0, 12)}… authority=${authorityId.slice(0, 12)}…`);
 
@@ -124,7 +124,7 @@ async function main() {
     "case3: under-delivery penalty deducted from provider, buyer compensated",
     v3.verdict === "PENALTY" &&
       settle3.penaltyAmount > 0 &&
-      s7fb.agreement.amount - settle3.penaltyAmount > 0 &&
+      fb.voucher.providerAmount - settle3.penaltyAmount > 0 &&
       v3.penaltyAmount === settle3.penaltyAmount,
     `penalty ${fmt(settle3.penaltyAmount)} ${st.name} of ${fmt(fb.voucher.providerAmount)} provider share`
   );

@@ -12,10 +12,10 @@
   "reliabilityScore": 0.98,
   "latencyMs": 120,
   "packetLossPercent": 1.2,
-  "offerExpiry": "2026-08-30T11:16:27.384Z",
+  "offerExpiry": "2026-08-30T12:01:26.854Z",
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-c-demo",
-    "value": "2NMXrVECgQmRZ93Ph5+cCvJ6zdCibMRK9SE3GbkvUtHFwHA8CJ+NTvxjIMN2V/onufPBllxz3KSE8Ei6I6cHCg=="
+    "value": "y3FiI1ff52yVaFF74xtS80EHRmFJ97ZnR39eE/mW35xnzlU3f7Z42AE4BI6Ap3F4kpejQTCdJMSi6+OTrILVAw=="
   }
 }

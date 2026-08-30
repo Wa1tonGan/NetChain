@@ -37,41 +37,50 @@ Duplicate-safety (blueprint §6.1) is two-layer: a service-side nonce registry
 (rebuilt from an append-only JSONL ledger on restart) blocks duplicates with
 zero transactions, and the chain independently rejects replays.
 
-## Sui objects & addresses (testnet)
+## Sui objects & addresses (testnet) — TWO-TRACK BUILD
 
-Live on Sui **testnet** — published 2026-08-30 (fee-split + verification
-verdict build), all demo/harness transactions verifiable on
-[SuiScan](https://suiscan.xyz/testnet) (or suivisor.xyz):
+Live on Sui **testnet** (2026-08-30): the escrow now holds **real Circle USDC**
+(Sui Track 01 — Payments & Stablecoins), and the agent-commerce trust layer
+serves Sui Track 02 (AI × SUI). All transactions verifiable on
+[SuiScan](https://suiscan.xyz/testnet):
 
 | Object | ID |
 | --- | --- |
-| Package (`netchain`) | `0x0cef837f0b24aff1dd71a68029b9958c64f811ab0cc1d2ce9571d143180672cd` |
-| `TreasuryCap<MYRC>` | `0x9dd1c876ec495e81c77e9614f78eb2caa0b2bdf73181d66b005f7d67b4c809b5` |
-| `Escrow<MYRC>` (readiness pool) | `0xd0eea9acd78af0b564056edddd464260aa92eb7e54ffbeed3fc152dc423e64a5` |
-| `AuthorityCap` | `0x1ba8951528c97c691473cabdee99e36c4c672dd17b5792c5972004be985ba3d3` |
+| Package (`netchain`) | `0xa648e1fbb1ae8f04ce6c3b0790c36f2f0a1a1f6e59368946f76f37a0020235bf` |
+| USDC coin type (Circle, allowlisted for gasless) | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |
+| Shared `Escrow<USDC>` pool | `0xac38c19b44ff705426c917ce57f83e5ec2ee905efcf8e5af38202bf654887c9f` |
+| `AuthorityCap` | `0x1496f81239e74b2c891027a2855a7b02b2def8a530733dee452ee2e11133092f` |
 | Buyer address | `0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24` |
 | Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
 
-### Proof transactions (blueprint §12 acceptance)
+### Proof transactions (blueprint §12 + Sui tracks)
 
 | Beat | Tx digest | Proof |
 | --- | --- | --- |
-| Publish package | `EGn2vwnwpQmBzngCv2tGWi1b8ERKkW982Lz1V5yxdmzz` | fee-split + verification verdict escrow live |
-| Readiness (mint + escrow + authority, 1 PTB) | `2WmpuF5gShtwk2scBBvsuYS4hKPdeZ9AhUHxSBmtqjtc` | trust prepared before incidents |
-| Commit INC-S2 (dual on-chain sig verify, 63 MYRC locked = 60 + 3 fee) | `3ssNTUBU83Gwdmyf2jdPkh1KFJ4un8ihKs4Voxqhz24t` | nonce `INC-S2:PROVIDER-B:001` |
+| Publish (fee-split + verification escrow) | `JgFF81xqkGkocC8rxseRZwyS7z2GXKgyjD74bZ9aQVD` | asset-agnostic `Escrow<T>` runs REAL USDC |
+| Readiness (USDC pool + authority, 1 PTB) | `FhH81PSXa2tXQVHtnZXxX9nZLqq9cEEh977onBio2xfK` | trust prepared before incidents |
+| Commit INC-S2 (dual on-chain sig verify, 1.575 USDC = 1.5 + 0.075 fee) | `GrsvnTZSA99YfZPa4QHqSm7XyfMXDADzBSAUXuX4o9XM` | nonce `INC-S2:PROVIDER-B:001` |
 | Duplicate replay blocked (0 new txs) | — (registry short-circuit) | idempotency |
-| **Verification Agent: connection log on-chain** (avg 301.25/300 Mbps → OK) | `4ddZaC8vnvnoSfqr3zNXWXTuNo513CiUkXtBBbcDK4jR` | §4.3/§12 verdict evidence |
-| **Split settlement** (60 → provider · 3 → platform fee wallet) | `8QeWcPfJTHAziZiNT9Y8nRLhCgoT2aPf6ji7x4T8QysF` | §12 split-settlement row |
-| Emergency refund (provider failed) | `2ezYmGR13J1bLnetuSNQYq1Ppp496ppWXvyXsDamwejF` | §6-F graceful refund |
-| Failover commit + **under-delivery verdict** (avg 240/300 → PENALTY) | `8NiXmc8kNRsbdpr5pjuqx7yYDfvcWw99jzgzjDvU6bdK` / `4cm6tMe3515R3E8t1WZNFFEnRDHMt6fwWDaekAkenNFb` | §6.1 Failover + §4.3 penalty |
-| Penalized split settlement (90 → provider · 10 → buyer · 5 → platform) | `ELFMiSp2wZhdLPgY5t3sAypfWiBZwr5557kVKcTrLgP1` | §12 verification-proof row |
+| Verification Agent: connection log on-chain (301.25/300 Mbps → OK) | `2qKLdyeEjqbyJ4Dr4RGkvyMxRcuy3dXtYLm1px9kDtAk` | §4.3/§12 verdict evidence |
+| Split settlement (1.5 → provider · 0.075 → platform fee wallet) | `A3JMupTo8FaLGx3iP7khgWaazAYtSuuHUeDR5KvP1Fiv` | §12 split-settlement row |
+| Emergency refund → pool replenished | `4RQkjX1uMjeiX7eJAsQwK3HzqPFeEsXgSodvJDcB2pKZ` | §6-F graceful refund |
+| Failover commit + under-delivery verdict (240/300 Mbps → PENALTY) | `4o95S7TcT6v2NZ9Yewk2offGUx9GuH4R96DLyMSgir5Z` / `GzmujG7yHhVj4PbuhgRv6AnEf527vKDBvmc2ZYuUqnNV` | §6.1 Failover + §4.3 |
+| Penalized settlement (2.2355 → provider · 0.263 → buyer · 0.1315 → platform) | `7js57vfjbJw46UhvzCL1JLBJgQUceeDrtMJxxQ5hbRmX` | §12 verification-proof row |
 
-Reliability harness: **14/14 checks on testnet** (incl. on-chain event
-read-back proving ledger `voucherDigest` matches the on-chain `Committed`
-event byte-for-byte, and Verified verdicts readable with penalties > 0).
-Platform fee wallet holds **16 MYRC** collected fees (4 settlements, verified
-on-chain). Total gas for the two full testnet proofs (publish + setup + 26
-demo/harness transactions): **0.218 SUI** (~US$0.6).
+### Payment rails — Sui Track 01 features (real USDC, zero-SUI senders)
+
+| Rail | Tx digest | Proof |
+| --- | --- | --- |
+| **Gasless transfer** — sender held ZERO SUI, gas charged 0 (`balance::send_funds`, allowlisted USDC) | `6wKn5fqyNnZnCAwyLprhA5C3QQSJCrTjpxAtJiZoigK2` | docs.sui.io gasless-stablecoin-transfers |
+| **Sponsored deposit** — customer signed, platform gas wallet paid gas, into the shared pool | `6n7ad4R79kj8qdJQ3zgAZ9M2ufRtXj3m6dZk96X3dNcb` | sponsored-transaction flow, two-identity signing |
+
+Reliability harness: **13/13 checks on testnet** (USDC); the offline suite
+covers the MYRC localnet path — **19/19 Move tests, 64/64 JS tests**. On-chain
+event read-back proves ledger `voucherDigest` ↔ `Committed` event
+byte-for-byte, and Verified verdicts (with penalties) are readable from the
+node. Testnet fixture amounts are price-scaled (×0.025) to fit faucet drips —
+`SUI_TESTNET_PRICE_SCALE` / `STABLECOIN_ESCROW_FUND` scale them up with
+faucet balance. Localnet runs the identical contracts on the MYRC demo coin.
 
 Localnet addresses: `.sui/config.localnet.json`.
 
@@ -85,9 +94,9 @@ npm install
 # Persons 1+2 contracts + Person 3 offline tests
 npm test
 
-# Move unit tests (16): idempotent commit, replay abort, bad signature,
-# expiry, settle-twice, refund, permissionless reclaim, authority limits,
-# fee-split settlement (provider + platform), fee guards
+# Move unit tests (19): idempotent commit, replay abort, bad signature,
+# expiry, settle-twice, refund (joins pool), permissionless reclaim, authority limits,
+# fee-split settlement, fee guards, verification verdict + penalty splits
 sui move test --path move
 
 # One command, full story (localnet): readiness → on-chain commit →

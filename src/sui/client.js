@@ -155,17 +155,23 @@ export async function setupEscrow(client, keypair, config, {
       arguments: [tx.object(config.treasuryId), tx.pure.u64(fundBase)]
     });
   } else {
-    // Testnet: real stablecoin — gather the buyer's faucet coins, split the fund.
-    const { objects } = await client.listCoins({ owner: buyer, coinType: asset.type });
-    if (!objects?.length) {
+    // Testnet: real stablecoin — no treasury. tx.balance sources from the
+    // buyer's ADDRESS BALANCE and/or owned coins (faucet coins may land as
+    // either), so both forms fund the pool. Coin<T> for escrow::deposit.
+    const { balance } = await client.getBalance({ owner: buyer, coinType: asset.type });
+    if (Number(balance?.balance ?? 0) < fundBase) {
       throw new Error(
-        `no ${asset.name} coins owned by ${buyer} — request testnet ${asset.name} from faucet.circle.com first`
+        `insufficient ${asset.name} for the pool: need ${fundBase} base units, buyer holds ` +
+        `${balance?.balance ?? 0}. Request testnet ${asset.name} at faucet.circle.com ` +
+        `(coins may land as address balances — tx.balance uses both) or lower STABLECOIN_ESCROW_FUND.`
       );
     }
-    const primary = tx.object(objects[0].objectId);
-    const rest = objects.slice(1).map((c) => tx.object(c.objectId));
-    const merged = rest.length ? tx.mergeCoins(primary, rest) : primary;
-    funding = tx.splitCoins(merged, [tx.pure.u64(fundBase)])[0];
+    const fundingBalance = tx.balance({ type: asset.type, balance: String(fundBase) });
+    funding = tx.moveCall({
+      target: "0x2::coin::from_balance",
+      typeArguments: [asset.type],
+      arguments: [fundingBalance]
+    });
   }
   const escrow = tx.moveCall({
     target: `${config.packageId}::escrow::new`,
