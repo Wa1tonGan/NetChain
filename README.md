@@ -39,15 +39,16 @@ zero transactions, and the chain independently rejects replays.
 
 ## Sui objects & addresses (testnet)
 
-Live on Sui **testnet** — published 2026-08-30, all demo/harness transactions
-verifiable on [SuiScan](https://suiscan.xyz/testnet) (or suivisor.xyz):
+Live on Sui **testnet** — published 2026-08-30 (fee-split + verification
+verdict build), all demo/harness transactions verifiable on
+[SuiScan](https://suiscan.xyz/testnet) (or suivisor.xyz):
 
 | Object | ID |
 | --- | --- |
-| Package (`netchain`) | `0x4b275edf56d5c5d89c4237d7c13953382e9573f64d8708dee1f5d477a4e9ffe8` |
-| `TreasuryCap<MYRC>` | `0x6b58f769ce82c4e0bdb4ea404d12d3a22793ac771ebe36bafc364389d908f521` |
-| `Escrow<MYRC>` (readiness pool) | `0xef10856b0612fe381de6555e3b4421fc755cd39c7c169041f4b87c3efd400849` |
-| `AuthorityCap` | `0xc202c71200f8d4ee6f5d4bc4d213ab1cace1484219ee50505b84177b590fa54e` |
+| Package (`netchain`) | `0x0cef837f0b24aff1dd71a68029b9958c64f811ab0cc1d2ce9571d143180672cd` |
+| `TreasuryCap<MYRC>` | `0x9dd1c876ec495e81c77e9614f78eb2caa0b2bdf73181d66b005f7d67b4c809b5` |
+| `Escrow<MYRC>` (readiness pool) | `0xd0eea9acd78af0b564056edddd464260aa92eb7e54ffbeed3fc152dc423e64a5` |
+| `AuthorityCap` | `0x1ba8951528c97c691473cabdee99e36c4c672dd17b5792c5972004be985ba3d3` |
 | Buyer address | `0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24` |
 | Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
 
@@ -55,18 +56,22 @@ verifiable on [SuiScan](https://suiscan.xyz/testnet) (or suivisor.xyz):
 
 | Beat | Tx digest | Proof |
 | --- | --- | --- |
-| Publish package | `55vNBKV4Nphnz37tPjpjRRpFYkBtvaaGt2DS88x4sSXj` | fee-split escrow live |
-| Readiness (mint + escrow + authority, 1 PTB) | `g1erABT8vinTCg4GxK7pWEpZCsbqS8LUAUyu22fETNN` | trust prepared before incidents |
-| Commit INC-S2 (dual on-chain sig verify, 63 MYRC locked = 60 + 3 fee) | `5NXGsNFDDAn9y9s17EEfapeSh4yYnZeqXue8gkrXVGvz` | nonce `INC-S2:PROVIDER-B:001` |
+| Publish package | `EGn2vwnwpQmBzngCv2tGWi1b8ERKkW982Lz1V5yxdmzz` | fee-split + verification verdict escrow live |
+| Readiness (mint + escrow + authority, 1 PTB) | `2WmpuF5gShtwk2scBBvsuYS4hKPdeZ9AhUHxSBmtqjtc` | trust prepared before incidents |
+| Commit INC-S2 (dual on-chain sig verify, 63 MYRC locked = 60 + 3 fee) | `3ssNTUBU83Gwdmyf2jdPkh1KFJ4un8ihKs4Voxqhz24t` | nonce `INC-S2:PROVIDER-B:001` |
 | Duplicate replay blocked (0 new txs) | — (registry short-circuit) | idempotency |
-| **Split settlement** (60 → provider · 3 → platform fee wallet) | `4ri9GsiktNo8p6zpZpnG2cTUqVd5hi5iJEDnMqtBRAYs` | §12 split-settlement row |
-| Emergency refund (provider failed) | `BZtEYmjSf7V23Kkn5ttrpWUfAXS4irHTGE1k64bqzfco` | §6-F graceful refund |
-| Failover takeover commit + settle (105 + 5 fee) | `FCSpoVG9mncpFwZ8gEBEWyzikhVNZD2EwAgtzX1oRNPL` / `3HTL8rXfYeP6Ji5uvyxKxXF5EPdG1o7kiK8vMAoPW756` | §6.1 Failover KPI |
+| **Verification Agent: connection log on-chain** (avg 301.25/300 Mbps → OK) | `4ddZaC8vnvnoSfqr3zNXWXTuNo513CiUkXtBBbcDK4jR` | §4.3/§12 verdict evidence |
+| **Split settlement** (60 → provider · 3 → platform fee wallet) | `8QeWcPfJTHAziZiNT9Y8nRLhCgoT2aPf6ji7x4T8QysF` | §12 split-settlement row |
+| Emergency refund (provider failed) | `2ezYmGR13J1bLnetuSNQYq1Ppp496ppWXvyXsDamwejF` | §6-F graceful refund |
+| Failover commit + **under-delivery verdict** (avg 240/300 → PENALTY) | `8NiXmc8kNRsbdpr5pjuqx7yYDfvcWw99jzgzjDvU6bdK` / `4cm6tMe3515R3E8t1WZNFFEnRDHMt6fwWDaekAkenNFb` | §6.1 Failover + §4.3 penalty |
+| Penalized split settlement (90 → provider · 10 → buyer · 5 → platform) | `ELFMiSp2wZhdLPgY5t3sAypfWiBZwr5557kVKcTrLgP1` | §12 verification-proof row |
 
-Reliability harness: **11/11 checks on testnet** (incl. on-chain event
-read-back proving the ledger `voucherDigest` matches the on-chain
-`Committed` event byte-for-byte). Total gas for the entire testnet proof:
-**0.104 SUI** (~US$0.3) — publish + setup + 13 demo/harness transactions.
+Reliability harness: **14/14 checks on testnet** (incl. on-chain event
+read-back proving ledger `voucherDigest` matches the on-chain `Committed`
+event byte-for-byte, and Verified verdicts readable with penalties > 0).
+Platform fee wallet holds **16 MYRC** collected fees (4 settlements, verified
+on-chain). Total gas for the two full testnet proofs (publish + setup + 26
+demo/harness transactions): **0.218 SUI** (~US$0.6).
 
 Localnet addresses: `.sui/config.localnet.json`.
 
