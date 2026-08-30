@@ -1,0 +1,54 @@
+{
+  "incidentId": "INC-S7",
+  "customerId": "STADIUM-001",
+  "selectionMode": "EMERGENCY",
+  "selectedProvider": {
+    "providerId": "PROVIDER-B",
+    "brand": "KilatLink FWA",
+    "offerId": "OFF-INC-S7-PROVIDER-B",
+    "capacityMbps": 300,
+    "expectedActivationClass": "FAST",
+    "expectedActivationTimeMs": 1000,
+    "activationLane": "P0_FAST",
+    "price": 105,
+    "currency": "MYR",
+    "reliabilityScore": 0.999,
+    "latencyMs": 35,
+    "packetLossPercent": 0.5
+  },
+  "agreement": {
+    "amount": 105,
+    "currency": "MYR",
+    "durationMinutes": 120,
+    "nonce": "INC-S7:PROVIDER-B:001",
+    "expiry": "2026-08-30T09:02:41.552Z"
+  },
+  "signatures": {
+    "offerSignature": {
+      "algorithm": "ed25519",
+      "keyId": "provider-b-demo",
+      "value": "+3Xb0Y1QRzQW56h2QNN+U3pV4g5/e6PFxkj87etKIu/cBNAAnmtXdy8EvEgggpr7NsfiGBDqblQ5DIsyG5QQBg=="
+    },
+    "buyerSignature": {
+      "algorithm": "ed25519",
+      "keyId": "buyer-demo",
+      "value": "TiH1Dxp2lR3UFT0duXJHSN0yP9TroYvXV8JZQktG1CZY+qIQ+OVAKD2FQqaTJW2HMDl4klWCmtez6SdxOOKxCw=="
+    }
+  },
+  "rejectedOffers": [
+    {
+      "providerId": "PROVIDER-A",
+      "reason": "PROVIDER_UNAVAILABLE",
+      "detail": "activation FAILED after the original commitment; excluded from re-selection"
+    },
+    {
+      "providerId": "PROVIDER-C",
+      "reason": "INSUFFICIENT_CAPACITY",
+      "detail": "offered 150 Mbps < 300 Mbps required; offered 120 ms latency > 50 ms allowed; offered 1.2% loss > 1% allowed; reliability 0.98 < 0.999 required"
+    }
+  ],
+  "timing": {
+    "tDetect": 1788080261552,
+    "tDecide": 1788080262502
+  }
+}
