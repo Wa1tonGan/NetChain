@@ -21,18 +21,18 @@
     "currency": "MYR",
     "durationMinutes": 60,
     "nonce": "INC-S2:PROVIDER-B:001",
-    "expiry": "2026-08-30T08:53:04.925Z"
+    "expiry": "2026-08-30T09:02:41.552Z"
   },
   "signatures": {
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-b-demo",
-      "value": "gaRI1Rfen/TenV4D2M7ORuAa1MwGYzmoqeFGklGRSYsNlOQaHexBgEta4vOFA7hK+68Tw8GIp2byZJySfLqBBw=="
+      "value": "kPxphoauJJbaAy+4o8nPSfuGgg8HL4z1gtZO2S9IeMzAm7hCW/sxNzRBZZKvEg6/jML9+nzwV3+ri8QQzW83Bg=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "XYdV8sPTEv0kS9wSVfJgcb69cnhC1uH3ptaHl0p3xKAiV6eUGFJ0sTTOKWRkaIH2yUKjQf7SukC+A9YLGhcHDg=="
+      "value": "RR9KeqOs8hbDGj3jYPas3Z4edxReOyZvpP8pKVUnFC+D0PDfL2ygIp8SpK3/ALKSmabSn7xJITnL9m28JWgzDw=="
     }
   },
   "rejectedOffers": [
@@ -48,7 +48,7 @@
     }
   ],
   "timing": {
-    "tDetect": 1788079984925,
-    "tDecide": 1788079987425
+    "tDetect": 1788080261552,
+    "tDecide": 1788080264052
   }
 }

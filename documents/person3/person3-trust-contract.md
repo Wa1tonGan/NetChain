@@ -5,15 +5,19 @@
 > integrate against this without reading Move code. Companion to
 > `person2-a2a-contract.md` (our input contract).
 >
-> **Status: IMPLEMENTED & GREEN.** 16/16 Move unit tests, 11/11 harness
-> checks (incl. split settlement + on-chain event read-back), 50/50 JS tests,
-> full demo runs via `npm run demo:sui`. Localnet proven end-to-end; testnet
-> pending faucet funding.
+> **Status: IMPLEMENTED & GREEN ON TESTNET.** 19/19 Move unit tests,
+> 14/14 harness checks ON TESTNET (incl. on-chain event read-back),
+> 56/56 JS tests, full demo via `npm run demo:sui` per network. Every
+> Person-3 blueprint §12 row is met, incl. split settlement and the
+> verification/penalty loop.
 >
 > **New (2026-08-30): platform fee split settlement** (blueprint §1.3/§3.3/§12)
-> — see §3a and the `platform`/`platform_fee` rows below. Configured via
-> `.env` (copy `.env.example`); the platform fee wallet is
+> + **Verification Agent** (§4.3/§9/§12 — `escrow::verify` records the
+> connection-log hash + penalty on-chain; settle splits three ways:
+> penalty → buyer, fee → platform, remainder → provider). Configured via
+> `.env` (copy `.env.example`); platform fee wallet
 > `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4`.
+> Team walkthrough guide: `person3-implementation-guide.md`.
 
 ## 0. Answer to Person 2's integration message (`msg-to-person3.md`)
 
@@ -118,9 +122,24 @@ commitment. Ack-after-broadcast keeps P2's 1.5 s budget.
 | 8 | `ALREADY_FINALIZED` | escrow |
 | 9 | `NOT_EXPIRED` | escrow |
 | 10 | `INVALID_FEE` | escrow |
+| 11 | `INVALID_PENALTY` | escrow (penalty must leave the provider payout positive) |
 
 Commitment status: `0 COMMITTED → 1 SETTLED | 2 REFUNDED | 3 RECLAIMED` (`255` unknown).
-On-chain events: `EscrowFunded`, `Committed`, `Settled`, `Refunded`, `Reclaimed`.
+On-chain events: `EscrowFunded`, `Committed`, `Verified`, `Settled`, `Refunded`, `Reclaimed`.
+
+### Verification loop (blueprint §4.3/§9/§12)
+1. The Verification Agent (`src/sui/verify.js`) compares the session's
+   delivered samples against the promise with a **pure algorithm** (no LLM):
+   `shortfall% → penalty% = max(0, shortfall% − DELIVERY_TOLERANCE_PERCENT) →
+   penalty = floor(providerShare × penalty%/100)` — never a full refund.
+2. It assembles the §9 Verification Record (incident, session start/end,
+   promised, samples, avg, tolerance, verdict, penalty) and commits its
+   blake2b256 hash + penalty ON-CHAIN via `escrow::verify` **before**
+   settlement (buyer-gated, one verdict per nonce).
+3. `settle` then splits three ways: penalty → buyer (compensation), fee →
+   platform, remainder → provider. JSONL row: `DELIVERY_VERIFIED`.
+   Delivered samples are provided by the (simulated) session monitor —
+   §12 "Verification proof" is fully proven on testnet.
 
 **Two-layer idempotency** (blueprint §6.1 Duplicate-Safety): service ledger
 registry short-circuits duplicates with zero transactions; the chain itself
@@ -239,10 +258,10 @@ cp .env.example .env     # then set SUI_NETWORK, PLATFORM_ADDRESS, fee %
 npm run sui:setup       # readiness: publish + mint + fund escrow + authority
 npm run sui:fixtures    # fresh short-lived signed fixtures (reused every run)
 npm run demo:sui        # one-command demo — all blueprint §10 beats
-npm run harness:sui     # 11-check reliability battery → reliability-report
-npm run trust -- …      # CLI operations
-sui move test --path move   # 16 Move unit tests
-npm test                # Persons 1+2 tests (Sui JS tests gated by SUI_NETWORK)
+npm run harness:sui     # 14-check reliability battery → reliability-report
+npm run trust -- …      # CLI: commit | activation | verify <id> <promised> <samples> | settle | refund | reclaim | status
+sui move test --path move   # 19 Move unit tests
+npm test                # 56 offline JS tests (Persons 1+2 + Sui)
 ```
 
 ## 9. Test vectors (Move unit tests)
