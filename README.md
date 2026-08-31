@@ -16,26 +16,50 @@ on-chain commitment is integral, not an add-on).
 ## The trust layer (this workstream — Person 3)
 
 Trust is prepared **before** any incident (blueprint §4.1): a scoped spending
-authority (`AuthorityCap`), a pre-funded escrow holding a MYR stablecoin, and
+authority (`AuthorityCap`), a pre-funded escrow holding the configured
+stablecoin (real Circle USDC on testnet, the MYRC demo coin on localnet), and
 provider identities that are the *same keys* on and off chain.
 
 During an incident the Sui layer never blocks the fast path:
 
 1. **Voucher** — the Rescue Agent hands over a Selected Offer signed twice
-   (provider + buyer, ed25519 over canonical JSON).
+   (provider + buyer, ed25519 over canonical JSON) and self-contained
+   (the original signed offer rides inside — no fixture lookup).
 2. **Commit** — the Move `escrow::commit` verifies **BOTH signatures on-chain**
    (`sui::ed25519::ed25519_verify`), checks the scoped authority and voucher
    expiry, then locks funds under the nonce. Idempotent: byte-identical
    replays no-op; same-nonce/different-bytes aborts (`NONCE_REPLAY`).
-3. **Settle** — activation `AVAILABLE` → the buyer releases the locked
-   payment to the provider address. `FAILED` → refund. Expired → **anyone**
-   can reclaim (liveness: funds never stuck).
-4. **Measure** — every step emits a reliability event; Time-to-Recovery,
+3. **Verify** — delivered capacity is compared to the promise by a
+   deterministic tolerance rule (no LLM); the connection-log hash and penalty
+   are committed **on-chain** before settlement (blueprint §4.3).
+4. **Settle** — activation `AVAILABLE` → one split settlement: the provider
+   receives its full quoted price, the platform fee goes to the fee wallet,
+   any penalty goes back to the buyer. `FAILED` → refund. Expired →
+   **anyone** can reclaim (liveness: funds never stuck).
+5. **Measure** — every step emits a reliability event; Time-to-Recovery,
    success rate and duplicate-safety are aggregated into a report.
 
 Duplicate-safety (blueprint §6.1) is two-layer: a service-side nonce registry
 (rebuilt from an append-only JSONL ledger on restart) blocks duplicates with
 zero transactions, and the chain independently rejects replays.
+
+**The loop is live** (`src/sui/integration.js`): the Rescue Agent's gateway is
+wired to the trust service with a deadline-safe mode switch —
+`SUI_INTEGRATION_MODE=standalone | one-loop | full` (same pipeline code in
+all three; flip one env var, no code changes):
+
+- `npm run integrate:sui` — ONE AI-driven incident end-to-end: submit intent →
+  A2A race → commit → verify → split settle → settlement callback to the
+  gateway (proven on testnet, digests below).
+- `SUI_INTEGRATION_MODE=full npm run trust:server` — the server polls the
+  gateway and auto-commits/verifies/settles **every** resolved incident
+  (`POST /v1/verify` also accepts real delivered samples from a monitor).
+- `standalone` (default) — the scripted demo + harness, no gateway dependency.
+
+Evidence is public: after settlement the full bundle (voucher + connection
+log + split) can be archived to **Walrus** (`npm run walrus:proof`) and
+retrieved by blob ID — `sha256(readback) == sha256(archived)`, so a
+customer/provider/judge re-checks the verdict without trusting this server.
 
 ## Sui objects & addresses (testnet) — TWO-TRACK BUILD (Buyer 1)
 
@@ -114,10 +138,21 @@ npm run harness:sui
 SUI_NETWORK=testnet npm run sui:setup
 SUI_NETWORK=testnet npm run demo:sui
 SUI_NETWORK=testnet npm run harness:sui
+
+# LIVE AI→Sui loop on testnet (the Track-02 headline, digests below):
+# terminal 1+2: the live agent stack, terminal 3: one integrated settlement
+SUI_NETWORK=testnet node scripts/start-all.mjs
+SUI_NETWORK=testnet SUI_INTEGRATION_MODE=one-loop npm run integrate:sui
+
+# Walrus evidence archive + independent readback (testnet, one-time WAL fuel
+# via the official SUI→WAL exchange happens automatically)
+WALRUS_ARCHIVE=true SUI_NETWORK=testnet npm run walrus:proof
 ```
 
 Trust CLI: `npm run trust -- commit <selected-offer.json> | activation <id> AVAILABLE|FAILED | reclaim <nonce> | status <id>`.
-Optional HTTP face: `npm run trust:server` (port 8200, SSE at `/v1/events`).
+Optional HTTP face: `npm run trust:server` (port 8200, SSE at `/v1/events`,
+`POST /v1/verify` for delivered samples; `SUI_INTEGRATION_MODE=full` also
+starts the gateway poller).
 
 ## Agent market quickstart (Person 2)
 
@@ -132,7 +167,8 @@ curl -s -X POST http://127.0.0.1:8082/recovery/intents \
 # watch the provider race / decisions live (SSE):
 curl -N http://127.0.0.1:8082/incidents/INC-S2/events
 
-# pull the signed Selected Offer (Person 3's input):
+# pull the signed Selected Offer (Person 3's input — the envelope embeds the
+# original signed offer, so the trust service needs no fixture files):
 curl -s http://127.0.0.1:8082/incidents/INC-S2/result
 
 # kill a provider live and re-run — the fallback demo:
@@ -154,18 +190,28 @@ scenarios (RecoveryIntent)
       ▼
 buildProviderRequest() → A2A parallel broadcast → offers
                             │
-                        Selected Offer (dual-signed) ────→ voucher verify (off-chain, fast-fail)
+                        Selected Offer (dual-signed,          voucher verify (off-chain, fast-fail;
+                        self-contained envelope) ──────→      original offer re-verified against
+                            │                                 the provider's pinned key)
                             │                              escrow::commit (ON-CHAIN signature
                             │                              verification + nonce lock)
                         activation result ──────────────→  settle | refund | reclaim
-                            │                              │
-                        traffic moved                 events JSONL + SSE → dashboard
-                                                          → reliability-report
+                            │
+                        delivered capacity ─────────────→  escrow::verify (log hash + penalty
+                            │                              ON-CHAIN, deterministic tolerance)
+                        traffic moved                 split settlement → provider + fee
+                                                          (+ penalty → buyer); P2 callback;
+                                                      events JSONL + SSE → dashboard
+                                                          → reliability-report → Walrus archive
 ```
 
 Details: [`documents/person3-trust-contract.md`](documents/person3-trust-contract.md) ·
 [`documents/person2-a2a-contract.md`](documents/person2-a2a-contract.md) · blueprint in
-[`documents/blueprint.md`](documents/blueprint.md).
+[`documents/blueprint.md`](documents/blueprint.md) · Person 3 deep dives:
+[`documents/person3/person3-integration-guide.md`](documents/person3/person3-integration-guide.md)
+(live loop + Walrus, with diagrams) ·
+[`documents/person3/sui-tracks-status.md`](documents/person3/sui-tracks-status.md)
+(official track mapping, gas model, zkLogin boundary).
 
 ## Why Sui (and not an add-on)
 
@@ -187,7 +233,7 @@ Details: [`documents/person3-trust-contract.md`](documents/person3-trust-contrac
 | --- | --- |
 | Person 1 | Client & Edge — portals, gateway, watcher, priority controller |
 | Person 2 | Agent & Provider Market — Rescue Agent, 3 provider agents, A2A contracts |
-| Person 3 | Sui & Reliability Execution — Move trust layer, settlement, idempotency, TTR instrumentation, fallback harness |
+| Person 3 | Sui & Reliability Execution — Move trust layer, split settlement, idempotency, TTR instrumentation, fallback harness, live agent-runtime integration, Walrus evidence archive |
 
 ## AI tools declaration
 
