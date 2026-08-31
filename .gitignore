@@ -8,3 +8,6 @@ move/escrow.dis*
 *.log
 fixtures/sui/
 .DS_Store
+
+# frontend build output
+frontend/dist/

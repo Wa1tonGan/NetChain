@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetChain 客户端 · 视觉稿</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #101722;
+    --panel-2: #141d2b;
+    --border: #1e2a3a;
+    --border-strong: #2a3a4f;
+    --text: #dbe4ee;
+    --muted: #8296ab;
+    --accent: #38bdf8;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --orange: #fb923c;
+    --red: #ef4444;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 20px; height: 52px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-weight: 700; font-size: 16px; letter-spacing: .3px; }
+  .brand .dot { color: var(--accent); }
+  .brand-sub { color: var(--muted); font-size: 12px; border-left: 1px solid var(--border-strong); padding-left: 14px; }
+  .spacer { flex: 1; }
+  .plan-badge {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
+  }
+  .plan-badge.p1 { color: var(--orange); background: rgba(251,146,60,.12); }
+  .plan-badge.p2 { color: var(--warn); background: rgba(251,191,36,.10); }
+  .plan-badge.p3 { color: var(--accent); background: rgba(56,189,248,.10); }
+  .seg { display: flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--muted); border: 0; cursor: pointer;
+    padding: 7px 16px; font-size: 13px; font-family: inherit;
+  }
+  .seg button.on { background: var(--accent); color: #04121d; font-weight: 600; }
+
+  /* ---------- readiness strip ---------- */
+  .readiness {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .readiness .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-family: var(--mono);
+    padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 999px;
+    background: var(--panel-2);
+  }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .pill.warn i { background: var(--warn); }
+
+  /* ---------- layout ---------- */
+  .biz-wrap, .ind-wrap { display: none; }
+  body.view-business .biz-wrap { display: block; }
+  body.view-business .readiness { display: flex; }
+  body.view-individual .ind-wrap { display: block; }
+
+  .grid {
+    display: grid; grid-template-columns: 320px minmax(0, 1fr);
+    gap: 14px; padding: 14px 20px; max-width: 1280px; margin: 0 auto;
+  }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* ---------- panels ---------- */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .panel h3 {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .8px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel h3 .right { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .panel-body { padding: 14px 16px; }
+
+  /* ---------- services ---------- */
+  .svc {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 10px;
+    padding: 10px 0; border-bottom: 1px dashed var(--border);
+  }
+  .svc:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .svc .name { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .svc .meta { color: var(--muted); font-size: 12px; font-family: var(--mono); grid-column: 1; }
+  .prio {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 2px 7px; border-radius: 5px;
+  }
+  .prio.P0 { color: #fecaca; background: rgba(239,68,68,.18); }
+  .prio.P1 { color: #fed7aa; background: rgba(251,146,60,.16); }
+  .prio.P2 { color: #fde68a; background: rgba(251,191,36,.14); }
+  .prio.P3 { color: #bae6fd; background: rgba(56,189,248,.14); }
+  .prio.P5 { color: #cbd5e1; background: rgba(148,163,184,.16); }
+  .state { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; }
+  .state.protected { color: var(--ok); }
+  .state.moving { color: var(--accent); }
+  .state.throttled { color: var(--warn); }
+
+  .bar { height: 5px; border-radius: 3px; background: #0c1420; overflow: hidden; margin-top: 5px; }
+  .bar span { display: block; height: 100%; border-radius: 3px; }
+  .bar span.full { background: var(--ok); }
+  .bar span.partial { background: var(--accent); }
+  .bar span.low { background: var(--warn); }
+
+  /* ---------- scenario buttons ---------- */
+  .scenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .scenarios button {
+    font-family: inherit; font-size: 12.5px; cursor: pointer;
+    padding: 9px 8px; border-radius: 8px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+  .scenarios button:hover { border-color: var(--accent); }
+  .scenarios button.active {
+    background: rgba(239,68,68,.15); border-color: var(--red); color: #fecaca; font-weight: 600;
+  }
+
+  /* ---------- recovery panel ---------- */
+  .inc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .inc-id { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .chip {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  }
+  .chip.crit { color: #fecaca; background: rgba(239,68,68,.18); }
+  .chip.warn-c { color: #fde68a; background: rgba(251,191,36,.14); }
+  .chip.info-c { color: #bae6fd; background: rgba(56,189,248,.14); }
+  .inc-desc { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+  .ttr {
+    display: flex; align-items: baseline; gap: 10px; margin: 14px 0 4px;
+  }
+  .ttr .t { font-family: var(--mono); font-size: 44px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+  .ttr .lbl { color: var(--muted); font-size: 12px; }
+  .seg-times { color: var(--muted); font-size: 12px; font-family: var(--mono); margin-bottom: 16px; }
+  .seg-times b { color: var(--text); font-weight: 600; }
+
+  .timeline { display: flex; align-items: flex-start; margin: 6px 2px 18px; }
+  .tl-step { flex: 1; text-align: center; position: relative; }
+  .tl-step::before {
+    content: ""; position: absolute; top: 8px; left: -50%; width: 100%; height: 2px; background: var(--border-strong);
+  }
+  .tl-step:first-child::before { display: none; }
+  .tl-step.done::before, .tl-step.now::before { background: var(--accent); }
+  .tl-step .pt {
+    width: 18px; height: 18px; border-radius: 50%; margin: 0 auto;
+    background: var(--panel); border: 2px solid var(--border-strong); position: relative; z-index: 1;
+  }
+  .tl-step.done .pt { background: var(--accent); border-color: var(--accent); }
+  .tl-step.now .pt { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(56,189,248,.18); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(56,189,248,.06); } }
+  .tl-step .tl-lbl { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .tl-step.now .tl-lbl { color: var(--accent); font-weight: 600; }
+  .tl-step.done .tl-lbl { color: var(--text); }
+  .tl-step .tl-t { font-size: 11px; font-family: var(--mono); color: var(--muted); margin-top: 2px; }
+
+  .pick {
+    display: flex; align-items: center; gap: 12px;
+    border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.07);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .pick .who { font-weight: 700; }
+  .pick .why { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .pick .price { margin-left: auto; text-align: right; font-family: var(--mono); font-size: 13px; }
+  .pick .price b { color: var(--ok); font-size: 16px; }
+
+  /* ---------- offers ---------- */
+  .offer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 4px; border-bottom: 1px dashed var(--border); font-size: 13px;
+  }
+  .offer:last-child { border-bottom: 0; }
+  .offer .pid { font-weight: 600; width: 92px; }
+  .offer .cap { font-family: var(--mono); color: var(--muted); }
+  .offer .lat { margin-left: auto; font-family: var(--mono); color: var(--muted); font-size: 12px; }
+  .offer.win { background: rgba(52,211,153,.07); border-radius: 8px; padding: 10px 8px; border-bottom: 0; margin-bottom: 2px; }
+  .offer.win .pid::after { content: " ← 选中"; color: var(--ok); font-size: 11px; }
+  .offer.fail { color: var(--muted); }
+  .offer.fail .pid { color: var(--red); text-decoration: line-through; }
+
+  /* ---------- sui ---------- */
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 7px 10px; font-size: 12.5px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: var(--mono); word-break: break-all; }
+  .escrow-line { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 13px; }
+  .escrow-line .amt { font-family: var(--mono); font-weight: 700; color: var(--warn); }
+
+  /* ---------- config ---------- */
+  .cfg-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .cfg-tabs span {
+    font-size: 12px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--border-strong); color: var(--muted);
+  }
+  .cfg-tabs span.on { color: var(--accent); border-color: var(--accent); background: rgba(56,189,248,.08); }
+  table.cfg { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.cfg th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 11.5px; }
+  table.cfg td { padding: 7px 8px; border-bottom: 1px dashed var(--border); font-family: var(--mono); }
+  table.cfg td:first-child { font-family: inherit; font-weight: 600; }
+  .cfg-note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+  /* ---------- individual ---------- */
+  .ind-wrap .grid-i {
+    display: grid; grid-template-columns: minmax(0, 480px); justify-content: center;
+    gap: 14px; padding: 24px 20px;
+  }
+  .plans { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .plan {
+    border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 12px; text-align: center; cursor: pointer; background: var(--panel-2);
+  }
+  .plan .pn { font-weight: 700; font-size: 13px; }
+  .plan .pp { font-family: var(--mono); color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .plan .pd { color: var(--muted); font-size: 11px; margin-top: 6px; line-height: 1.5; }
+  .plan.sel { border-color: var(--warn); background: rgba(251,191,36,.07); }
+  .plan.sel .pn { color: var(--warn); }
+  .device {
+    display: flex; align-items: center; gap: 12px; padding: 4px 0 2px;
+  }
+  .device .ic {
+    width: 38px; height: 38px; border-radius: 10px; background: var(--panel-2);
+    border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .queue {
+    display: flex; gap: 14px; margin: 4px 0 14px; font-size: 13px;
+  }
+  .queue b { font-family: var(--mono); }
+  .btn-primary {
+    width: 100%; padding: 12px; border-radius: 10px; border: 0; cursor: pointer;
+    background: var(--accent); color: #04121d; font-weight: 700; font-size: 14px; font-family: inherit;
+  }
+  .mock-note {
+    text-align: center; color: var(--muted); font-size: 11.5px; padding: 8px 0 28px;
+  }
+</style>
+</head>
+<body class="view-business">
+
+<header>
+  <div class="brand"><span class="dot">·</span>NetChain</div>
+  <div class="brand-sub">客户端控制台 · 视觉稿</div>
+  <div class="spacer"></div>
+  <span class="plan-badge p2" id="planBadge">STADIUM-001</span>
+  <div class="seg">
+    <button id="btnInd" onclick="setView('individual')">个人视图</button>
+    <button id="btnBiz" class="on" onclick="setView('business')">企业视图</button>
+  </div>
+</header>
+
+<!-- ============ 企业视图 ============ -->
+<div class="biz-wrap">
+  <div class="readiness">
+    <span class="label">就绪状态</span>
+    <span class="pill"><i></i>Provider A</span>
+    <span class="pill"><i></i>Provider B</span>
+    <span class="pill warn"><i></i>Provider C · 高延迟</span>
+    <span class="pill"><i></i>托管已注资 $500</span>
+    <span class="pill"><i></i>策略已加载</span>
+    <span class="pill"><i></i>凭证有效 · 24h 刷新</span>
+  </div>
+
+  <div class="grid">
+    <!-- 左列 -->
+    <div class="col">
+      <div class="panel">
+        <h3>我的服务</h3>
+        <div class="panel-body">
+          <div class="svc">
+            <div class="name">MEDICAL <span class="prio P0">P0</span></div>
+            <div class="meta">50 / 50 Mbps · SLA 50ms/1%</div>
+            <div class="bar"><span class="full" style="width:100%"></span></div>
+            <div class="state protected">● 已保护</div>
+          </div>
+          <div class="svc">
+            <div class="name">SECURITY <span class="prio P0">P0</span></div>
+            <div class="meta">100 / 100 Mbps · SLA 50ms/1%</div>
+            <div class="bar"><span class="full" style="width:100%"></span></div>
+            <div class="state protected">● 已保护</div>
+          </div>
+          <div class="svc">
+            <div class="name">BROADCAST <span class="prio P2">P2</span></div>
+            <div class="meta">140 / 300 Mbps · SLA 80ms/2%</div>
+            <div class="bar"><span class="partial" style="width:47%"></span></div>
+            <div class="state moving">↑ 切往 Provider B</div>
+          </div>
+          <div class="svc">
+            <div class="name">GUEST_WIFI <span class="prio P5">P5</span></div>
+            <div class="meta">100 / 250 Mbps · SLA 80ms/2%</div>
+            <div class="bar"><span class="low" style="width:40%"></span></div>
+            <div class="state throttled">▼ 节流 40%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>场景演示</h3>
+        <div class="panel-body">
+          <div class="scenarios">
+            <button class="active">S1 · 主链路断</button>
+            <button>S2 · 链路降级</button>
+            <button>S3 · 需求激增</button>
+            <button>S5 · 灾难模式</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>配置</h3>
+        <div class="panel-body">
+          <div class="cfg-tabs">
+            <span class="on">服务</span><span>链路</span><span>SLA</span><span>预算</span>
+          </div>
+          <table class="cfg">
+            <tr><th>服务</th><th>优先级</th><th>需求</th><th>SLA</th></tr>
+            <tr><td>MEDICAL</td><td>P0</td><td>50M</td><td>50ms/1%/99.9%</td></tr>
+            <tr><td>SECURITY</td><td>P0</td><td>100M</td><td>50ms/1%/99.9%</td></tr>
+            <tr><td>BROADCAST</td><td>P2</td><td>300M</td><td>80ms/2%/99%</td></tr>
+            <tr><td>GUEST_WIFI</td><td>P5</td><td>250M</td><td>80ms/2%/99%</td></tr>
+          </table>
+          <div class="cfg-note">链路: WAN-A 主 1000M · WAN-B 备 500M<br>预算: 单事件 $150 · ≤$100 自动批准 · 时长 60min</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右列 -->
+    <div class="col">
+      <div class="panel">
+        <h3>当前恢复 <span class="right chip crit">critical</span></h3>
+        <div class="panel-body">
+          <div class="inc-head">
+            <span class="inc-id">INC-S2</span>
+            <span class="chip crit">PRIMARY_LINK_DOWN</span>
+            <span class="chip info-c">WAN-A 断 · 备用 500/700 Mbps</span>
+          </div>
+          <div class="ttr"><span class="t" id="ttrBiz">00:47</span><span class="lbl">端到端 Time-to-Recovery</span></div>
+          <div class="seg-times">检测 <b>2.1s</b> → 决策 <b>1.4s</b> → 激活 <b>12.0s</b> → 验证中…</div>
+          <div class="timeline">
+            <div class="tl-step done"><div class="pt"></div><div class="tl-lbl">检测</div><div class="tl-t">2.1s</div></div>
+            <div class="tl-step done"><div class="pt"></div><div class="tl-lbl">保护</div><div class="tl-t">0.3s</div></div>
+            <div class="tl-step done"><div class="pt"></div><div class="tl-lbl">决策</div><div class="tl-t">1.4s</div></div>
+            <div class="tl-step now"><div class="pt"></div><div class="tl-lbl">激活</div><div class="tl-t">…</div></div>
+            <div class="tl-step"><div class="pt"></div><div class="tl-lbl">验证</div><div class="tl-t"></div></div>
+            <div class="tl-step"><div class="pt"></div><div class="tl-lbl">结算</div><div class="tl-t"></div></div>
+          </div>
+          <div class="pick">
+            <div>
+              <div class="who">Provider B</div>
+              <div class="why">现在可用 · 容量足够 · 延迟达标 · 价格最低</div>
+            </div>
+            <div class="price">300 Mbps<br><b>$80</b> / 30min</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="panel">
+          <h3>供应商报价 <span class="right" style="color:var(--muted)">A2A 并行</span></h3>
+          <div class="panel-body">
+            <div class="offer fail"><span class="pid">Provider A</span><span class="cap">— 不可用</span><span class="lat">2.1s</span></div>
+            <div class="offer win"><span class="pid">Provider B</span><span class="cap">300 Mbps · $80</span><span class="lat">1.8s</span></div>
+            <div class="offer"><span class="pid">Provider C</span><span class="cap">300 Mbps · $120</span><span class="lat">4.0s</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Sui 信任层</h3>
+          <div class="panel-body">
+            <div class="kv">
+              <span class="k">凭证</span><span class="v">VCH-771 · 已双方签署</span>
+              <span class="k">买方</span><span class="v">STADIUM-001</span>
+              <span class="k">供应商</span><span class="v">PROVIDER-B</span>
+              <span class="k">金额</span><span class="v">$80 · nonce 771</span>
+              <span class="k">有效期</span><span class="v">T+10min</span>
+            </div>
+            <div class="escrow-line">托管 <span class="amt">$80</span> 已锁定 <span class="chip warn-c" style="margin-left:auto">激活与上链并行 → 结算中</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 个人视图 ============ -->
+<div class="ind-wrap">
+  <div class="grid-i">
+    <div class="panel">
+      <h3>选择恢复套餐</h3>
+      <div class="panel-body">
+        <div class="plans">
+          <div class="plan">
+            <div class="pn">NORMAL</div><div class="pp">P3 · 标准</div>
+            <div class="pd">标准恢复队列<br>基础供应商搜索</div>
+          </div>
+          <div class="plan sel">
+            <div class="pn">VIP ✓</div><div class="pp">P2 · 优先</div>
+            <div class="pd">更快排队<br>更宽搜索 · 上限更高</div>
+          </div>
+          <div class="plan">
+            <div class="pn">VVIP</div><div class="pp">P1 · 最优先</div>
+            <div class="pd">最高队列<br>最快供应商 · 上限最高</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>我的服务</h3>
+      <div class="panel-body">
+        <div class="device">
+          <div class="ic">📱</div>
+          <div>
+            <div style="font-weight:600">手机 eSIM 连接</div>
+            <div style="color:var(--muted);font-size:12px;font-family:var(--mono)">需求 20 Mbps · 当前 ● 正常</div>
+          </div>
+          <button class="btn-primary" style="width:auto;margin-left:auto;padding:9px 18px;font-size:13px" onclick="alert('视觉稿：提交恢复意图 → 进入下方恢复流程')">提交恢复意图</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>当前恢复 <span class="right chip warn-c">进行中</span></h3>
+      <div class="panel-body">
+        <div class="inc-head">
+          <span class="inc-id">INC-1042</span>
+          <span class="chip warn-c">链路降级</span>
+          <span class="chip info-c">14:32:05</span>
+        </div>
+        <div class="ttr"><span class="t" id="ttrInd">00:41</span><span class="lbl">恢复计时</span></div>
+        <div class="queue">排队位置 <b>2 / 7</b><span style="color:var(--muted)">（VIP · P2 通道）</span></div>
+        <div class="timeline">
+          <div class="tl-step done"><div class="pt"></div><div class="tl-lbl">检测</div></div>
+          <div class="tl-step done"><div class="pt"></div><div class="tl-lbl">排队</div></div>
+          <div class="tl-step now"><div class="pt"></div><div class="tl-lbl">激活</div></div>
+          <div class="tl-step"><div class="pt"></div><div class="tl-lbl">结算</div></div>
+        </div>
+        <div class="pick">
+          <div>
+            <div class="who">NetGo 5G</div>
+            <div class="why">系统自动选择 · 你只需描述需要的结果</div>
+          </div>
+          <div class="price">50 Mbps<br><b>$3.20</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="mock-note">个人视图 = 企业视图的子集 · 同一恢复核心 · P0 永远高于付费档位</div>
+</div>
+
+<script>
+  function setView(v) {
+    document.body.className = "view-" + v;
+    document.getElementById("btnInd").classList.toggle("on", v === "individual");
+    document.getElementById("btnBiz").classList.toggle("on", v === "business");
+    document.getElementById("planBadge").textContent = v === "individual" ? "VIP · P2" : "STADIUM-001";
+    document.getElementById("planBadge").className = "plan-badge " + (v === "individual" ? "p2" : "p1");
+  }
+
+  const started = Date.now() - 47000;
+  setInterval(() => {
+    const s = Math.floor((Date.now() - started) / 1000);
+    const fmt = (n) => String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
+    document.getElementById("ttrBiz").textContent = fmt(s);
+    document.getElementById("ttrInd").textContent = fmt(Math.max(s - 6, 0));
+  }, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#f5f6f8">
+<meta name="color-scheme" content="light">
+<title>NetChain — Connectivity Protection</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --line: #e8ebef;
+    --line-soft: #f0f2f5;
+    --ink: #101828;
+    --muted: #667085;
+    --faint: #98a2b3;
+    --accent: #2563eb;
+    --accent-ink: #1e4fd6;
+    --accent-soft: #eaf1fe;
+    --ok: #12946a;
+    --ok-soft: #e7f6f0;
+    --warn: #c97a10;
+    --warn-soft: #fcf3e3;
+    --bad: #d92d20;
+    --bad-soft: #fdeceb;
+    --info: #2563eb;
+    --info-soft: #eaf1fe;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 4px 14px rgba(16,24,40,.05);
+    --radius: 20px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    background: #eceef2;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", sans-serif;
+    font-size: 15px; line-height: 1.5; min-height: 100dvh;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* ---------- shell ---------- */
+  #app { min-height: 100dvh; }
+  .app-col { background: var(--bg); min-height: 100dvh; position: relative; display: flex; flex-direction: column; }
+  .content { flex: 1; padding: 0 20px 120px; width: 100%; max-width: 640px; margin: 0 auto; }
+  .content.full { max-width: 1040px; }
+
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 18px 20px 12px; max-width: 640px; margin: 0 auto; width: 100%; }
+  .topbar.full { max-width: 1040px; }
+  .logo { font-weight: 700; font-size: 17px; letter-spacing: .2px; }
+  .logo .dot { color: var(--accent); }
+  .topbar .grow { flex: 1; }
+
+  /* mobile bottom nav */
+  .bottomnav {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 640px; z-index: 30;
+    background: rgba(255,255,255,.92); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+    display: flex; padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottomnav a {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    text-decoration: none; color: var(--faint);
+    font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+    padding: 6px 0 4px; border-radius: 12px;
+  }
+  .bottomnav a svg { width: 23px; height: 23px; }
+  .bottomnav a.on { color: var(--accent-ink); }
+
+  /* desktop top nav */
+  .topnav { display: none; }
+
+  @media (min-width: 900px) {
+    body { background: var(--bg); }
+    .app-col { min-height: 100dvh; }
+    .content { max-width: 1040px; padding-bottom: 64px; }
+    .content.full { max-width: 1040px; }
+    .topbar { max-width: 1040px; display: none; }
+    .bottomnav { display: none; }
+    .topnav {
+      display: flex; align-items: center; gap: 20px;
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(255,255,255,.94); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 32px;
+    }
+    .topnav .links { display: flex; gap: 4px; flex: 1; }
+    .topnav .links a {
+      text-decoration: none; color: var(--muted); font-size: 14px; font-weight: 600;
+      padding: 8px 15px; border-radius: 10px;
+    }
+    .topnav .links a:hover { color: var(--ink); background: #f1f3f6; }
+    .topnav .links a.on { color: var(--accent-ink); background: var(--accent-soft); }
+    .topnav .nav-balance { font-size: 13.5px; color: var(--muted); }
+    .topnav .nav-balance b { color: var(--ink); }
+
+    /* desktop two-column sections */
+    .cols { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; align-items: start; margin-top: 4px; }
+    .cols > div { min-width: 0; }
+    .cols.even { grid-template-columns: 1fr 1fr; }
+
+    /* overlay becomes a wide centered modal */
+    .overlay { align-items: center; padding: 40px 24px; }
+    .sheet { border-radius: 26px; max-width: 560px; }
+    .sheet.wide { max-width: 860px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 10px 34px; align-items: start; }
+    .sheet.wide .ov-side { border-left: 1px solid var(--line-soft); padding-left: 34px; }
+  }
+
+  /* ---------- status chips ---------- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    padding: 5px 12px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .chip.green { color: var(--ok); background: var(--ok-soft); }
+  .chip.amber { color: var(--warn); background: var(--warn-soft); }
+  .chip.blue  { color: var(--info); background: var(--info-soft); }
+  .chip.red   { color: var(--bad); background: var(--bad-soft); }
+  .chip.gray  { color: var(--muted); background: #eef0f3; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.protected { background: var(--ok); }
+  .dot.recovering { background: var(--info); animation: pulse 1.4s infinite; }
+  .dot.attention { background: var(--warn); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 10px 0 4px; }
+  .hero .status { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 800; letter-spacing: .12em; }
+  .hero .status.green { color: var(--ok); }
+  .hero .status.amber { color: var(--warn); }
+  .hero .status.blue  { color: var(--info); }
+  .hero h1 { font-size: 40px; font-weight: 800; letter-spacing: -.02em; margin-top: 10px; line-height: 1.1; }
+  .hero h1 .u { font-size: 16px; color: var(--muted); font-weight: 600; margin-left: 6px; }
+  .hero .sub { color: var(--muted); font-size: 13.5px; margin-top: 6px; max-width: 46ch; }
+
+  /* ---------- cards & rows ---------- */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); margin-top: 14px; overflow: hidden; }
+  .card .pad { padding: 18px; }
+  .card-title { font-size: 13px; font-weight: 700; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; margin: 26px 2px 0; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line-soft); }
+  .row:last-child { border-bottom: 0; }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .k { font-size: 14px; color: var(--muted); }
+  .row .t { font-size: 14.5px; font-weight: 600; }
+  .row .s { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+  .row .v { font-size: 14px; font-weight: 600; }
+  .row .v.ok { color: var(--ok); }
+  button.row { width: 100%; border: 0; background: var(--card); font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  button.row:hover { background: #fbfcfe; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    padding: 13px 20px; border-radius: 14px; width: 100%;
+    transition: transform .06s ease;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-ink); }
+  .btn.subtle { background: #eef0f3; border-color: transparent; color: var(--ink); }
+  .btn.link { border: 0; background: none; color: var(--accent); font-weight: 700; width: auto; padding: 6px 4px; }
+  .btn.sm { width: auto; padding: 8px 14px; font-size: 13px; border-radius: 11px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* ---------- toggle ---------- */
+  .switch { position: relative; width: 48px; height: 28px; flex: none; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch i { position: absolute; inset: 0; border-radius: 999px; background: #d7dde5; transition: .18s; pointer-events: none; }
+  .switch i::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
+    background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: .18s;
+  }
+  .switch input:checked + i { background: var(--ok); }
+  .switch input:checked + i::after { transform: translateX(20px); }
+  .switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- plans ---------- */
+  .plans { display: grid; gap: 10px; }
+  .plan-card {
+    background: var(--card); border: 1.5px solid var(--line); border-radius: 18px;
+    padding: 16px 18px; cursor: pointer; text-align: left; font: inherit; color: inherit;
+  }
+  .plan-card.sel { border-color: var(--accent); background: #f7faff; }
+  .plan-card .pn { font-weight: 800; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .plan-card .pn .tick { margin-left: auto; color: var(--accent); font-weight: 800; }
+  .plan-card .pd { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .plan-card ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+
+  /* ---------- selectable rows ---------- */
+  .selrow { cursor: pointer; }
+  .selrow .radio { width: 22px; height: 22px; border-radius: 50%; flex: none; border: 2px solid #cfd6df; position: relative; }
+  .selrow.sel .radio { border-color: var(--accent); }
+  .selrow.sel .radio::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--accent); }
+
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; }
+  .seg button {
+    font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
+    padding: 9px 16px; border-radius: 12px;
+  }
+  .seg button.on { border-color: var(--accent); color: var(--accent-ink); background: #f7faff; }
+  .seg.wide { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ---------- onboarding ---------- */
+  .ob { max-width: 560px; margin: 0 auto; padding: 0 24px 40px; display: flex; flex-direction: column; min-height: 100dvh; }
+  .ob-top { display: flex; align-items: center; gap: 8px; padding: 22px 0 8px; }
+  .ob-dots { display: flex; gap: 6px; margin-left: auto; }
+  .ob-dots i { width: 6px; height: 6px; border-radius: 50%; background: #d4dae2; }
+  .ob-dots i.on { background: var(--accent); width: 18px; border-radius: 999px; }
+  .ob-body { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 12px 0 20px; }
+  .ob h1 { font-size: 27px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; }
+  .ob .lede { color: var(--muted); margin-top: 10px; font-size: 15px; }
+  .ob-center { text-align: center; }
+  .ob-center .logo { font-size: 20px; }
+  .ob .big-ic { font-size: 52px; margin-bottom: 14px; }
+  .ob-foot { padding-top: 12px; }
+  .ob .fine { text-align: center; color: var(--faint); font-size: 12px; margin-top: 12px; }
+
+  /* ---------- problem card ---------- */
+  .problem { border-left: 4px solid var(--warn); }
+  .problem h3 { font-size: 16px; font-weight: 800; }
+  .problem .d { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+  .problem .nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .problem .nums .n { background: var(--bg); border-radius: 14px; padding: 10px 12px; }
+  .problem .nums .nk { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .problem .nums .nv { font-size: 17px; font-weight: 800; margin-top: 2px; }
+  .problem .nums .nv.bad { color: var(--bad); }
+
+  /* ---------- steps ---------- */
+  .steps { display: flex; flex-direction: column; margin: 6px 0; }
+  .step { display: flex; align-items: center; gap: 12px; padding: 7px 0; color: var(--faint); font-size: 14.5px; }
+  .step .ic {
+    width: 24px; height: 24px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; border: 2px solid #d7dee7; background: #fff; color: #fff;
+  }
+  .step.done { color: var(--ink); }
+  .step.done .ic { background: var(--ok); border-color: var(--ok); }
+  .step.done .ic::after { content: "✓"; font-weight: 800; }
+  .step.now { color: var(--info); font-weight: 700; }
+  .step.now .ic { border-color: var(--info); box-shadow: 0 0 0 4px var(--info-soft); animation: pulse 1.4s infinite; }
+  .step.now .ic::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--info); }
+  .step.fail { color: var(--bad); font-weight: 700; }
+  .step.fail .ic { background: var(--bad); border-color: var(--bad); }
+  .step.fail .ic::after { content: "✕"; font-weight: 800; }
+  .timer { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 40px; font-weight: 800; }
+  .timer .u { font-size: 15px; color: var(--muted); font-weight: 600; margin-left: 5px; }
+
+  /* ---------- SMS thread ---------- */
+  .thread { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .bubble { max-width: 88%; padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.45; }
+  .bubble.net  { align-self: flex-start; background: #eef0f3; border-bottom-left-radius: 6px; color: var(--ink); }
+  .bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 6px; font-weight: 600; }
+  .bubble.sys  { align-self: flex-start; background: var(--ok-soft); color: var(--ok); font-weight: 700; border-bottom-left-radius: 6px; }
+  .bubble.err  { align-self: flex-start; background: var(--bad-soft); color: var(--bad); font-weight: 600; border-bottom-left-radius: 6px; }
+  .bubble .auto-tag { display: block; font-size: 10px; opacity: .72; font-weight: 600; letter-spacing: .05em; margin-bottom: 2px; text-transform: uppercase; }
+  .qchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .qchips button {
+    font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  .qchips button:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .smsbar { display: flex; gap: 8px; margin-top: 10px; }
+  .smsbar input {
+    flex: 1; font: inherit; font-size: 14px; border: 1px solid var(--line);
+    border-radius: 999px; padding: 10px 16px; background: #fff; color: var(--ink); min-width: 0;
+  }
+  .smsbar input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .smsbar button { border-radius: 999px; padding: 10px 20px; width: auto; }
+
+  /* ---------- purchase block ---------- */
+  .purchase { background: var(--bg); border-radius: 16px; padding: 14px 16px; margin-top: 12px; }
+  .purchase .ph { font-size: 11.5px; font-weight: 800; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
+  .purchase .pr { display: flex; justify-content: space-between; font-size: 13.5px; padding: 5px 0; }
+  .purchase .pr .k { color: var(--muted); }
+  .purchase .pr .v { font-weight: 700; }
+  .purchase .why { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+  .money-state {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    background: var(--warn-soft); color: var(--warn); font-size: 12.5px; font-weight: 700;
+    border-radius: 12px; padding: 9px 13px;
+  }
+  .money-state.ok { background: var(--ok-soft); color: var(--ok); }
+
+  /* ---------- strength bars ---------- */
+  .strength { display: flex; gap: 3px; align-items: flex-end; height: 18px; }
+  .strength i { width: 6px; border-radius: 2px; background: #d7dee7; }
+  .strength i:nth-child(1) { height: 6px; } .strength i:nth-child(2) { height: 10px; }
+  .strength i:nth-child(3) { height: 14px; } .strength i:nth-child(4) { height: 18px; }
+  .strength i.on { background: var(--ok); }
+  .strength-2 i.on { background: var(--warn); }
+
+  /* ---------- session card ---------- */
+  .sess-head { display: flex; align-items: center; gap: 12px; }
+  .sess-head .t { font-weight: 800; font-size: 15px; }
+  .sess-head .s { color: var(--muted); font-size: 12.5px; }
+  .sess-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .sess-grid .n { background: var(--bg); border-radius: 14px; padding: 10px 12px; }
+  .sess-grid .nk { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .sess-grid .nv { font-size: 16px; font-weight: 800; margin-top: 2px; }
+  .sess-foot { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+  .sess-foot .cd { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 22px; font-weight: 800; }
+  .sess-foot .hint { color: var(--faint); font-size: 11px; margin-left: auto; }
+
+  /* ---------- overlay ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(16,24,40,.45); backdrop-filter: blur(2px);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .sheet {
+    background: var(--card); width: 100%; max-width: 560px;
+    border-radius: 26px 26px 0 0; padding: 22px 22px calc(26px + env(safe-area-inset-bottom));
+    max-height: 92dvh; overflow-y: auto;
+  }
+  .sheet h2 { font-size: 21px; font-weight: 800; letter-spacing: -.01em; margin-top: 12px; }
+  .sheet .lede { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+  .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .result-grid .rg { background: var(--bg); border-radius: 14px; padding: 12px 14px; }
+  .result-grid .rk { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .result-grid .rv { font-size: 18px; font-weight: 800; margin-top: 2px; }
+  .result-grid .rv.ok { color: var(--ok); }
+  .offer-cta { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .offer-cta input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
+
+  /* ---------- wallet ---------- */
+  .big-num { font-size: 38px; font-weight: 800; letter-spacing: -.02em; }
+  .stat-line { display: flex; justify-content: space-between; gap: 14px; padding: 12px 18px; font-size: 14px; border-bottom: 1px solid var(--line-soft); }
+  .stat-line:last-child { border-bottom: 0; }
+  .stat-line .k { color: var(--muted); }
+  .stat-line .v { font-weight: 700; text-align: right; }
+  .stat-line .v.ok { color: var(--ok); }
+  .stat-line .v.warnv { color: var(--warn); }
+  .txlink { font-size: 12.5px; color: var(--accent); text-decoration: none; font-weight: 700; }
+
+  /* ---------- activity ---------- */
+  .act-date { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin: 22px 4px 8px; }
+  .act-ic { width: 38px; height: 38px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .act-ic.ok { background: var(--ok-soft); }
+  .act-ic.check { background: var(--info-soft); }
+  .act-ic.bad { background: var(--bad-soft); }
+  .tl-time { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--faint); width: 64px; flex: none; padding-top: 1px; }
+
+  /* ---------- disclosures ---------- */
+  .disc { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
+  .disc .tech { display: grid; grid-template-columns: 130px 1fr; gap: 7px 14px; font-size: 12.5px; }
+  .disc .tech .k { color: var(--muted); }
+  .disc .tech .v { font-family: ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+
+  .note { font-size: 12.5px; color: var(--faint); margin-top: 14px; line-height: 1.6; }
+  .pill-note {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    background: #eef0f3; border-radius: 999px; padding: 5px 12px; margin-top: 12px;
+  }
+
+  @media (max-width: 899px) {
+    .overlay { align-items: flex-end; }
+    .sheet { border-radius: 26px 26px 0 0; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   NetChain — Individual user interface prototype (v2)
+   - Desktop-first clarity: top navigation + two-column layouts ≥900px,
+     same app collapses to a phone layout with bottom tabs below.
+   - Recovery is request-driven: the user replies by SMS with a
+     duration + budget; NetChain detects the request, then acts.
+   - Live evidence: purchase block, escrow money states, network
+     strength + live session after the purchase.
+   Mock store only; no backend required.
+   ================================================================ */
+
+/* ---------------- mock store ---------------- */
+const store = {
+  onboarded: false,
+  plan: "NORMAL",
+  service: "Mobile / eSIM",
+  deviceName: "My Phone",
+  auto: true,
+  autoBelow: 10,
+  maxPerRecovery: 10,
+  monthlyLimit: 50,
+  minSpeed: 100,
+  maxDuration: 60,
+  balance: 0,
+  notif: true,
+  walletAddr: "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C",
+
+  capacity: { primary: 500, backup: 300, current: 500, extra: 0, primaryDown: false },
+  demand: 500,
+
+  month: { usage: 0, fees: 0 },
+  locked: 0,               // funds held in escrow while a recovery runs
+  recoverySeq: 1023,
+
+  incident: null,
+  running: false,
+  overlayDismissed: false,
+  protectionState: "protected",
+  session: null,           // live temporary-capacity session after a recovery
+  sessionExpired: false,
+
+  activity: [
+    { id: "a-seed-2", ts: daysAgo(1, 9, 14), type: "check",
+      title: "Network check", sub: "Connection healthy", note: "No action required" },
+    { id: "a-seed-1", ts: daysAgo(4, 16, 40), type: "failed",
+      title: "Provider failed", sub: "Temporary capacity could not activate",
+      note: "No charge — automatically refunded" },
+  ],
+  payments: [],
+  records: {},
+  disclosures: {},
+};
+
+function daysAgo(d, h, m) {
+  const t = new Date();
+  t.setDate(t.getDate() - d); t.setHours(h, m, 0, 0);
+  return t.getTime();
+}
+
+/* ---------------- formatting & pricing ---------------- */
+const rm = (n) => "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const rm0 = (n) => Number.isInteger(n) ? "RM " + n : rm(n);
+const fmtClock = (ts) => {
+  const d = new Date(ts);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((x) => String(x).padStart(2, "0")).join(":");
+};
+const fmtDate = (ts) => {
+  const d = new Date(ts);
+  return d.getDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+};
+const dayLabel = (ts) => {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ts >= startToday) return "Today";
+  if (ts >= startToday - 86400000) return "Yesterday";
+  return fmtDate(ts);
+};
+
+/* Rate: RM 0.00084 per Mbps per minute → 250 Mbps × 30 min = RM 6.30 */
+const RATE = 0.00084;
+const costOf = (mbps, min) => +(mbps * min * RATE).toFixed(2);
+const MBPS_BUY = 250;
+
+function adjustPlan(min, budget) {
+  min = Math.max(15, Math.round(min / 15) * 15); // plans come in 15-minute steps
+  let adjusted = false;
+  while (costOf(MBPS_BUY, min) > budget && min > 15) { min -= 15; adjusted = true; }
+  const cost = costOf(MBPS_BUY, min);
+  if (cost > budget) adjusted = true; // clamped at the 15-minute minimum
+  return { min, cost, adjusted };
+}
+
+function parseSms(text) {
+  const m = /(\d+)\s*(?:m\b|min\b|mins\b|minute|minutes)\b/i.exec(text || "");
+  const b = /rm\s*(\d+(?:\.\d{1,2})?)\b/i.exec(text || "");
+  if (!m && !b) return null;
+  return { min: m ? Math.max(5, parseInt(m[1], 10)) : 30, budget: b ? parseFloat(b[1]) : store.autoBelow };
+}
+
+/* Provider comparison evidence (same for every incident in the demo) */
+const COMPARISON = [
+  { name: "Provider A", state: "No response", price: null, sel: false },
+  { name: "Provider B", state: "Available now · fastest path", price: null, sel: true },
+  { name: "Provider C", state: "Available · slower activation", price: null, sel: false },
+];
+
+/* ---------------- recovery flows ----------------
+   Every recovery waits for the user's SMS reply (duration + budget).
+   Variants auto-send a reply so states can be shown hands-free. */
+const POST_SMS = [
+  ["request_detected", 2800], ["provider_selected", 4300],
+  ["activating", 5300], ["verifying", 7300], ["restored", 9300],
+];
+const FLOWS = {
+  main:   { key: "main",   outcome: "ok",
+            phases: [["detected",0],["protecting",600],["searching",1400],["sms",2400],...POST_SMS] },
+  auto:   { key: "auto",   outcome: "ok",   autoSend: "30 min, RM 8",
+            phases: [["detected",0],["protecting",600],["searching",1400],["sms",2400],...POST_SMS] },
+  under:  { key: "under",  outcome: "under", autoSend: "30 min, RM 8",
+            phases: [["detected",0],["protecting",600],["searching",1400],["sms",2400],...POST_SMS] },
+  failed: { key: "failed", outcome: "failed", autoSend: "30 min, RM 8",
+            phases: [["detected",0],["protecting",600],["searching",1400],["sms",2400],
+                     ["request_detected",2800],["provider_selected",4300],["activating",5300],["failed",7300]] },
+};
+
+const STEP_LABELS = [
+  "Problem detected", "Backup activated", "Finding extra capacity",
+  "Reply with duration & budget", "Request detected",
+  "Activating", "Verifying", "Connection restored",
+];
+const EVENT_LABELS = {
+  detected: "Problem detected", protecting: "Backup activated",
+  searching: "Capacity shortage detected", sms: "Recovery request sent",
+  request_detected: "Request detected", provider_selected: "Provider found",
+  activating: "Capacity activated", verifying: "Connection verified",
+  restored: "Connection restored", failed: "Activation failed",
+};
+const STEP_INDEX = {
+  detected: 0, protecting: 1, searching: 2, sms: 3,
+  request_detected: 4, provider_selected: 5, activating: 5,
+  verifying: 6, restored: 7, failed: 5,
+};
+
+/* ---------------- recovery state machine ---------------- */
+let machineTimers = [];
+let timerInterval = null;
+
+function clearMachine() {
+  machineTimers.forEach(clearTimeout); machineTimers = [];
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+function elapsedSec(inc) {
+  if (inc.result) return inc.result.time;
+  if (inc.pausedAt != null) return inc.elapsedBase;
+  return Math.min((Date.now() - inc.startedAt) / 1000, 99);
+}
+
+function startRecovery(kind) {
+  if (store.running) return;
+  clearMachine();
+  const flow = FLOWS[kind];
+  store.running = true;
+  store.overlayDismissed = false;
+  store.protectionState = "recovering";
+  store.sessionExpired = false;
+  store.capacity.current = store.capacity.backup;
+  store.capacity.primaryDown = true;
+  store.capacity.extra = 0;
+
+  const inc = {
+    id: "NC-" + (++store.recoverySeq),
+    kind: flow.key, outcome: flow.outcome, pauseAt: "sms", autoSend: flow.autoSend || null,
+    status: "detected", startedAt: Date.now(), elapsedBase: 0,
+    events: [], thread: [], result: null, req: null, sentAt: null,
+    required: store.demand, available: store.capacity.backup,
+    shortage: store.demand - store.capacity.backup,
+  };
+  store.incident = inc;
+  inc.events.push({ label: EVENT_LABELS.detected, at: Date.now() });
+
+  scheduleFrom(inc, flow.phases, 1); // phases[0] already recorded
+  timerInterval = setInterval(tickTimers, 100);
+  render();
+}
+
+function scheduleFrom(inc, phases, fromIdx) {
+  // All timers start now; fire each phase at its absolute offset
+  // (relative to the pause point when resuming mid-flow).
+  const base = fromIdx > 0 ? phases[fromIdx - 1][1] : 0;
+  for (let i = fromIdx; i < phases.length; i++) {
+    const [status, ms] = phases[i];
+    if (status === inc.pauseAt) {
+      machineTimers.push(setTimeout(() => pauseForSms(inc), ms - base));
+      return;
+    }
+    machineTimers.push(setTimeout(() => advance(inc, status), ms - base));
+  }
+}
+
+function advance(inc, status) {
+  inc.status = status;
+  inc.events.push({ label: EVENT_LABELS[status], at: Date.now() });
+
+  if ((status === "verifying" || status === "restored") && inc.outcome !== "failed") {
+    store.capacity.current = store.capacity.backup + MBPS_BUY;
+    store.capacity.extra = MBPS_BUY;
+  }
+  if (status === "restored") finishRecovery(inc, inc.outcome === "under" ? "under" : "ok");
+  if (status === "failed") { store.capacity.extra = 0; finishRecovery(inc, "failed"); }
+  render();
+}
+
+function pauseForSms(inc) {
+  inc.status = "sms";
+  inc.pausedAt = Date.now();
+  inc.elapsedBase = (Date.now() - inc.startedAt) / 1000;
+  inc.events.push({ label: EVENT_LABELS.sms, at: Date.now() });
+  inc.thread.push({
+    from: "net",
+    text: `Your backup is ${inc.available} Mbps but you need ${inc.required} Mbps. Reply with a duration and budget — e.g. “30 min, RM 8”.`,
+  });
+  render();
+  if (inc.autoSend) machineTimers.push(setTimeout(() => window.NC.sendSms(inc.autoSend, { auto: true }), 1100));
+}
+
+function finishRecovery(inc, kind) {
+  store.running = false;
+  clearMachine();
+  store.locked = 0;
+
+  const time = +((Date.now() - (inc.sentAt || inc.startedAt)) / 1000).toFixed(1);
+  const cost = inc.req ? inc.req.cost : costOf(MBPS_BUY, 30);
+  const fee = 0.30;
+  let charged = 0, refund = 0, f = 0, state = "", actTitle = "", actSub = "", actNote = "";
+
+  if (kind === "ok") {
+    charged = cost; f = fee; state = "Settled";
+    actTitle = "Recovery completed"; actSub = "Primary connection failed";
+    actNote = "+" + MBPS_BUY + " Mbps · " + inc.req.min + " min";
+    store.protectionState = "protected";
+    store.session = { start: Date.now(), min: inc.req.min, mbps: MBPS_BUY, cost, ended: false };
+  } else if (kind === "under") {
+    refund = +(cost * 0.1).toFixed(2);
+    charged = +(cost - refund).toFixed(2); f = fee; state = "Refund issued";
+    actTitle = "Recovery completed"; actSub = "Provider under-delivered";
+    actNote = "+" + MBPS_BUY + " Mbps · " + rm(refund) + " refunded";
+    store.protectionState = "protected";
+    store.session = { start: Date.now(), min: inc.req.min, mbps: MBPS_BUY, cost, ended: false };
+  } else {
+    refund = cost; state = "Refunded";
+    actTitle = "Recovery failed"; actSub = "Temporary capacity could not activate";
+    actNote = "No charge — automatically refunded";
+    store.protectionState = "attention";
+    store.capacity.current = store.capacity.backup;
+  }
+
+  store.balance = Math.max(0, +(store.balance - charged).toFixed(2));
+  store.month.usage = +(store.month.usage + charged).toFixed(2);
+  store.month.fees = +(store.month.fees + f).toFixed(2);
+
+  const timeline = inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label }));
+  const tx = "0x" + Math.random().toString(16).slice(2, 6) + "…" + Math.random().toString(16).slice(2, 6);
+
+  store.records[inc.id] = {
+    id: inc.id, time, timeline, outcome: kind,
+    provider: "Provider B", cap: MBPS_BUY, min: inc.req ? inc.req.min : 30,
+    smsText: inc.req ? inc.req.text : "", budget: inc.req ? inc.req.budget : 0,
+    cost, charged, refund, fee: f, state, tx,
+    restored: kind !== "failed",
+    delivered: kind === "under" ? 180 : (kind === "ok" ? MBPS_BUY : 0),
+  };
+
+  store.activity.unshift({
+    id: inc.id, ts: Date.now(), type: kind === "failed" ? "failed" : "ok",
+    title: actTitle, sub: actSub, note: actNote,
+    time: time + " sec", cost: charged, recordId: inc.id,
+  });
+
+  if (charged > 0 || refund > 0) {
+    store.payments.unshift({
+      id: inc.id, ts: Date.now(), label: "Temporary capacity",
+      provider: "Provider B", cap: "+" + MBPS_BUY + " Mbps · " + (inc.req ? inc.req.min : 30) + " min",
+      amount: charged, refund: refund > 0 && kind !== "failed" ? refund : (kind === "failed" ? cost : 0),
+      refundNote: kind === "failed" ? "reservation refunded" : "",
+      state,
+    });
+  }
+
+  inc.result = { time, charged, refund, state };
+  render();
+}
+
+function tickTimers() {
+  const inc = store.incident;
+  if (!inc) return;
+  document.querySelectorAll("[data-timer]").forEach((n) => {
+    n.textContent = elapsedSec(inc).toFixed(1);
+  });
+}
+
+/* live temporary-session metrics (demo speed: 1 real sec = 1 plan minute) */
+setInterval(() => {
+  const s = store.session;
+  if (!s || s.ended) return;
+  const remainMin = s.min - (Date.now() - s.start) / 1000;
+  if (remainMin <= 0) { endSession(); return; }
+  const totSec = Math.max(0, remainMin * 60);
+  const mm = Math.floor(totSec / 60), ss = Math.floor(totSec % 60);
+  const cd = mm + ":" + String(ss).padStart(2, "0");
+  document.querySelectorAll("[data-countdown]").forEach((n) => { n.textContent = cd; });
+  document.querySelectorAll("[data-tput]").forEach((n) => { n.textContent = (s.mbps - 1.4 + Math.random() * 3.2).toFixed(1) + " Mbps"; });
+  document.querySelectorAll("[data-lat]").forEach((n) => { n.textContent = Math.round(36 + Math.random() * 8) + " ms"; });
+  document.querySelectorAll("[data-loss]").forEach((n) => { n.textContent = (0.1 + Math.random() * 0.25).toFixed(1) + " %"; });
+}, 250);
+
+function endSession() {
+  if (store.session) store.session.ended = true;
+  store.sessionExpired = true;
+  store.capacity.current = store.capacity.backup;
+  store.capacity.extra = 0;
+  store.protectionState = "attention";
+  render();
+}
+
+function resetSim() {
+  clearMachine();
+  store.incident = null;
+  store.running = false;
+  store.overlayDismissed = false;
+  store.protectionState = "protected";
+  store.capacity.current = store.capacity.primary;
+  store.capacity.extra = 0;
+  store.capacity.primaryDown = false;
+  store.locked = 0;
+  store.session = null;
+  store.sessionExpired = false;
+  render();
+}
+
+/* ---------------- router ---------------- */
+function navigate(hash) { location.hash = hash; }
+window.addEventListener("hashchange", render);
+
+function currentRoute() {
+  const h = location.hash || "#/";
+  return { parts: h.replace(/^#\//, "").split("/").filter(Boolean), raw: h };
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const { parts } = currentRoute();
+
+  if (!store.onboarded && parts[0] !== "onboarding" && parts[0] !== "dev") {
+    app.innerHTML = obShell(0, viewObWelcome(), `<button class="btn primary" onclick="NC.obStart()">Get started</button>`);
+    return;
+  }
+
+  let html = "";
+  switch (parts[0]) {
+    case "onboarding": html = viewOnboarding(); break;
+    case "dev": html = viewDev(); break;
+    case "protection": html = shell("protection", viewProtection()); break;
+    case "activity": html = parts[1] ? shell("activity", viewActivityDetail(parts[1])) : shell("activity", viewActivity()); break;
+    case "wallet": html = shell("wallet", viewWallet()); break;
+    case "profile": html = shell("profile", viewProfile()); break;
+    case "home": html = shell("home", viewHome()); break;
+    default: navigate("#/home"); return;
+  }
+  app.innerHTML = html;
+
+  const ov = store.incident && !store.overlayDismissed ? overlayHtml(store.incident) : "";
+  let ovEl = document.getElementById("overlay");
+  if (!ovEl) { ovEl = document.createElement("div"); ovEl.id = "overlay"; document.body.appendChild(ovEl); }
+  ovEl.outerHTML = ov ? `<div id="overlay">${ov}</div>` : `<div id="overlay" hidden></div>`;
+  tickTimers();
+}
+
+/* ---------------- shell ---------------- */
+const NAV = [
+  ["home", "Home", `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>`],
+  ["protection", "Protection", `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5.2c0 4.6-3 8.1-7 9.8-4-1.7-7-5.2-7-9.8V6z"/><path d="M9.2 12l2 2 3.6-4"/></svg>`],
+  ["activity", "Activity", `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6.5 5 13L17 12h4"/></svg>`],
+  ["wallet", "Wallet", `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M2.5 10h19"/></svg>`],
+  ["profile", "Profile", `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c1.4-3.6 4.2-5.4 7.5-5.4s6.1 1.8 7.5 5.4"/></svg>`],
+];
+
+function stateChip() {
+  const s = store.protectionState;
+  const map = { protected: ["green", "Protected"], recovering: ["blue", "Recovering"], attention: ["amber", "Attention"] }[s];
+  return `<span class="chip ${map[0]}" aria-live="polite"><span class="dot"></span>${map[1]}</span>`;
+}
+
+function shell(active, content) {
+  return `
+  <div class="app-col">
+    <header class="topnav">
+      <span class="logo"><span class="dot">·</span>NetChain</span>
+      <nav class="links" aria-label="Main">
+        ${NAV.map(([id, label]) => `<a href="#/${id}" class="${active === id ? "on" : ""}">${label}</a>`).join("")}
+      </nav>
+      ${stateChip()}
+      <span class="nav-balance">Balance <b>${rm(store.balance)}</b></span>
+    </header>
+    <div class="topbar">
+      <span class="logo"><span class="dot">·</span>NetChain</span>
+      <span class="grow"></span>
+      ${stateChip()}
+    </div>
+    <div class="content full">${content}</div>
+    <nav class="bottomnav" aria-label="Main">
+      ${NAV.map(([id, label, ic]) => `<a href="#/${id}" class="${active === id ? "on" : ""}">${ic}<span>${label}</span></a>`).join("")}
+    </nav>
+  </div>`;
+}
+
+/* ================= HOME ================= */
+function strengthBars(filled, cls) {
+  return `<span class="strength ${cls || ""}" role="img" aria-label="${filled} of 4 signal bars">${[1,2,3,4].map((i) => `<i class="${i <= filled ? "on" : ""}"></i>`).join("")}</span>`;
+}
+
+function sessionCard() {
+  const s = store.session;
+  if (!s) return "";
+  if (s.ended) {
+    return `
+    <div class="card"><div class="pad">
+      <div class="sess-head">
+        ${strengthBars(1)}
+        <div class="grow"><div class="t">Temporary session ended</div>
+        <div class="s">The ${s.min}-minute capacity plan expired.</div></div>
+      </div>
+    </div></div>`;
+  }
+  return `
+  <div class="card"><div class="pad">
+    <div class="sess-head">
+      ${strengthBars(4)}
+      <div class="grow"><div class="t">Recovery session · Excellent</div>
+      <div class="s">${s.mbps} Mbps purchased plan · verified delivery</div></div>
+    </div>
+    <div class="sess-grid">
+      <div class="n"><div class="nk">Throughput</div><div class="nv" data-tput>${s.mbps} Mbps</div></div>
+      <div class="n"><div class="nk">Latency</div><div class="nv" data-lat>40 ms</div></div>
+      <div class="n"><div class="nk">Packet loss</div><div class="nv" data-loss>0.2 %</div></div>
+      <div class="n"><div class="nk">Plan price</div><div class="nv">${rm(s.cost)}</div></div>
+    </div>
+    <div class="sess-foot">
+      <span style="font-size:12.5px;color:var(--muted);font-weight:600">Time remaining</span>
+      <span class="cd" data-countdown>${s.min}:00</span>
+      <span class="hint">demo speed ×60</span>
+    </div>
+  </div></div>`;
+}
+
+function viewHome() {
+  const s = store.protectionState;
+  const heroText = {
+    protected: ["green", "CONNECTION PROTECTED"],
+    recovering: ["blue", "RECOVERING CONNECTION"],
+    attention: ["amber", "ATTENTION REQUIRED"],
+  }[s];
+  const heroSub = {
+    protected: "If your backup isn't enough, NetChain finds extra capacity — you just reply with a duration and budget.",
+    recovering: "Handling your recovery request. No action needed.",
+    attention: store.sessionExpired
+      ? "Your temporary session ended and the primary line is still down. Send a new recovery request."
+      : "Recovery failed — you weren't charged. Your backup is active but not enough.",
+  }[s];
+
+  let problem = "";
+  if (s !== "protected") {
+    problem = `
+    <div class="card problem"><div class="pad">
+      <h3>Connection problem detected</h3>
+      <div class="d">Your main connection is unavailable. Backup connection activated${s === "attention" ? (store.sessionExpired ? ", and the temporary plan has expired" : ", but the extra capacity could not be added") : ""}.</div>
+      <div class="nums">
+        <div class="n"><div class="nk">Available now</div><div class="nv">${store.capacity.current}</div></div>
+        <div class="n"><div class="nk">Your demand</div><div class="nv">${store.demand}</div></div>
+        <div class="n"><div class="nk">Shortage</div><div class="nv bad">${Math.max(0, store.demand - store.capacity.current)}</div></div>
+      </div>
+      ${s === "attention" ? `<div style="margin-top:14px"><button class="btn primary" onclick="NC.run('main')">New recovery request</button></div>` : ""}
+    </div></div>`;
+  }
+
+  return `
+  <div class="cols">
+    <div>
+      <div class="hero">
+        <div class="status ${heroText[0]}"><span class="dot ${s === "protected" ? "protected" : s}"></span>${heroText[1]}</div>
+        <h1>${store.capacity.current}<span class="u">Mbps</span></h1>
+        <div class="sub">Current capacity · ${heroSub}</div>
+        ${store.capacity.extra && s === "protected" ? `<span class="pill-note">⚡ +${store.capacity.extra} Mbps temporary plan</span>` : ""}
+      </div>
+      ${problem}
+      ${s === "protected" ? sessionCard() : ""}
+    </div>
+    <div>
+      <div class="card-title" style="margin-top:16px">Connection</div>
+      <div class="card">
+        <div class="row"><span class="grow k">Primary network</span><span class="v ${!store.capacity.primaryDown ? "ok" : ""}">${store.capacity.primaryDown ? "Down" : "Connected"}</span></div>
+        <div class="row"><span class="grow k">Backup network</span><span class="v ok">Active</span></div>
+        <div class="row"><span class="grow k">NetChain protection</span><span class="v ok">Active</span></div>
+        ${s === "protected" && store.session ? `<div class="row"><span class="grow k">Signal strength</span><span style="display:flex;align-items:center;gap:10px">${strengthBars(4)}<span class="v ok">Excellent</span></span></div>` : ""}
+      </div>
+
+      <div class="card-title">Your protection</div>
+      <div class="card">
+        <div class="row"><span class="grow k">Plan</span><span class="v">${store.plan}</span></div>
+        <div class="row"><span class="grow k">Auto recovery</span><span class="v ${store.auto ? "ok" : ""}">${store.auto ? "ON" : "OFF"}</span></div>
+        <div class="row"><span class="grow k">Recovery budget</span><span class="v">${rm0(store.monthlyLimit)}<span style="color:var(--muted);font-weight:500"> / month</span></span></div>
+      </div>
+      <p class="note">Emergency and life-safety traffic always has priority over any plan.</p>
+    </div>
+  </div>`;
+}
+
+/* ================= PROTECTION ================= */
+function viewProtection() {
+  return `
+  <div class="cols">
+    <div>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.01em;padding-top:6px">Protection</h1>
+      <p style="color:var(--muted);font-size:13.5px;margin-top:4px">You're in control. NetChain only spends what you allow.</p>
+
+      <div class="card">
+        <div class="row">
+          <span class="grow"><span class="t">Auto recovery</span><div class="s">Restore connectivity automatically, within your limits</div></span>
+          <label class="switch"><input type="checkbox" ${store.auto ? "checked" : ""} onchange="NC.setAuto(this.checked)" aria-label="Auto recovery"><i></i></label>
+        </div>
+        <div class="row"><span class="grow k">Maximum per recovery</span><span class="v">${rm0(store.maxPerRecovery)}</span></div>
+        <div class="row"><span class="grow k">Monthly recovery limit</span><span class="v">${rm0(store.monthlyLimit)}</span></div>
+        <div class="row"><span class="grow k">Minimum acceptable speed</span><span class="v">${store.minSpeed} Mbps</span></div>
+        <div class="row"><span class="grow k">Maximum recovery duration</span><span class="v">${store.maxDuration} min</span></div>
+      </div>
+      <p class="note">In plain words: NetChain may spend up to ${rm0(store.maxPerRecovery)} per recovery, at most ${rm0(store.monthlyLimit)} a month, for at least ${store.minSpeed} Mbps.</p>
+    </div>
+    <div>
+      <div class="card-title" style="margin-top:16px">Your plan</div>
+      <div class="plans">
+        ${["NORMAL", "VIP", "VVIP"].map((p) => {
+          const d = {
+            NORMAL: ["Standard recovery queue", "Standard provider search", "Lower recovery limits"],
+            VIP: ["Higher priority in the queue", "Broader provider search", "Higher capacity & spending limits"],
+            VVIP: ["Highest priority in the queue", "Fastest provider selection", "Highest configurable limits"],
+          }[p];
+          return `
+          <button class="plan-card ${store.plan === p ? "sel" : ""}" onclick="NC.setPlan('${p}')">
+            <div class="pn">${p}${store.plan === p ? `<span class="tick">✓</span>` : ""}</div>
+            <div class="pd">${{ NORMAL: "Standard protection", VIP: "Priority protection", VVIP: "Maximum protection" }[p]}</div>
+            <ul>${d.map((x) => `<li>${x}</li>`).join("")}</ul>
+          </button>`;
+        }).join("")}
+      </div>
+      <p class="note">A paid plan only affects queueing and search breadth. Emergency traffic always comes first — it is never sold as a plan feature.</p>
+    </div>
+  </div>`;
+}
+
+/* ================= WALLET ================= */
+function viewWallet() {
+  const remaining = Math.max(0, +(store.monthlyLimit - store.month.usage).toFixed(2));
+  const lastTx = store.payments[0] && store.records[store.payments[0].id];
+  return `
+  <h1 style="font-size:24px;font-weight:800;letter-spacing:-.01em;padding-top:6px">Wallet</h1>
+
+  <div class="cols">
+    <div>
+      <div class="card"><div class="pad">
+        <div style="font-size:13px;color:var(--muted);font-weight:600">NetChain balance</div>
+        <div class="big-num">${rm(store.balance)}</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:2px">Available for automatic recovery</div>
+        <div class="seg" style="margin-top:16px">
+          <button onclick="NC.addFunds(20)">+ RM 20</button>
+          <button onclick="NC.addFunds(50)">+ RM 50</button>
+          <button onclick="NC.addFunds(100)">+ RM 100</button>
+        </div>
+      </div></div>
+
+      <div class="card-title">This month</div>
+      <div class="card">
+        <div class="stat-line"><span class="k">Recovery usage</span><span class="v">${rm(store.month.usage)}</span></div>
+        <div class="stat-line"><span class="k">Platform fees</span><span class="v">${rm(store.month.fees)}</span></div>
+        ${store.locked > 0 ? `<div class="stat-line"><span class="k">In escrow (locked)</span><span class="v warnv">${rm(store.locked)}</span></div>` : ""}
+        <div class="stat-line"><span class="k">Remaining budget</span><span class="v">${rm(remaining)}</span></div>
+      </div>
+
+      <div class="card-title">Sui trust layer</div>
+      <div class="card">
+        <div class="row">
+          <span class="grow"><span class="t">Wallet address</span><div class="s mono">${store.walletAddr.slice(0, 10)}…${store.walletAddr.slice(-6)}</div></span>
+          <span class="chip green"><span class="dot"></span>Escrow ready</span>
+        </div>
+        <div class="stat-line"><span class="k">Settlement asset</span><span class="v">MYRC · 1 = RM 1</span></div>
+        <div class="stat-line"><span class="k">Spending authority</span><span class="v">up to ${rm0(store.maxPerRecovery)} / recovery</span></div>
+        <div class="stat-line"><span class="k">Funds release rule</span><span class="v">only after verified delivery</span></div>
+        ${lastTx ? `<div class="stat-line"><span class="k">Latest settlement</span><span class="v"><a class="txlink" href="https://suiscan.xyz/testnet" target="_blank" rel="noopener">${lastTx.tx || "view"} ↗ SuiScan</a></span></div>` : ""}
+      </div>
+    </div>
+
+    <div>
+      <div class="card-title" style="margin-top:16px">Recent payments</div>
+      ${store.payments.length ? store.payments.map((p) => `
+      <div class="card">
+        <div class="row">
+          <div class="grow">
+            <div class="t">${p.label}</div>
+            <div class="s">${p.provider} · ${p.cap}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="v">${rm(p.amount)}</div>
+            <div class="s" style="color:${p.refund ? "var(--warn)" : "var(--ok)"};font-weight:700">${p.refund ? "↓ " + rm(p.refund) + " " + (p.refundNote || "refunded") : "✓ " + p.state}</div>
+          </div>
+          <button class="btn sm subtle" onclick="NC.disclose('pay_${p.id}')">Details</button>
+        </div>
+        ${store.disclosures["pay_" + p.id] ? payDetails(p) : ""}
+      </div>`).join("")
+      : `<div class="card"><div class="row"><span class="s">No payments yet. Payment is only taken after a recovery is verified.</span></div></div>`}
+      <p class="note">Money states: <b>locked</b> while capacity is activating → <b>settled</b> after verification → <b>refunded</b> automatically if the provider fails.</p>
+    </div>
+  </div>`;
+}
+
+function payDetails(p) {
+  const rec = store.records[p.id] || {};
+  const fee = rec.fee != null ? rec.fee : 0;
+  const cap = Math.max(0, +(p.amount - fee).toFixed(2));
+  return `
+  <div class="disc"><div class="tech">
+    <span class="k">Capacity charge</span><span class="v">${rm(cap)}</span>
+    <span class="k">Platform fee</span><span class="v">${rm(fee)}</span>
+    <span class="k">Total${p.refund && !p.refundNote ? " (after refund)" : ""}</span><span class="v">${rm(p.amount)}</span>
+    ${p.refund ? `<span class="k">Refunded to you</span><span class="v">${rm(p.refund)}</span>` : ""}
+    <span class="k">Money state</span><span class="v">${rec.state || p.state}</span>
+    <span class="k">Verification</span><span class="v">${rec.outcome === "under" ? "Under-delivery — penalty applied" : rec.outcome === "failed" ? "Failed — refunded" : "Passed"}</span>
+    <span class="k">Transaction ID</span><span class="v">${rec.tx || "—"}</span>
+  </div></div>`;
+}
+
+/* ================= ACTIVITY ================= */
+function viewActivity() {
+  const groups = [];
+  const seen = {};
+  const sorted = [...store.activity].sort((a, b) => b.ts - a.ts);
+  sorted.forEach((a) => {
+    const g = dayLabel(a.ts);
+    (seen[g] = seen[g] || []).push(a);
+    if (!groups.includes(g)) groups.push(g);
+  });
+
+  const item = (a) => {
+    const ic = { ok: ["ok", "⚡"], check: ["check", "✓"], failed: ["bad", "⚠"] }[a.type] || ["check", "·"];
+    const hasDetail = !!a.recordId;
+    const inner = `
+      <div class="act-ic ${ic[0]}">${ic[1]}</div>
+      <div class="grow">
+        <div class="t">${a.title}</div>
+        <div class="s">${a.sub}</div>
+      </div>
+      <div style="text-align:right">
+        ${a.time ? `<div class="s" style="color:var(--ink);font-weight:700">${a.time}</div>` : ""}
+        <div class="s">${a.cost != null && a.cost > 0 ? rm(a.cost) : a.note}</div>
+      </div>
+      ${hasDetail ? `<span style="color:var(--faint)">›</span>` : ""}`;
+    return hasDetail
+      ? `<button class="card row act-item" onclick="navigate('#/activity/${a.recordId}')">${inner}</button>`
+      : `<div class="card"><div class="row">${inner}</div></div>`;
+  };
+
+  return `
+  <div style="max-width:760px;margin:0 auto">
+    <h1 style="font-size:24px;font-weight:800;letter-spacing:-.01em;padding-top:6px">Activity</h1>
+    ${groups.map((g) => `
+      <div class="act-date">${g}</div>
+      ${seen[g].map(item).join("")}
+    `).join("")}
+    <p class="note">Activity shows what NetChain did on your behalf — recoveries, checks and refunds.</p>
+  </div>`;
+}
+
+function viewActivityDetail(id) {
+  const a = store.activity.find((x) => x.id === id);
+  const r = store.records[id];
+  if (!a || !r) return `<div class="card"><div class="pad">Record not found.</div></div>`;
+
+  const chip = r.outcome === "failed"
+    ? `<span class="chip red"><span class="dot"></span>FAILED</span>`
+    : r.outcome === "under"
+      ? `<span class="chip amber"><span class="dot"></span>RECOVERED · PARTIAL REFUND</span>`
+      : `<span class="chip green"><span class="dot"></span>RECOVERED</span>`;
+  const capCharge = Math.max(0, +(r.charged - r.fee).toFixed(2));
+
+  const comparison = `
+    <div class="card"><div class="pad">
+      <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.05em">PROVIDER COMPARISON</div>
+      ${COMPARISON.map((c) => {
+        const price = c.name === "Provider B" ? rm(r.cost) : c.name === "Provider C" ? rm(+(r.cost * 1.45).toFixed(2)) : null;
+        return `
+        <div class="stat-line">
+          <span class="k">${c.name} <span style="color:var(--faint)">· ${c.state}</span></span>
+          <span class="v ${c.sel ? "ok" : ""}" style="font-weight:${c.sel ? 800 : 500}">${price || "—"}${c.sel ? " · selected ✓" : ""}</span>
+        </div>`;
+      }).join("")}
+      <div style="font-size:12.5px;color:var(--muted);margin-top:8px">Selected: available now, meets ${r.cap} Mbps, lowest price, within your ${rm0(r.budget)} budget.</div>
+    </div></div>`;
+
+  return `
+  <div style="max-width:760px;margin:0 auto">
+    <button class="btn link" style="margin-top:10px;padding-left:0" onclick="navigate('#/activity')">← Activity</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <h1 style="font-size:22px;font-weight:800;letter-spacing:-.01em">Recovery #${r.id}</h1>
+      ${chip}
+    </div>
+    <div style="color:var(--muted);font-size:13px;margin-top:2px">${fmtDate(a.ts)} · ${a.sub}</div>
+
+    <div class="cols" style="margin-top:6px">
+      <div>
+        <div class="card"><div class="pad">
+          <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.05em">TIMELINE</div>
+          ${r.timeline.map((e, i) => `
+          <div style="display:flex;gap:10px;padding:5px 0;${i === 0 ? "margin-top:6px;" : "border-top:1px solid var(--line-soft);margin-top:5px;"}">
+            <span class="tl-time">${e.time.slice(0, 8)}</span>
+            <span style="font-size:13.5px">${e.label}</span>
+          </div>`).join("")}
+        </div></div>
+
+        <div class="result-grid" style="margin-top:14px">
+          <div class="rg"><div class="rk">Recovery time</div><div class="rv">${r.time} sec</div></div>
+          <div class="rg"><div class="rk">${r.restored ? "Capacity added" : "Capacity"}</div><div class="rv ${r.restored ? "ok" : ""}">${r.restored ? "+" + r.cap + " Mbps" : "—"}</div></div>
+          <div class="rg"><div class="rk">Cost</div><div class="rv">${rm(r.charged)}${r.refund && r.outcome !== "failed" ? `<div style="font-size:11.5px;color:var(--warn);font-weight:600">${rm(r.refund)} refunded</div>` : ""}</div></div>
+          <div class="rg"><div class="rk">Provider</div><div class="rv" style="font-size:14.5px">${r.provider}</div></div>
+        </div>
+
+        ${r.outcome === "failed" ? "" : `
+        <div class="card" style="margin-top:14px"><div class="pad">
+          <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.05em">DELIVERY</div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Delivered throughput</span><span class="v ${r.outcome === "under" ? "warnv" : "ok"}">${r.delivered} / ${r.cap} Mbps</span></div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Signal strength</span><span class="v" style="display:flex;align-items:center;gap:10px">${strengthBars(r.outcome === "under" ? 2 : 4, r.outcome === "under" ? "strength-2" : "")} ${r.outcome === "under" ? "Fair" : "Excellent"}</span></div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Verification</span><span class="v ${r.outcome === "under" ? "warnv" : "ok"}">${r.outcome === "under" ? "Under-delivery — penalty applied" : "Passed"}</span></div>
+        </div></div>`}
+      </div>
+
+      <div>
+        <div class="card"><div class="pad">
+          <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.05em">YOUR REQUEST</div>
+          <div style="margin-top:8px;font-size:13.5px">“${r.smsText}”</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">→ ${r.cap} Mbps · ${r.min} min · budget ${rm0(r.budget)}</div>
+        </div></div>
+
+        <div class="card"><div class="pad">
+          <div style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.05em">PAYMENT</div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Capacity charge</span><span class="v">${rm(capCharge)}</span></div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Platform fee</span><span class="v">${rm(r.fee)}</span></div>
+          ${r.refund ? `<div class="stat-line" style="padding:12px 0"><span class="k">Refunded to you</span><span class="v ok">− ${rm(r.refund)}</span></div>` : ""}
+          <div class="stat-line" style="padding:12px 0"><span class="k">Total charged</span><span class="v">${rm(r.charged)}</span></div>
+          <div class="stat-line" style="padding:12px 0"><span class="k">Money state</span><span class="v ${r.outcome === "failed" ? "warnv" : "ok"}">${r.state}</span></div>
+          <button class="btn link" style="padding-left:0" onclick="NC.disclose('rec_${r.id}')">Transaction details</button>
+          ${store.disclosures["rec_" + r.id] ? `
+          <div class="disc"><div class="tech">
+            <span class="k">Payment status</span><span class="v">${r.state}</span>
+            <span class="k">Network</span><span class="v">Sui</span>
+            <span class="k">Verification</span><span class="v">${r.outcome === "under" ? "Under-delivery — penalty applied" : r.outcome === "failed" ? "Failed — refunded" : "Passed"}</span>
+            <span class="k">Transaction ID</span><span class="v">${r.tx}</span>
+            <span class="k">View</span><span class="v"><a class="txlink" href="https://suiscan.xyz/testnet" target="_blank" rel="noopener">SuiScan ↗</a></span>
+          </div></div>` : ""}
+        </div></div>
+
+        ${comparison}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= PROFILE ================= */
+function viewProfile() {
+  return `
+  <div class="cols">
+    <div>
+      <h1 style="font-size:24px;font-weight:800;letter-spacing:-.01em;padding-top:6px">Profile</h1>
+      <div class="card">
+        <div class="row">
+          <div class="act-ic ok" style="font-size:17px">📱</div>
+          <div class="grow"><div class="t">${store.deviceName}</div><div class="s">${store.service}</div></div>
+          <span class="chip green"><span class="dot"></span>Connected</span>
+        </div>
+        <div class="row"><span class="grow k">Plan</span><span class="v">${store.plan}</span></div>
+        <div class="row"><span class="grow k">Auto recovery</span><span class="v ${store.auto ? "ok" : ""}">${store.auto ? "ON" : "OFF"}</span></div>
+      </div>
+      <p class="note">NetChain is an autonomous connectivity recovery platform: it finds and activates temporary capacity when your existing failover isn't enough.</p>
+    </div>
+    <div>
+      <div class="card-title" style="margin-top:16px">Preferences</div>
+      <div class="card">
+        <div class="row">
+          <span class="grow"><span class="t">Notifications</span><div class="s">Alert me when NetChain acts</div></span>
+          <label class="switch"><input type="checkbox" ${store.notif ? "checked" : ""} onchange="NC.setNotif(this.checked)" aria-label="Notifications"><i></i></label>
+        </div>
+        <button class="row" onclick="navigate('#/protection')"><span class="grow"><span class="t">Protection settings</span><div class="s">Limits, speed & duration</div></span><span style="color:var(--faint)">›</span></button>
+      </div>
+      <div class="card-title">About</div>
+      <div class="card">
+        <div class="row"><span class="grow k">Version</span><span class="v">Hackathon build</span></div>
+        <button class="row" onclick="navigate('#/dev')"><span class="grow"><span class="t">Demo simulator</span><div class="s">Development only — trigger scenarios</div></span><span style="color:var(--faint)">›</span></button>
+        <button class="row" onclick="NC.redoOnboarding()"><span class="grow"><span class="t">Redo onboarding</span><div class="s">See the first-run flow again</div></span><span style="color:var(--faint)">›</span></button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= ONBOARDING ================= */
+const obState = { step: 0, plan: "NORMAL", service: "Mobile / eSIM", auto: true, maxCost: 10, minSpeed: 100, balance: 50 };
+
+function obShell(step, inner, footer) {
+  return `
+  <div class="app-col">
+    <div class="ob">
+      <div class="ob-top">
+        <span class="logo"><span class="dot">·</span>NetChain</span>
+        <div class="ob-dots">${[0,1,2,3,4,5].map((i) => `<i class="${i <= step ? "on" : ""}"></i>`).join("")}</div>
+      </div>
+      <div class="ob-body">${inner}</div>
+      <div class="ob-foot">${footer || ""}</div>
+    </div>
+  </div>`;
+}
+
+function viewOnboarding() {
+  const s = obState;
+  switch (s.step) {
+    case 0: return obShell(0, viewObWelcome(), `<button class="btn primary" onclick="NC.obStart()">Get started</button>`);
+    case 1: return obShell(1, `
+      <h1>Choose your plan</h1>
+      <p class="lede">Plans affect your recovery queue priority. You can change this anytime.</p>
+      <div class="plans" style="margin-top:18px">
+        ${["NORMAL", "VIP", "VVIP"].map((p) => `
+        <button class="plan-card ${s.plan === p ? "sel" : ""}" onclick="NC.obPlan('${p}')">
+          <div class="pn">${p}${s.plan === p ? `<span class="tick">✓</span>` : ""}</div>
+          <div class="pd">${{ NORMAL: "Standard protection", VIP: "Priority protection", VVIP: "Maximum protection" }[p]}</div>
+        </button>`).join("")}
+      </div>
+      <p class="note">Emergency and life-safety traffic always has priority over every plan — it is never a paid feature.</p>`,
+      `<button class="btn primary" onclick="NC.obNext()">Continue</button>`);
+    case 2: return obShell(2, `
+      <h1>Connect your service</h1>
+      <p class="lede">What should NetChain protect?</p>
+      <div class="card" style="margin-top:16px">
+        ${["Mobile / eSIM", "Home Internet", "Portable Router", "Business connection", "Demo network"].map((sv) => `
+        <button class="row selrow ${s.service === sv ? "sel" : ""}" onclick="NC.obService('${sv}')">
+          <span class="grow k" style="color:var(--ink);font-weight:600">${sv}</span>
+          <span class="radio"></span>
+        </button>`).join("")}
+      </div>
+      <p class="note">Demo build: service connection is simulated.</p>`,
+      `<button class="btn primary" onclick="NC.obNext()">Continue</button>`);
+    case 3: return obShell(3, `
+      <h1>Recovery preferences</h1>
+      <p class="lede">How much can NetChain spend on your behalf?</p>
+      <div class="card" style="margin-top:16px">
+        <div class="row" style="align-items:flex-start">
+          <span class="grow"><span class="t">Auto recovery</span><div class="s">Act automatically when your connection isn't enough</div></span>
+          <label class="switch"><input type="checkbox" ${s.auto ? "checked" : ""} onchange="NC.obAuto(this.checked)" aria-label="Auto recovery"><i></i></label>
+        </div>
+      </div>
+      <div class="card-title">Maximum cost per recovery</div>
+      <div class="seg wide">
+        ${[5, 10, 20].map((v) => `<button class="${s.maxCost === v ? "on" : ""}" onclick="NC.obMaxCost(${v})">RM ${v}</button>`).join("")}
+      </div>
+      <div class="card-title">Minimum acceptable speed</div>
+      <div class="seg wide">
+        ${[50, 100, 250].map((v) => `<button class="${s.minSpeed === v ? "on" : ""}" onclick="NC.obMinSpeed(${v})">${v} Mbps</button>`).join("")}
+      </div>`,
+      `<button class="btn primary" onclick="NC.obNext()">Continue</button>`);
+    case 4: return obShell(4, `
+      <h1>Add recovery balance</h1>
+      <p class="lede">This is what NetChain can use to buy temporary capacity for you. Unused balance stays yours.</p>
+      <div class="seg wide" style="margin-top:20px">
+        ${[20, 50, 100].map((v) => `<button class="${s.balance === v ? "on" : ""}" onclick="NC.obBalance(${v})">RM ${v}</button>`).join("")}
+      </div>
+      <p class="note">Payment is only taken after a recovery is verified. Failed recoveries are refunded automatically.</p>`,
+      `<button class="btn primary" onclick="NC.obNext()">Add ${rm0(s.balance)} & continue</button>
+       <div style="text-align:center;margin-top:10px"><button class="btn link" onclick="NC.obNext(true)">I'll add funds later</button></div>`);
+    case 5: return obShell(5, `
+      <div class="ob-center">
+        <div class="big-ic">🛡️</div>
+        <h1>You're protected</h1>
+        <p class="lede">NetChain will watch your connection. If your backup isn't enough, you'll get an SMS — just reply with a duration and budget, and NetChain does the rest.</p>
+      </div>`,
+      `<button class="btn primary" onclick="NC.obFinish()">Go to Home</button>`);
+  }
+  return "";
+}
+
+function viewObWelcome() {
+  return `
+  <div class="ob-center">
+    <span class="logo" style="font-size:20px"><span class="dot" style="color:var(--accent)">·</span>NetChain</span>
+    <div class="big-ic" style="margin-top:26px">📶</div>
+    <h1>Keep your connection alive</h1>
+    <p class="lede">When your normal backup isn't enough, NetChain finds and activates extra connectivity. You approve it with one SMS — duration and budget, your choice.</p>
+  </div>`;
+}
+
+/* ================= RECOVERY OVERLAY ================= */
+function overlayHtml(inc) {
+  if (inc.status === "restored") return overlayDone(inc);
+  if (inc.status === "failed") return overlayFailed(inc);
+  return overlayRunning(inc);
+}
+
+function threadHtml(inc) {
+  return `<div class="thread" aria-label="Recovery SMS thread">
+    ${inc.thread.map((b) => `<div class="bubble ${b.from}">${b.auto ? `<span class="auto-tag">auto reply</span>` : ""}${b.text}</div>`).join("")}
+  </div>`;
+}
+
+function composerHtml() {
+  return `
+  <div class="qchips">
+    ${[["15 min, RM 4"],["30 min, RM 8"],["60 min, RM 13"]].map(([t]) => `<button onclick="NC.fillSms('${t}')">${t}</button>`).join("")}
+  </div>
+  <div class="smsbar">
+    <input id="smsInput" placeholder="e.g. 30 min, RM 8" aria-label="Reply with duration and budget"
+      onkeydown="if(event.key==='Enter'){NC.sendSmsInput()}">
+    <button class="btn primary" onclick="NC.sendSmsInput()">Send</button>
+  </div>`;
+}
+
+function purchaseHtml(inc) {
+  const r = inc.req;
+  if (!r) return "";
+  return `
+  <div class="purchase">
+    <div class="ph">Purchase approved · ${r.text}</div>
+    <div class="pr"><span class="k">Provider</span><span class="v">Provider B</span></div>
+    <div class="pr"><span class="k">Capacity</span><span class="v">${MBPS_BUY} Mbps</span></div>
+    <div class="pr"><span class="k">Duration</span><span class="v">${r.min} min</span></div>
+    <div class="pr"><span class="k">Provider price</span><span class="v">${rm(+(r.cost - 0.30).toFixed(2))}</span></div>
+    <div class="pr"><span class="k">Platform fee</span><span class="v">${rm(0.30)}</span></div>
+    <div class="pr"><span class="k">Total</span><span class="v">${rm(r.cost)}</span></div>
+    <div class="why">Why Provider B: available now · meets ${MBPS_BUY} Mbps · lowest price · within your ${rm0(r.budget)} budget</div>
+  </div>
+  <div class="money-state">🔒 ${rm(r.cost)} locked in escrow — released only after verification passes</div>`;
+}
+
+function stepListHtml(inc) {
+  const cur = STEP_INDEX[inc.status] ?? 0;
+  return `<div class="steps" style="margin-top:8px">
+    ${STEP_LABELS.map((label, i) => {
+      let cls = i < cur ? "done" : i === cur ? "now" : "";
+      if (inc.status === "failed" && i === 5) cls = "fail";
+      return `<div class="step ${cls}"><span class="ic"></span>${label}</div>`;
+    }).join("")}
+  </div>`;
+}
+
+function overlayRunning(inc) {
+  const waiting = inc.status === "sms";
+  const evidence = waiting
+    ? `${threadHtml(inc)}${composerHtml()}
+       <p class="note" style="margin-top:12px">Your reply approves this recovery up to the budget you send. Auto recovery can send it for you.</p>`
+    : `${threadHtml(inc)}${purchaseHtml(inc)}`;
+
+  return `
+  <div class="overlay"><div class="sheet wide" role="dialog" aria-modal="true" aria-label="Recovery in progress">
+    <div class="ov-main">
+      <span class="chip blue"><span class="dot"></span>RECOVERING</span>
+      <h2>${waiting ? "Reply to approve your recovery" : "We're restoring your connection"}</h2>
+      <p class="lede">${waiting
+        ? `Your main connection failed. Backup is active but ${inc.shortage} Mbps short.`
+        : "Handling your request automatically — no action needed."}</p>
+      <div style="display:flex;align-items:baseline;margin-top:12px">
+        <div class="timer"><span data-timer>0.0</span><span class="u">sec</span></div>
+      </div>
+      ${stepListHtml(inc)}
+    </div>
+    <div class="ov-side">${evidence}</div>
+  </div></div>`;
+}
+
+function overlayDone(inc) {
+  const r = store.records[inc.id];
+  const under = r.outcome === "under";
+  const chip = under
+    ? `<span class="chip amber"><span class="dot"></span>RESTORED · PARTIAL REFUND</span>`
+    : `<span class="chip green"><span class="dot"></span>CONNECTION RESTORED</span>`;
+  const costHtml = r.refund
+    ? `${rm(r.charged)} <span style="font-size:12px;color:var(--warn);font-weight:700;display:block">${rm(r.refund)} refunded</span>`
+    : rm(r.charged);
+  const capCharge = Math.max(0, +(r.charged - r.fee).toFixed(2));
+
+  return `
+  <div class="overlay"><div class="sheet wide" role="dialog" aria-modal="true" aria-label="Recovery complete">
+    <div class="ov-main">
+      ${chip}
+      <h2>Connection restored</h2>
+      <p class="lede">${under
+        ? `The provider delivered ${r.delivered} of ${r.cap} Mbps. A refund was settled automatically.`
+        : `NetChain detected that your backup wasn't enough, processed your request and activated temporary capacity.`}</p>
+      <div class="result-grid">
+        <div class="rg"><div class="rk">Recovered capacity</div><div class="rv ok">+${r.cap} Mbps</div></div>
+        <div class="rg"><div class="rk">Current capacity</div><div class="rv">${store.capacity.current} Mbps</div></div>
+        <div class="rg"><div class="rk">Recovery time</div><div class="rv">${r.time} sec</div></div>
+        <div class="rg"><div class="rk">Cost</div><div class="rv" style="font-size:16px">${costHtml}</div></div>
+      </div>
+      <div class="money-state ${under ? "" : "ok"}" style="margin-top:14px">${under
+        ? `✓ ${rm(r.charged)} settled · ${rm(r.refund)} refunded — penalty applied for under-delivery`
+        : `✓ ${rm(r.charged)} settled — released only after verified delivery`}</div>
+      <div style="margin-top:14px;color:var(--muted);font-size:13px">Signal strength ${strengthBars(under ? 2 : 4, under ? "strength-2" : "")} <b style="color:var(--ink)">${under ? "Fair" : "Excellent"}</b> · Provider ${r.provider} · ${r.min}-minute plan</div>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn primary" onclick="NC.dismissOverlay()">Done</button>
+        <button class="btn subtle" style="width:auto" onclick="NC.disclose('ov_${inc.id}')">Details</button>
+      </div>
+    </div>
+    <div class="ov-side">
+      <div class="purchase" style="margin-top:4px">
+        <div class="ph">Purchase · from your SMS “${r.smsText}”</div>
+        <div class="pr"><span class="k">Provider</span><span class="v">${r.provider}</span></div>
+        <div class="pr"><span class="k">Capacity · duration</span><span class="v">${r.cap} Mbps · ${r.min} min</span></div>
+        <div class="pr"><span class="k">Provider price</span><span class="v">${rm(capCharge)}</span></div>
+        <div class="pr"><span class="k">Platform fee</span><span class="v">${rm(r.fee)}</span></div>
+        <div class="pr"><span class="k">Total</span><span class="v">${rm(r.cost)}</span></div>
+      </div>
+      ${store.disclosures["ov_" + inc.id] ? `
+      <div class="disc"><div class="tech">
+        <span class="k">Money state</span><span class="v">${r.state}</span>
+        <span class="k">Verification</span><span class="v">${under ? `Under-delivery — ${r.delivered}/${r.cap} Mbps` : "Passed"}</span>
+        <span class="k">Network</span><span class="v">Sui</span>
+        <span class="k">Transaction ID</span><span class="v">${r.tx}</span>
+        <span class="k">View</span><span class="v"><a class="txlink" href="https://suiscan.xyz/testnet" target="_blank" rel="noopener">SuiScan ↗</a></span>
+        <span class="k">Recovery</span><span class="v">#${r.id}</span>
+      </div></div>` : `
+      <div style="margin-top:12px"><button class="btn link" style="padding-left:0" onclick="NC.disclose('ov_${inc.id}')">Transaction details</button></div>`}
+    </div>
+  </div></div>`;
+}
+
+function overlayFailed(inc) {
+  const r = store.records[inc.id];
+  return `
+  <div class="overlay"><div class="sheet" role="dialog" aria-modal="true" aria-label="Recovery failed">
+    <span class="chip red"><span class="dot"></span>RECOVERY FAILED</span>
+    <h2>Extra capacity couldn't be added</h2>
+    <p class="lede">The provider could not activate the temporary capacity. Your backup connection is still active — and you weren't charged.</p>
+    <div class="result-grid">
+      <div class="rg"><div class="rk">Your charge</div><div class="rv ok">${rm(0)}</div></div>
+      <div class="rg"><div class="rk">Reservation</div><div class="rv" style="font-size:15px">${rm(r.cost)} refunded</div></div>
+      <div class="rg"><div class="rk">Available now</div><div class="rv">${store.capacity.current} Mbps</div></div>
+      <div class="rg"><div class="rk">Recovery time</div><div class="rv">${r.time} sec</div></div>
+    </div>
+    <div class="money-state ok">✓ ${rm(r.cost)} refunded — the locked amount returned to your balance automatically</div>
+    <p class="note">NetChain keeps watching. Send a new recovery request from Home anytime.</p>
+    <div style="margin-top:14px"><button class="btn primary" onclick="NC.dismissOverlay()">Done</button></div>
+  </div></div>`;
+}
+
+/* ================= DEV SIMULATOR ================= */
+function viewDev() {
+  return `
+  <div class="app-col">
+    <div class="topbar full" style="max-width:1040px">
+      <span class="logo"><span class="dot">·</span>NetChain</span>
+      <span class="chip gray">dev</span>
+      <span class="grow"></span>
+      <a href="#/home" style="color:var(--accent);text-decoration:none;font-weight:700;font-size:14px">Back to app</a>
+    </div>
+    <div class="content full">
+      <h1 style="font-size:24px;font-weight:800;padding-top:6px">Recovery simulator</h1>
+      <p style="color:var(--muted);font-size:13.5px;margin-top:4px">Development only. Every recovery waits for an SMS reply with duration + budget; the system detects the request, then acts.</p>
+
+      <div class="cols" style="margin-top:10px">
+        <div>
+          <div class="card-title" style="margin-top:16px">Main demo story</div>
+          <div class="card">
+            <div class="row"><span class="grow"><span class="t">You reply by SMS</span><div class="s">Primary 500 fails → backup 300 → you send “30 min, RM 8” → buy 250 Mbps · verified · ~7 sec</div></span><button class="btn sm primary" onclick="NC.run('main')">Run</button></div>
+            <div class="row"><span class="grow"><span class="t">Auto recovery</span><div class="s">Same story — NetChain sends the reply for you</div></span><button class="btn sm" onclick="NC.run('auto')">Run</button></div>
+          </div>
+
+          <div class="card-title">Other endings</div>
+          <div class="card">
+            <div class="row"><span class="grow"><span class="t">Provider under-delivered</span><div class="s">Verified 180/250 Mbps → 10% penalty refund</div></span><button class="btn sm" onclick="NC.run('under')">Run</button></div>
+            <div class="row"><span class="grow"><span class="t">Provider failed</span><div class="s">No charge — reservation refunded automatically</div></span><button class="btn sm" onclick="NC.run('failed')">Run</button></div>
+          </div>
+        </div>
+        <div>
+          <div class="card-title" style="margin-top:16px">Utilities</div>
+          <div class="card">
+            <div class="row"><span class="grow"><span class="t">Add network check</span><div class="s">Adds a healthy activity entry</div></span><button class="btn sm" onclick="NC.addCheck()">Add</button></div>
+            <div class="row"><span class="grow"><span class="t">Reset to protected</span><div class="s">Clears the live incident & session</div></span><button class="btn sm" onclick="NC.reset()">Reset</button></div>
+            <div class="row"><span class="grow"><span class="t">Skip onboarding</span><div class="s">Jump into the app (RM 50 balance)</div></span><button class="btn sm" onclick="NC.skipOnboarding()">Skip</button></div>
+            <div class="row"><span class="grow"><span class="t">Full reset</span><div class="s">Back to first-run onboarding</div></span><button class="btn sm" onclick="NC.fullReset()">Reset</button></div>
+          </div>
+          <p class="note">The post-recovery session counts down at demo speed (×60). Timing and cost values are simulated and are not presented as guaranteed real-world recovery speeds.</p>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------------- actions ---------------- */
+window.NC = {
+  // onboarding
+  obStart() { obState.step = 1; navigate("#/onboarding"); render(); },
+  obNext(skipBalance) {
+    if (obState.step === 4 && skipBalance) obState.balance = 0;
+    obState.step = Math.min(5, obState.step + 1);
+    render();
+  },
+  obPlan(p) { obState.plan = p; render(); },
+  obService(sv) { obState.service = sv; render(); },
+  obAuto(v) { obState.auto = v; },
+  obMaxCost(v) { obState.maxCost = v; render(); },
+  obMinSpeed(v) { obState.minSpeed = v; render(); },
+  obBalance(v) { obState.balance = v; render(); },
+  obFinish() {
+    store.onboarded = true;
+    store.plan = obState.plan;
+    store.service = obState.service;
+    store.auto = obState.auto;
+    store.maxPerRecovery = obState.maxCost;
+    store.minSpeed = obState.minSpeed;
+    store.balance = obState.balance;
+    navigate("#/home");
+    render();
+  },
+  skipOnboarding() {
+    store.onboarded = true;
+    store.balance = store.balance || 50;
+    navigate("#/home");
+    render();
+  },
+  redoOnboarding() {
+    store.onboarded = false;
+    Object.assign(obState, { step: 0, plan: store.plan, service: store.service, auto: store.auto, maxCost: store.maxPerRecovery, minSpeed: store.minSpeed, balance: 50 });
+    navigate("#/onboarding");
+    render();
+  },
+  fullReset() { location.reload(); },
+
+  // settings
+  setAuto(v) { store.auto = v; },
+  setNotif(v) { store.notif = v; },
+  setPlan(p) { store.plan = p; render(); },
+  addFunds(v) { store.balance = +(store.balance + v).toFixed(2); render(); },
+  disclose(key) { store.disclosures[key] = !store.disclosures[key]; render(); },
+
+  // recovery
+  run(kind) { startRecovery(kind); },
+  fillSms(t) {
+    const el = document.getElementById("smsInput");
+    if (el) { el.value = t; el.focus(); }
+  },
+  sendSmsInput() {
+    const el = document.getElementById("smsInput");
+    if (el && el.value.trim()) this.sendSms(el.value.trim());
+  },
+  sendSms(text, opts) {
+    const inc = store.incident;
+    if (!inc || inc.status !== "sms") return;
+    const p = parseSms(text);
+    if (!p) {
+      inc.thread.push({ from: "err", text: `Couldn't read that. Try: “30 min, RM 8”.` });
+      render();
+      return;
+    }
+    const plan = adjustPlan(p.min, p.budget);
+    plan.text = text;
+    plan.budget = p.budget;
+    inc.thread.push({ from: "user", text, auto: opts && opts.auto });
+    inc.thread.push({
+      from: "sys",
+      text: `Request detected — ${MBPS_BUY} Mbps · ${plan.min} min · ${rm(plan.cost)}` +
+        (plan.adjusted ? ` (closest option within your ${rm0(p.budget)} budget)` : ` (within your ${rm0(p.budget)} budget ✓)`),
+    });
+    inc.req = plan;
+    inc.sentAt = Date.now();
+    store.locked = plan.cost;
+    // resume the machine from after the SMS pause
+    const flow = FLOWS[inc.kind];
+    const idx = flow.phases.findIndex(([st]) => st === inc.pauseAt);
+    inc.pausedAt = null;
+    inc.startedAt = Date.now() - inc.elapsedBase * 1000;
+    scheduleFrom(inc, flow.phases, idx + 1);
+    render();
+  },
+  dismissOverlay() { store.overlayDismissed = true; render(); },
+  reset() { resetSim(); navigate("#/home"); },
+  addCheck() {
+    store.activity.unshift({
+      id: "chk-" + Date.now(), ts: Date.now(), type: "check",
+      title: "Network check", sub: "Connection healthy", note: "No action required",
+    });
+    render();
+  },
+};
+
+render();
+</script>
+</body>
+</html>
