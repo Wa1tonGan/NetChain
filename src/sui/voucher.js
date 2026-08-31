@@ -50,20 +50,38 @@ function readJson(file) {
 }
 
 // The Selected Offer carries a projection of the winning offer; the provider
-// signature covers the ORIGINAL offer minus its `signature` field, so we look
-// the original up by offerId across the offers directory. (HTTP callers can
-// pass the original offer directly instead.)
-export function findOriginalOffer(offersDir, selectedOffer) {
-  const offerId = selectedOffer.selectedProvider.offerId;
+// signature covers the ORIGINAL offer minus its `signature` field. Live
+// envelopes embed the original offer (self-contained, no fixture lookup);
+// fixture-era offers are looked up by offerId across the offers directory.
+// Either way the offer must be the one the projection claims — providerId AND
+// offerId must match selectedProvider (an embedded foreign offer with a valid
+// signature from the same provider must not be committable).
+export function resolveOriginalOffer(selectedOffer, offersDir, opts = {}) {
+  const original = opts.originalOffer ?? selectedOffer.originalOffer ?? null;
+  const { providerId, offerId } = selectedOffer.selectedProvider;
+  if (original) {
+    if (original.providerId !== providerId || original.offerId !== offerId) {
+      throw new VoucherError(
+        "OFFER_MISMATCH",
+        `embedded originalOffer is ${original.providerId}/${original.offerId}, projection claims ${providerId}/${offerId}`
+      );
+    }
+    return original;
+  }
   for (const file of readdirSync(offersDir)) {
     if (!file.endsWith(".json")) continue;
     const offer = readJson(path.join(offersDir, file));
-    if (offer.offerId === offerId) return offer;
+    if (offer.offerId === offerId && offer.providerId === providerId) return offer;
   }
   throw new VoucherError(
     "OFFER_NOT_FOUND",
-    `no offer fixture with offerId ${offerId} in ${offersDir}`
+    `no offer fixture with offerId ${offerId} in ${offersDir} (live envelopes must embed originalOffer)`
   );
+}
+
+// Kept for compatibility with existing callers/tests.
+export function findOriginalOffer(offersDir, selectedOffer) {
+  return resolveOriginalOffer(selectedOffer, offersDir);
 }
 
 export function loadProviderProfiles(providersDir) {
@@ -116,8 +134,7 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   const providerBase = toBaseUnits(signedProviderAmount ?? planPrice, asset.decimals);
 
   // 3. Provider signature off-chain, against the profile's embedded PEM.
-  const originalOffer =
-    opts.originalOffer ?? findOriginalOffer(paths.offersDir, selectedOffer);
+  const originalOffer = resolveOriginalOffer(selectedOffer, paths.offersDir, opts);
   const profile = loadProviderProfiles(paths.providersDir).get(
     selectedOffer.selectedProvider.providerId
   );

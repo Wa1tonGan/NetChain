@@ -49,8 +49,8 @@ buyer wallet (`SUI_BUYER_SECRET`, gitignored). Verifiable on
 | --- | --- |
 | Package (`netchain`) | `0xa648e1fbb1ae8f04ce6c3b0790c36f2f0a1a1f6e59368946f76f37a0020235bf` |
 | USDC coin type (Circle, gasless-allowlisted) | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |
-| Shared `Escrow<USDC>` pool (Buyer 1-funded, 12 USDC) | `0xd76c663118aea97c6674bacbd10e7a4a4719bddc984a8f11df2ccb214193347b` |
-| `AuthorityCap` | `0x3842e9fc89add742d4573c34236d85b5ccea440cae654ae2b7188ba55929d237` |
+| Shared `Escrow<USDC>` pool (Buyer 1-funded, 12 USDC) | `0x65b3503164b9de0b35ab0b7e49b0d13d5c8721a42570e814119f7143a1299125` |
+| `AuthorityCap` | `0xedd9c5e475f6de6a855a4db0b7d6299c4bb317557e016276c3154505c618cbc9` |
 | Buyer 1 (testnet buyer) | `0xbed2dff8b7a0c265d2e25d8835057a8a0acb017eb03718fccd38832c0a758cf0` |
 | Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
 
@@ -68,11 +68,17 @@ buyer wallet (`SUI_BUYER_SECRET`, gitignored). Verifiable on
 | Penalized settlement (4.465 → provider · 0.525 → buyer · 0.26 → platform) | `3BYdP1nD5Raey2xXC3jkpm1dwgCFBFLFyLvayZetdwGs` | §12 verification-proof row |
 | **GASLESS**: sender held ZERO SUI — gas charged 0 | `CFjZH6Qo8jAfr1XwY4n83HoxwAUdTMJ3chRYmdH25173` | Track-01 gasless-stablecoin feature |
 | **SPONSORED**: customer signed, platform paid gas, into shared pool | `5Nu3krsqjqSvDfBYVBFePqmALPikL2M2WRSxqDMz4LvV` | Track-01/02 sponsored feature |
+| **LIVE AI↔Sui loop** (`npm run integrate:sui`): Rescue Agent's real A2A offer → commit → verify → settle, P2 settlement callback | `6MJk8arxYHAtfWfwXiLEBCvfZB2swrPFa3aLsGVAar4p` · `228SdkMAhTeHJCLPREqx6dNB45gALH4kYMx2ibSFtszD` · `6Jswa4NvuSY3rcs4nFabGc8bM2eWR8CHxV2eNZiGAfFV` | Track-02: AI × SUI, "Sui is integral" — live (incident `INC-S2-Imthcxrdw`, 1.965 USDC = 1.875 + 0.09 fee) |
+| **WALRUS evidence archive**: voucher + connection log + settlement split on Walrus, sha256(readback) == sha256(archived) | blob `sz4tjxunYifIVN327CFRlXTIdxVHtqKO1E2-0OHLJcM` (incident `INC-S2-Imthdxag1`; settle tx `GCKGwMvvrJPLB7zMBs131rvrpjCoZ1sMco9JCAEjAnoX`) | §4.3 evidence independently retrievable: walruscan.com/testnet/blob/… |
 
 Reliability harness: **13/13 checks on testnet with real USDC** (incl.
 on-chain event read-back: ledger `voucherDigest` ↔ `Committed` event
 byte-for-byte; Verified verdicts with penalties readable from the node).
-Offline suite: **19/19 Move tests, 83/83 repo tests** (Persons 1+2+3).
+Offline suite: **19/19 Move tests, 89/89 repo tests** (Persons 1+2+3).
+Live integration: `npm run integrate:sui` (one AI-driven loop) or
+`SUI_INTEGRATION_MODE=full npm run trust:server` (auto-settle every incident;
+`SUI_INTEGRATION_MODE` = `standalone | one-loop | full` — see
+`documents/person3/person3-implementation-guide.md`).
 Testnet fixture amounts are price-scaled (×0.05) to fit faucet drips —
 `SUI_TESTNET_PRICE_SCALE` / `STABLECOIN_ESCROW_FUND` scale them up.
 Localnet runs the identical contracts on the MYRC demo coin (2 decimals).

@@ -327,7 +327,7 @@ export async function reclaimVoucher(client, keypair, config, nonce) {
   return signAndRun(client, keypair, tx);
 }
 
-async function signAndRun(client, keypair, tx) {
+export async function signAndRun(client, keypair, tx) {
   const raw = await client.signAndExecuteTransaction({
     signer: keypair,
     transaction: tx,

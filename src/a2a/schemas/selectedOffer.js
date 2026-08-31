@@ -3,7 +3,7 @@ import {
   activationClassValues,
   activationLaneValues
 } from "./providerProfile.js";
-import { signatureSchema } from "./providerOffer.js";
+import { providerOfferSchema, signatureSchema } from "./providerOffer.js";
 
 // Selected Offer = the Rescue Agent's signed handoff artifact to Person 3.
 // Blueprint §9 "Recovery Result" + "Sui Voucher", merged: Person 3 reads
@@ -95,6 +95,15 @@ export const selectedOfferSchema = z
         buyerSignature: signatureSchema
       })
       .strict(),
+    // Live-runtime artifact (integration contract P2→P3, 2026-08-31): the
+    // ORIGINAL signed Provider Offer the offerSignature was computed over.
+    // Fixture-era offers omit it — Person 3 falls back to the offers
+    // directory. Embedding it makes the envelope self-contained: the trust
+    // service verifies the provider signature against the profile's pinned
+    // key with zero fixture lookups. Buyer-signature-safe: the buyer signs
+    // { incidentId, selectedProvider, agreement } only, so this field can be
+    // present or absent without changing what the buyer signed.
+    originalOffer: providerOfferSchema.optional(),
     rejectedOffers: z.array(
       z
         .object({

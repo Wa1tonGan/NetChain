@@ -13,10 +13,13 @@
     "harness:sui": "node --env-file-if-exists=.env scripts/sui-harness.mjs",
     "demo:sui": "node --env-file-if-exists=.env scripts/sui-demo.mjs",
     "trust:server": "node --env-file-if-exists=.env src/sui/server.js",
-    "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs"
+    "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs",
+    "integrate:sui": "node --env-file-if-exists=.env scripts/integrate-sui.mjs",
+    "walrus:proof": "node --env-file-if-exists=.env scripts/sui-walrus.mjs"
   },
   "dependencies": {
     "@mysten/sui": "2.27.1",
+    "@mysten/walrus": "^1.2.21",
     "@noble/hashes": "^2.4.0",
     "zod": "^4.0.0"
   }

@@ -1,7 +1,10 @@
 // RecoveryIntent (Person 1) -> Provider Request (Person 2).
 // The mapping table is documented in ../schemas/providerRequest.js.
+// Currency: the money the escrow settles (quoteAsset mirrors the fixture
+// generator — testnet real-USDC USD, localnet profile currency).
+import { quoteAsset } from "./quoteAsset.js";
 
-export function buildProviderRequest(intent) {
+export function buildProviderRequest(intent, env = process.env) {
   if (intent.recoveryDecision === "NO_EXTERNAL_RECOVERY_NEEDED") {
     return null;
   }
@@ -18,7 +21,7 @@ export function buildProviderRequest(intent) {
     },
     durationMinutes: intent.constraints.durationMinutes,
     maxBudget: intent.constraints.maxBudget,
-    currency: "MYR",
+    currency: quoteAsset("MYR", env).currency,
     targetActivationTimeMs: intent.requirements.targetActivationTimeMs,
     bidDeadlineMs: Math.floor(intent.requirements.targetActivationTimeMs / 2),
     emergencyOverride: intent.priority.emergencyOverride,
