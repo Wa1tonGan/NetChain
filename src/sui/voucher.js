@@ -15,6 +15,7 @@ import {
 } from "../a2a/signing.js";
 import { selectedOfferSchema } from "../a2a/schemas/selectedOffer.js";
 import { pemRawPublicKey } from "./keys.js";
+import { stablecoinConfig, toBaseUnits } from "./stablecoin.js";
 
 export class VoucherError extends Error {
   constructor(code, message) {
@@ -49,20 +50,38 @@ function readJson(file) {
 }
 
 // The Selected Offer carries a projection of the winning offer; the provider
-// signature covers the ORIGINAL offer minus its `signature` field, so we look
-// the original up by offerId across the offers directory. (HTTP callers can
-// pass the original offer directly instead.)
-export function findOriginalOffer(offersDir, selectedOffer) {
-  const offerId = selectedOffer.selectedProvider.offerId;
+// signature covers the ORIGINAL offer minus its `signature` field. Live
+// envelopes embed the original offer (self-contained, no fixture lookup);
+// fixture-era offers are looked up by offerId across the offers directory.
+// Either way the offer must be the one the projection claims — providerId AND
+// offerId must match selectedProvider (an embedded foreign offer with a valid
+// signature from the same provider must not be committable).
+export function resolveOriginalOffer(selectedOffer, offersDir, opts = {}) {
+  const original = opts.originalOffer ?? selectedOffer.originalOffer ?? null;
+  const { providerId, offerId } = selectedOffer.selectedProvider;
+  if (original) {
+    if (original.providerId !== providerId || original.offerId !== offerId) {
+      throw new VoucherError(
+        "OFFER_MISMATCH",
+        `embedded originalOffer is ${original.providerId}/${original.offerId}, projection claims ${providerId}/${offerId}`
+      );
+    }
+    return original;
+  }
   for (const file of readdirSync(offersDir)) {
     if (!file.endsWith(".json")) continue;
     const offer = readJson(path.join(offersDir, file));
-    if (offer.offerId === offerId) return offer;
+    if (offer.offerId === offerId && offer.providerId === providerId) return offer;
   }
   throw new VoucherError(
     "OFFER_NOT_FOUND",
-    `no offer fixture with offerId ${offerId} in ${offersDir}`
+    `no offer fixture with offerId ${offerId} in ${offersDir} (live envelopes must embed originalOffer)`
   );
+}
+
+// Kept for compatibility with existing callers/tests.
+export function findOriginalOffer(offersDir, selectedOffer) {
+  return resolveOriginalOffer(selectedOffer, offersDir);
 }
 
 export function loadProviderProfiles(providersDir) {
@@ -89,23 +108,33 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   // 1. Schema (strict + cross-checks: amount==price, nonce prefix, timing).
   selectedOfferSchema.parse(selectedOffer);
 
-  // 2. Currency: the demo MYRC asset settles integer MYR only. planPrice is
-  //    the buyer-signed provider quote; agreement.amount adds the platform
-  //    fee on top (blueprint §1.3) and is the customer-facing escrow total.
-  const { planPrice, currency } = selectedOffer.agreement;
-  if (currency !== "MYR") {
-    throw new VoucherError("UNSUPPORTED_CURRENCY", `escrow demo settles MYR, got ${currency}`);
-  }
-  if (!Number.isInteger(planPrice) || planPrice <= 0) {
+  // 2. Asset + amounts: the network's configured stablecoin (localnet MYRC
+  //    0 decimals; testnet real USDC 6 decimals). Money of record = integer
+  //    BASE units. The fee is the buyer-SIGNED agreement.platformFee — the
+  //    Rescue Agent approved exactly that split, so the service never
+  //    recomputes it (P2's schema cross-checks fee == round2(planPrice × %)).
+  const { planPrice, platformFee: signedFee, platformAddress: signedPlatformAddress, providerAmount: signedProviderAmount, currency } = selectedOffer.agreement;
+  const asset = stablecoinConfig();
+  if (currency !== asset.currency) {
     throw new VoucherError(
-      "NON_INTEGRAL_AMOUNT",
-      `MYRC has 0 decimals; agreement.planPrice must be an integer MYR value, got ${planPrice}`
+      "UNSUPPORTED_CURRENCY",
+      `escrow settles ${asset.currency} (${asset.name}), got ${currency}`
     );
   }
+  let planBase;
+  try {
+    planBase = toBaseUnits(planPrice, asset.decimals);
+  } catch {
+    throw new VoucherError(
+      "NON_INTEGRAL_AMOUNT",
+      `agreement.planPrice ${planPrice} exceeds ${asset.decimals}-decimal precision (${asset.currency})`
+    );
+  }
+  const feeBase = toBaseUnits(signedFee ?? 0, asset.decimals);
+  const providerBase = toBaseUnits(signedProviderAmount ?? planPrice, asset.decimals);
 
   // 3. Provider signature off-chain, against the profile's embedded PEM.
-  const originalOffer =
-    opts.originalOffer ?? findOriginalOffer(paths.offersDir, selectedOffer);
+  const originalOffer = resolveOriginalOffer(selectedOffer, paths.offersDir, opts);
   const profile = loadProviderProfiles(paths.providersDir).get(
     selectedOffer.selectedProvider.providerId
   );
@@ -133,12 +162,10 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
   }
 
   // 6. Assemble Move commit arguments: two (msg, sig, pk) triples + terms.
-  //    The fee is recomputed from the service env (the same env the Rescue
-  //    Agent used at signing time) rather than trusted from the artifact; the
-  //    provider share stays the full signed quote and the platform fee is
-  //    charged on top (blueprint §3.3).
+  //    All amounts are BASE units of the configured asset. The provider share
+  //    stays the full signed quote; the platform fee is the buyer-signed one,
+  //    charged on top (blueprint §3.3). On localnet (0 decimals) base == human.
   const feeCfg = platformFeeConfig();
-  const platformFee = feeCfg.address ? Math.floor((planPrice * feeCfg.percent) / 100) : 0;
   const buyerMsg = canonicalBytes(buyerAgreementPayload(selectedOffer));
   const providerMsg = canonicalBytes(offerSigningPayload(originalOffer));
   const providerAddress = paths.providerAddresses?.[selectedOffer.selectedProvider.providerId] ?? null;
@@ -149,11 +176,13 @@ export function buildVoucher(selectedOffer, paths, opts = {}) {
     providerId: selectedOffer.selectedProvider.providerId,
     brand: selectedOffer.selectedProvider.brand,
     offerId: selectedOffer.selectedProvider.offerId,
-    planAmount: planPrice, // buyer-signed plan price (provider's full quote)
-    platformFee,
-    platformAddress: feeCfg.address ?? providerAddress, // unused on-chain when fee == 0
-    providerAmount: planPrice,
-    amount: planPrice + platformFee, // MYRC units (1 = 1 MYR); what the escrow locks
+    planAmount: planPrice, // buyer-signed plan price (provider's full quote), human
+    assetName: asset.name,
+    assetDecimals: asset.decimals,
+    platformFee: feeBase,
+    platformAddress: signedPlatformAddress ?? feeCfg.address ?? providerAddress, // unused on-chain when fee == 0
+    providerAmount: providerBase,
+    amount: planBase + feeBase, // BASE units; what the escrow locks
     expiryMs,
     nonce: selectedOffer.agreement.nonce,
     buyerMsg,

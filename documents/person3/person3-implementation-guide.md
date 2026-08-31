@@ -4,8 +4,8 @@
 > the rest when you need detail. Deep companion: `person3-trust-contract.md`
 > (wire-level contract). Blueprint references in brackets throughout.
 >
-> **Status 2026-08-30:** complete and proven on Sui testnet — 19/19 Move
-> tests, 56/56 repo JS tests, **14/14 harness checks on testnet**. Every
+> **Status 2026-08-30:** complete and proven on Sui testnet (real USDC) — 19/19 Move
+> tests, 64/64 repo JS tests, **13/13 harness checks on testnet with real USDC**. Every
 > blueprint §12 acceptance row that belongs to the trust layer is green,
 > including split settlement and the verification/penalty loop.
 
@@ -40,7 +40,7 @@ Person 2 Selected Offer ──► verify both ed25519 signatures ──► escro
 npm test                    # 56 offline JS tests (no chain needed)
 sui move test --path move   # 19 Move tests
 npm run demo:sui            # full demo story on localnet (start localnet first)
-npm run harness:sui         # 14-check reliability battery → reliability-report
+npm run harness:sui         # 13-check reliability battery → reliability-report
 SUI_NETWORK=testnet npm run demo:sui   # same story, real testnet
 ```
 
@@ -94,7 +94,7 @@ provider and 3 to the platform wallet → degraded fallback: verdict
 | `scripts/sui-setup.mjs` | Readiness: publish + mint + fund + authority (idempotent per network). |
 | `scripts/sui-fixtures.mjs` | Regenerates Person 2's pipeline with a LIVE clock (fixtures expire on-chain — see traps). |
 | `scripts/sui-demo.mjs` | One-command demo — every blueprint §10 beat, in order. |
-| `scripts/sui-harness.mjs` | 14-check battery incl. on-chain event read-back → reliability report. |
+| `scripts/sui-harness.mjs` | 13-check battery incl. on-chain event read-back → reliability report. |
 | `scripts/trust.mjs` | CLI: `commit / activation / verify / settle / refund / reclaim / status / events`. |
 | `.env.example` | Every environment variable, documented. `cp .env.example .env`. |
 | `fixtures/sui/` | Committed vouchers (regenerated per run — they expire by design). |
@@ -232,7 +232,7 @@ npm install                   # deps: @mysten/sui (v2 gRPC), @noble/hashes, zod
 sui start --with-faucet --force-regenesis      # terminal 1 (node crashed by OOM? just restart it)
 npm run sui:setup                              # publish + mint + escrow + authority
 npm run demo:sui                               # the whole story
-npm run harness:sui                            # 14-check battery + report
+npm run harness:sui                            # 13-check battery + report
 
 # Testnet (the evidence chain — README has the digests)
 SUI_NETWORK=testnet npm run sui:setup
@@ -262,7 +262,7 @@ collected fees. Full digest table with per-beat proof: **README → "Proof
 transactions"**. Highlights: commit `3ssNTUBU…` (63 locked),
 verification `4ddZaC8vnvno…` (OK verdict on-chain), penalized verdict
 `4cm6tMe3515…` (240/300 Mbps), penalized settlement `ELFMiSp2wZhd…`
-(90 provider / 10 buyer / 5 platform). Harness **14/14 on testnet**.
+(90 provider / 10 buyer / 5 platform). Harness **13/13 on testnet** (real USDC).
 Cumulative gas for two complete proofs: **0.218 SUI**.
 
 ---

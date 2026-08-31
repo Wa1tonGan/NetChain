@@ -3,9 +3,15 @@
 // Person 2's runtime can POST Selected Offers and Person 1's dashboard can
 // consume live events without tailing files.
 //   npm run trust:server   # port 8200 (P2 reserved 8101–8103)
+// Routes: POST /v1/commit · POST /v1/verify · POST /v1/activation ·
+//         GET /v1/status/:incident · GET /v1/events (SSE)
+// SUI_INTEGRATION_MODE=full also starts the P2 gateway poller
+// (src/sui/integration.js) — every resolved incident is committed, verified
+// and settled automatically.
 import { createServer } from "node:http";
 import { statSync, openSync, readSync, readFileSync, existsSync } from "node:fs";
 import { TrustService } from "./service.js";
+import { integrationMode, startPolling } from "./integration.js";
 
 const PORT = Number(process.env.TRUST_PORT ?? 8200);
 
@@ -23,9 +29,17 @@ function readBody(req) {
   });
 }
 
-export function startServer({ service = new TrustService(), port = PORT } = {}) {
+export function startServer({ service = new TrustService(), port = PORT, mode = integrationMode() } = {}) {
   const sseClients = new Set();
   let lastSeq = 0;
+
+  // Full integration mode: automatically pull + settle every incident the
+  // Rescue Agent resolves (SUI_P2_URL). one-loop is driven by
+  // scripts/integrate-sui.mjs; standalone starts no poller.
+  let stopPolling = null;
+  if (mode === "full") {
+    stopPolling = startPolling(service, { log: (level, msg) => console[level === "warn" ? "warn" : "log"](msg) });
+  }
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
@@ -36,6 +50,15 @@ export function startServer({ service = new TrustService(), port = PORT } = {}) 
       }
       if (req.method === "POST" && url.pathname === "/v1/activation") {
         return json(res, 200, await service.activation(JSON.parse(await readBody(req))));
+      }
+      if (req.method === "POST" && url.pathname === "/v1/verify") {
+        // Verification Agent intake (blueprint §4.3): a real session monitor
+        // posts { incidentId, promisedCapacity, deliveredSamples, … } and the
+        // verdict (connection-log hash + penalty) is committed on-chain.
+        const body = JSON.parse(await readBody(req));
+        const { incidentId, ...delivery } = body;
+        if (!incidentId) return json(res, 422, { code: "VOUCHER_INVALID", message: "incidentId is required" });
+        return json(res, 200, await service.verifyDelivery(incidentId, delivery));
       }
       if (req.method === "GET" && url.pathname.startsWith("/v1/status/")) {
         return json(res, 200, service.status(url.pathname.split("/").pop()));
@@ -80,8 +103,10 @@ export function startServer({ service = new TrustService(), port = PORT } = {}) 
     }
   }, 500);
 
-  server.listen(port, () => console.log(`[trust-server] listening on :${port} (SSE at /v1/events)`));
-  return server;
+  server.listen(port, () =>
+    console.log(`[trust-server] listening on :${port} (SSE at /v1/events, integration mode: ${mode}${stopPolling ? " — P2 poller live" : ""})`)
+  );
+  return { server, stopPolling };
 }
 
 // Auto-start when run directly: node src/sui/server.js

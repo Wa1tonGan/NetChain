@@ -292,6 +292,11 @@ export function createRescueAgent({
         offerSignature: candidate.offer.signature,
         buyerSignature: { algorithm: "ed25519", keyId: "buyer-demo", value: "" }
       },
+      // Integration contract P2→P3: carry the ORIGINAL signed offer so the
+      // trust service verifies the provider signature without a fixture
+      // lookup (self-contained envelope). Not part of the buyer-signed
+      // payload — see selectedOfferSchema note.
+      originalOffer: candidate.offer,
       rejectedOffers,
       timing
     };

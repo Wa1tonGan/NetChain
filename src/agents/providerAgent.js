@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { providerRequestSchema } from "../a2a/schemas/providerRequest.js";
 import { providerOfferSchema } from "../a2a/schemas/providerOffer.js";
 import { signOffer } from "../a2a/signing.js";
+import { quoteAsset } from "../a2a/quoteAsset.js";
 
 const OFFER_TTL_MS = 60_000;
 const MODE_VALUES = ["healthy", "down", "unresponsive", "slow", "fail_activation", "laggy"];
@@ -130,9 +131,14 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
       : { ...profile.activation.standard, lane: "STANDARD" };
     const capacityMbps = profile.policy.maxCapacityMbps;
     const hours = request.durationMinutes / 60;
+    // Quote in the money the escrow settles (quoteAsset mirrors the fixture
+    // generator: testnet → scaled-down USD / real USDC; localnet → profile
+    // prices in the profile's own currency).
+    const quote = quoteAsset(profile.policy.currency);
     const price = round2(
-      profile.policy.baseFee +
-        profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours
+      (profile.policy.baseFee +
+        profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) *
+        quote.scale
     );
 
     return {
@@ -146,7 +152,7 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
       expectedActivationTimeMs: lane.timeMs,
       activationLane: lane.lane,
       price,
-      currency: profile.policy.currency,
+      currency: quote.currency,
       reliabilityScore: profile.performance.reliabilityScore,
       latencyMs: profile.performance.latencyMs,
       packetLossPercent: profile.performance.packetLossPercent,

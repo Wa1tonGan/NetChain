@@ -15,6 +15,16 @@ import { fileURLToPath } from "node:url";
 import { createProviderAgent, loadProviderIdentity } from "../src/agents/providerAgent.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Same .env contract as start-rescue-agent.mjs: SUI_NETWORK drives which
+// money providers quote in (quoteAsset — testnet USD / localnet profile
+// currency), GONKA_* enables pitch enrichment.
+try {
+  process.loadEnvFile(path.join(projectRoot, ".env"));
+} catch {
+  console.log("[provider] no .env found — quoting profile currency (localnet mode)");
+}
+
 const PROVIDER_IDS = ["PROVIDER-A", "PROVIDER-B", "PROVIDER-C"];
 const MODE_VALUES = ["healthy", "down", "unresponsive", "slow"];
 

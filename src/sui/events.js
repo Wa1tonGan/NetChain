@@ -85,4 +85,20 @@ export class EventLedger {
   byIncident(incidentId) {
     return [...this.registry.values()].filter((s) => s.incidentId === incidentId);
   }
+
+  /** Full ledger rows (not just registry state) for one incident. */
+  eventsByIncident(incidentId) {
+    if (!existsSync(this.path)) return [];
+    const rows = [];
+    for (const line of readFileSync(this.path, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        if (event.incidentId === incidentId) rows.push(event);
+      } catch {
+        // torn tail write — skip
+      }
+    }
+    return rows;
+  }
 }

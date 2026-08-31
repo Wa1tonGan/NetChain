@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --env-file-if-exists=.env --test",
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1",
     "provision": "node scripts/provision-demo-identity.mjs",
     "generate:fixtures": "node scripts/generate-fixtures.mjs",
     "sui:setup": "node --env-file-if-exists=.env scripts/sui-setup.mjs",
@@ -12,10 +12,14 @@
     "trust": "node --env-file-if-exists=.env scripts/trust.mjs",
     "harness:sui": "node --env-file-if-exists=.env scripts/sui-harness.mjs",
     "demo:sui": "node --env-file-if-exists=.env scripts/sui-demo.mjs",
-    "trust:server": "node --env-file-if-exists=.env src/sui/server.js"
+    "trust:server": "node --env-file-if-exists=.env src/sui/server.js",
+    "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs",
+    "integrate:sui": "node --env-file-if-exists=.env scripts/integrate-sui.mjs",
+    "walrus:proof": "node --env-file-if-exists=.env scripts/sui-walrus.mjs"
   },
   "dependencies": {
     "@mysten/sui": "2.27.1",
+    "@mysten/walrus": "^1.2.21",
     "@noble/hashes": "^2.4.0",
     "zod": "^4.0.0"
   }

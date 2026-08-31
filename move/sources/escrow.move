@@ -309,7 +309,10 @@ module netchain::escrow {
     }
 
     /// Buyer recovers the locked funds when activation FAILED (or the flow
-    /// otherwise cannot proceed). Gated by the AuthorityCap.
+    /// otherwise cannot proceed). The locked balance JOINS the pool's
+    /// available balance — the buyer owns the pool, so "money back to buyer"
+    /// means the pool is replenished, keeping a shared platform pool
+    /// sustainable across recoveries. Gated by the AuthorityCap.
     #[allow(lint(unused_object_with_fields))]
     public fun refund<T>(
         escrow: &mut Escrow<T>,
@@ -324,13 +327,12 @@ module netchain::escrow {
         };
         assert!(table::contains(&escrow.locked, nonce), E_UNKNOWN_COMMITMENT);
         let locked = table::remove(&mut escrow.locked, nonce);
-        let returned = coin::from_balance(locked, ctx);
         let (buyer, amount, incident_id) = {
             let c = table::borrow_mut(&mut escrow.commitments, nonce);
             c.status = STATUS_REFUNDED;
             (c.buyer, c.amount, c.incident_id)
         };
-        transfer::public_transfer(returned, buyer);
+        balance::join(&mut escrow.available, locked);
         event::emit(Refunded {
             escrow_id: object::id(escrow),
             incident_id,

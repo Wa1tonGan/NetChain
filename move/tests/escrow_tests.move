@@ -416,7 +416,9 @@ module netchain::escrow_tests {
             let ctx = scenario.ctx();
             escrow::refund(&mut escrow, &authority, nonce(), ctx);
         };
-        assert!(escrow::available_value(&escrow) == FUND - AMOUNT, 120);
+        // The refunded amount JOINS the pool's available balance (shared
+        // platform pool — the buyer owns it), keeping the pool sustainable.
+        assert!(escrow::available_value(&escrow) == FUND, 120);
         assert!(escrow::locked_value(&escrow, nonce()) == 0, 121);
         assert!(escrow::commitment_status(&escrow, nonce()) == STATUS_REFUNDED, 122);
         finish(scenario, escrow, authority);

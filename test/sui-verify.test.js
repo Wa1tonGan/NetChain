@@ -131,7 +131,7 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
         sessionEnd: 2000
       });
       assert.equal(verdict.verdict, "PENALTY");
-      assert.equal(verdict.penaltyAmount, 16);
+      assert.equal(verdict.penaltyAmount, 1650); // 27.5% of 6000 base
       assert.equal(verdict.txDigest, "TX-VERIFY-2");
 
       // §9 record landed in the ledger with its hash.
@@ -140,7 +140,7 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
       const verifiedRow = rows.find((r) => r.type === "DELIVERY_VERIFIED");
       assert.equal(verifiedRow.nonce, nonce);
       assert.equal(verifiedRow.data.record.verdict, "PENALTY");
-      assert.equal(verifiedRow.data.record.penalty_amount, 16);
+      assert.equal(verifiedRow.data.record.penalty_amount, 1650);
       assert.match(verifiedRow.data.connectionLogHash, /^[0-9a-f]{64}$/);
       assert.equal(verifiedRow.data.connectionLogHash, verdict.connectionLogHash);
 
@@ -148,9 +148,9 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
       const settled = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 125 });
       assert.equal(settled.status, "SETTLED");
       const settledRow = ledger.lookup(nonce);
-      assert.equal(settledRow.penaltyAmount, 16);
-      assert.equal(settledRow.providerNetAmount, 44);
-      assert.equal(settledRow.platformFee, 3);
+      assert.equal(settledRow.penaltyAmount, 1650);
+      assert.equal(settledRow.providerNetAmount, 4350); // 6000 − 1650
+      assert.equal(settledRow.platformFee, 300);
       assert.equal(settledRow.platformAddress, PLATFORM_WALLET);
     } finally {
       delete process.env.PLATFORM_ADDRESS;

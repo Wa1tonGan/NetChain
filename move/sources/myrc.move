@@ -13,7 +13,8 @@ module netchain::myrc {
     fun init(witness: MYRC, ctx: &mut TxContext) {
         let (treasury, metadata) = coin::create_currency(
             witness,
-            0, // decimals: 1 unit = 1 MYR, matching fixture amounts (60, 140)
+            2, // decimals: real-MYR semantics (base unit = 1 sen) — fractional
+               // platform fees (5% of 105 = 5.25) must be representable
             b"MYRC",
             b"NetChain Ringgit (demo)",
             b"1:1 demo Malaysian Ringgit unit for recovery-capacity settlement",
