@@ -1,10 +1,17 @@
 import type { Outcome, RecoveryKind } from "./types";
 
-/* Recovery flow definitions.
-   Every recovery pauses at the "sms" phase and waits for the user's
-   reply (duration + budget); variants auto-send a reply so states can
-   be demonstrated hands-free. Phase offsets are absolute milliseconds
-   from the start of the current scheduling segment. */
+export interface ProviderQuote {
+  id: string;
+  name: string;
+  type: string;
+  capacityMbps: number;
+  latencyMs: number;
+  cost: number;
+  state: string;
+  selected: boolean;
+  score: number;
+  camaraQod: boolean;
+}
 
 export type Phase = [status: string, ms: number];
 
@@ -18,9 +25,10 @@ const PRE_SMS: Phase[] = [
 const POST_SMS: Phase[] = [
   ["request_detected", 2800],
   ["provider_selected", 4300],
-  ["activating", 5300],
-  ["verifying", 7300],
-  ["restored", 9300],
+  ["escrow_locked", 5300],
+  ["activating", 9500],
+  ["verifying", 11000],
+  ["restored", 12600],
 ];
 
 export interface Flow {
@@ -34,43 +42,49 @@ export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
   auto: { key: "auto", outcome: "ok", autoSend: "30 min, RM 14", phases: [...PRE_SMS, ...POST_SMS] },
   under: {
-    key: "under", outcome: "under", autoSend: "30 min, RM 14",
+    key: "under",
+    outcome: "under",
+    autoSend: "30 min, RM 14",
     phases: [...PRE_SMS, ...POST_SMS],
   },
   failed: {
-    key: "failed", outcome: "failed", autoSend: "30 min, RM 14",
+    key: "failed",
+    outcome: "failed",
+    autoSend: "30 min, RM 14",
     phases: [
       ...PRE_SMS,
       ["request_detected", 2800],
       ["provider_selected", 4300],
-      ["activating", 5300],
-      ["failed", 7300],
+      ["escrow_locked", 5300],
+      ["activating", 9500],
+      ["failed", 11200],
     ],
   },
 };
 
 export const STEP_LABELS = [
   "Problem detected",
-  "Protection engaged",
-  "Finding extra capacity",
+  "Critical traffic protected",
+  "A2A parallel provider query",
   "Reply with duration & budget",
-  "Request detected",
-  "Activating",
-  "Verifying",
-  "Connection restored",
+  "Gonka 3-model consensus",
+  "Sui Escrow funds locked",
+  "CAMARA QoD path activated",
+  "SLA verification & settlement",
 ] as const;
 
 export const EVENT_LABELS: Record<string, string> = {
   detected: "Problem detected",
-  protecting: "Protection engaged",
-  searching: "Capacity shortage detected",
-  sms: "Recovery request sent",
-  request_detected: "Request detected",
-  provider_selected: "Provider found",
-  activating: "Capacity activated",
-  verifying: "Connection verified",
-  restored: "Connection restored",
-  failed: "Activation failed",
+  protecting: "Critical traffic protected",
+  searching: "A2A query broadcast to 3 providers",
+  sms: "Degradation SMS sent to client",
+  request_detected: "Client SMS reply parsed",
+  provider_selected: "Gonka selected KilatLink FWA",
+  escrow_locked: "Sui escrow locked (plan + platform fee)",
+  activating: "CAMARA QoD session active",
+  verifying: "Bandwidth & latency verified",
+  restored: "Connection restored & settled",
+  failed: "Provider activation failed — funds refunded",
 };
 
 export const STEP_INDEX: Record<string, number> = {
@@ -79,16 +93,55 @@ export const STEP_INDEX: Record<string, number> = {
   searching: 2,
   sms: 3,
   request_detected: 4,
-  provider_selected: 5,
-  activating: 5,
-  verifying: 6,
+  provider_selected: 4,
+  escrow_locked: 5,
+  activating: 6,
+  verifying: 7,
   restored: 7,
-  failed: 5,
+  failed: 6,
 };
 
-/** Provider comparison evidence shown on the incident receipt. */
+export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
+  {
+    id: "PROV-A",
+    name: "Provider A (NusaNet 5G)",
+    type: "5G Slice (CAMARA QoD)",
+    capacityMbps: 500,
+    latencyMs: 25,
+    cost: 18.5,
+    state: "High Latency / Congested",
+    selected: false,
+    score: 0.68,
+    camaraQod: true,
+  },
+  {
+    id: "PROV-B",
+    name: "Provider B (KilatLink FWA)",
+    type: "Fixed Wireless Access",
+    capacityMbps: 300,
+    latencyMs: 18,
+    cost: 12.6,
+    state: "Available now · fastest path",
+    selected: true,
+    score: 0.96,
+    camaraQod: true,
+  },
+  {
+    id: "PROV-C",
+    name: "Provider C (OrbitSat GO)",
+    type: "LEO Satellite",
+    capacityMbps: 150,
+    latencyMs: 65,
+    cost: 24.0,
+    state: "Available · higher latency",
+    selected: false,
+    score: 0.74,
+    camaraQod: false,
+  },
+];
+
 export const COMPARISON = [
-  { name: "Provider A", state: "No response", sel: false },
-  { name: "Provider B", state: "Available now · fastest path", sel: true },
-  { name: "Provider C", state: "Available · slower activation", sel: false },
+  { name: "Provider A (NusaNet 5G)", state: "Congested / High Latency", sel: false },
+  { name: "Provider B (KilatLink FWA)", state: "Available now · fastest path", sel: true },
+  { name: "Provider C (OrbitSat GO)", state: "Available · slower activation", sel: false },
 ];

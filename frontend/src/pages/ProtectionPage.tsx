@@ -3,56 +3,98 @@ import { rm, rm0 } from "../services/pricing";
 
 export default function ProtectionPage() {
   const s = useAppStore();
+
+  const perRecoveryOptions = [10, 20, 50];
+  const monthlyOptions = [50, 100, 200];
+
   return (
-    <div className="cols">
-      <div>
-        <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.01em", paddingTop: 6 }}>Protection</h1>
-        <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 4 }}>
-          You're in control. NetChain only spends what you allow.
-        </p>
+    <div style={{ maxWidth: 640, margin: "0 auto" }}>
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.02em" }}>Protection Settings</h1>
+      <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 4 }}>
+        NetChain automatically acquires replacement bandwidth when your line degrades, strictly within your budget limits.
+      </p>
 
-        <div className="card">
-          <div className="row">
-            <span className="grow">
-              <span className="t">Auto recovery</span>
-              <div className="s">Restore connectivity automatically, within your limits</div>
-            </span>
-            <label className="switch">
-              <input type="checkbox" checked={s.auto} onChange={(e) => s.setAuto(e.target.checked)} aria-label="Auto recovery" />
-              <i />
-            </label>
-          </div>
-          <div className="row"><span className="grow k">Maximum per recovery</span><span className="v">{rm0(s.maxPerRecovery)}</span></div>
-          <div className="row"><span className="grow k">Monthly recovery limit</span><span className="v">{rm0(s.monthlyLimit)}</span></div>
-          <div className="row"><span className="grow k">Minimum acceptable speed</span><span className="v">{s.minSpeed} Mbps</span></div>
-          <div className="row"><span className="grow k">Maximum recovery duration</span><span className="v">{s.maxDuration} min</span></div>
+      <div className="card" style={{ marginTop: 16 }}>
+        {/* Auto Recovery Switch */}
+        <div className="row">
+          <span className="grow">
+            <span className="t">Auto-Recovery</span>
+            <div className="s">Acquire backup capacity automatically upon shortfall</div>
+          </span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={s.auto}
+              onChange={(e) => s.setAuto(e.target.checked)}
+              aria-label="Auto-recovery"
+            />
+            <i />
+          </label>
         </div>
-        <p className="note">
-          In plain words: NetChain may spend up to {rm0(s.maxPerRecovery)} per recovery, at most {rm0(s.monthlyLimit)} a
-          month, for at least {s.minSpeed} Mbps.
-        </p>
+
+        {/* Max Per Recovery */}
+        <div className="row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+            <span className="k">Max Budget Per Recovery</span>
+            <span className="v">{rm0(s.maxPerRecovery)}</span>
+          </div>
+          <div className="seg">
+            {perRecoveryOptions.map((opt) => (
+              <button
+                key={opt}
+                className={s.maxPerRecovery === opt ? "on" : ""}
+                onClick={() => s.setMaxPerRecovery(opt)}
+              >
+                {rm0(opt)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Monthly Limit */}
+        <div className="row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+            <span className="k">Monthly Recovery Limit</span>
+            <span className="v">{rm0(s.monthlyLimit)}</span>
+          </div>
+          <div className="seg">
+            {monthlyOptions.map((opt) => (
+              <button
+                key={opt}
+                className={s.monthlyLimit === opt ? "on" : ""}
+                onClick={() => s.setMonthlyLimit(opt)}
+              >
+                {rm0(opt)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div>
-        <div className="card-title" style={{ marginTop: 16 }}>How pricing works</div>
-        <div className="card">
-          <div className="pad">
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Pay per recovery — no plans</div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4, lineHeight: 1.6 }}>
-              Every recovery is a one-off purchase sized to your shortage. You approve it by SMS with a duration and
-              budget, and you're charged only after the delivered strength is verified.
-            </div>
-          </div>
-          <div className="stat-line"><span className="k">Provider price</span><span className="v">by capacity × duration</span></div>
-          <div className="stat-line"><span className="k">NetChain fee</span><span className="v">{rm(0.3)} per transaction</span></div>
-          <div className="stat-line"><span className="k">Failed recovery</span><span className="v ok">full refund</span></div>
-          <div className="stat-line"><span className="k">Under-delivery</span><span className="v ok">automatic penalty refund</span></div>
+      {/* Clean Pricing Card */}
+      <div className="card-title">How Pricing Works</div>
+      <div className="card">
+        <div className="stat-line">
+          <span className="k">Charging Model</span>
+          <span className="v">Pay-as-you-go per recovery</span>
         </div>
-        <p className="note">
-          Live SLA checks run for the whole purchased duration. If the provider drops below the agreed strength,
-          penalties and refunds are applied automatically — you can follow every check in the session card and receipt.
-        </p>
+        <div className="stat-line">
+          <span className="k">Platform Fee</span>
+          <span className="v">5% (Min {rm(0.3)}) on plan price</span>
+        </div>
+        <div className="stat-line">
+          <span className="k">Failed Activation</span>
+          <span className="v ok">100% Automatic Refund</span>
+        </div>
+        <div className="stat-line">
+          <span className="k">Under-Delivery</span>
+          <span className="v ok">Penalty refund credited back</span>
+        </div>
       </div>
+
+      <p className="note">
+        No lock-in plans or monthly subscriptions. You only pay when a recovery actually occurs and passes SLA delivery.
+      </p>
     </div>
   );
 }

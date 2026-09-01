@@ -1,106 +1,78 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { rm, rm0 } from "../services/pricing";
+import { rm } from "../services/pricing";
 import { StrengthBars } from "../components/RecoveryOverlay";
+import ProtectionModal from "../components/ProtectionModal";
 import type { Session } from "../services/types";
 
-/* Live temporary-capacity session card with SLA verification tracking.
-   Countdown runs at demo speed (1 real second = 1 plan minute);
-   throughput/latency/loss jitter like a real feed, and a verification
-   check runs once per simulated minute against the agreed capacity. */
-
-function useSessionTicker(active: boolean) {
+function useTicker(active: boolean, ms = 300) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(() => setTick((n) => n + 1), 250);
+    const t = setInterval(() => setTick((n) => n + 1), ms);
     return () => clearInterval(t);
-  }, [active]);
+  }, [active, ms]);
 }
 
-function signalFor(
-  current: number,
-  demand: number,
-  primaryDown: boolean
-): { filled: number; label: string; cls: string } {
-  if (!primaryDown) return { filled: 4, label: "Excellent", cls: "" };
-  if (current <= 0) return { filled: 0, label: "No signal", cls: "strength-2" };
-  const ratio = current / demand;
-  if (ratio >= 0.95) return { filled: 4, label: "Excellent", cls: "" };
-  if (ratio >= 0.75) return { filled: 3, label: "Good", cls: "" };
-  if (ratio >= 0.5) return { filled: 2, label: "Fair", cls: "strength-2" };
-  return { filled: 1, label: "Poor", cls: "strength-2" };
-}
+function SimulatedTelemetryCard({
+  isDegraded,
+  isRecovered,
+  extraMbps,
+}: {
+  isDegraded: boolean;
+  isRecovered: boolean;
+  extraMbps: number;
+}) {
+  useTicker(true, 1000);
 
-function VerificationLog({ session }: { session: Session }) {
-  const [open, setOpen] = useState(false);
-  const healthy = session.mbps >= session.agreed;
-  const avg = session.checks.total ? (session.checks.avgSum / session.checks.total).toFixed(1) : "—";
+  const downlink = isDegraded ? "0 Mbps" : isRecovered ? `1,000 Mbps (+${extraMbps}M)` : "1,000 Mbps";
+  const latency = isDegraded ? "142 ms" : "18 ms";
+  const jitter = isDegraded ? "28.4 ms" : "2.1 ms";
+  const loss = isDegraded ? "4.2 %" : "0.0 %";
+
+  const cell = (k: string, v: string, warn?: boolean) => (
+    <div className="n">
+      <div className="nk">{k}</div>
+      <div className={`nv ${warn ? "bad" : ""}`} style={{ color: warn ? "var(--bad)" : undefined }}>
+        {v}
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--line)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>LIVE VERIFICATION</span>
-        <span className={`chip ${session.checks.total > 0 && session.checks.passed === session.checks.total ? "green" : session.checks.total ? "amber" : "gray"}`}>
-          {session.checks.total > 0
-            ? `${session.checks.passed}/${session.checks.total} checks ${session.checks.passed === session.checks.total ? "within agreement" : "below agreement"}`
-            : "starting checks…"}
-        </span>
-        <button className="btn link" style={{ marginLeft: "auto", fontSize: 12.5 }} onClick={() => setOpen(!open)}>
-          {open ? "Hide log" : "Verification log"}
-        </button>
+    <div className="card">
+      <div className="pad">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 800, fontSize: 13.5 }}>Connection Telemetry (Simulated Link)</span>
+          <span className={`chip ${!isDegraded ? "green" : "red"}`}>
+            <span className="dot" /> {!isDegraded ? "Active · Stable" : "Degraded / Suppressed"}
+          </span>
+        </div>
+        <div className="sess-grid" style={{ marginTop: 10 }}>
+          {cell("Latency (RTT)", latency, isDegraded)}
+          {cell("Jitter", jitter, isDegraded)}
+          {cell("Packet Loss", loss, isDegraded)}
+          {cell("Downlink Bandwidth", downlink, isDegraded)}
+        </div>
       </div>
-      {healthy ? (
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6 }}>
-          Agreed {session.agreed} Mbps for the whole {session.min}-minute duration
-          {session.checks.total > 0 && <> · average delivered <b style={{ color: "var(--ink)" }}>{avg} Mbps</b></>}
-        </div>
-      ) : (
-        <div style={{ fontSize: 12.5, color: "var(--warn)", fontWeight: 600, marginTop: 6 }}>
-          Delivered {session.mbps} Mbps is below the agreed {session.agreed} Mbps — penalty refunds continue
-          automatically for every failed check.
-        </div>
-      )}
-      {open && (
-        <div style={{ marginTop: 8 }}>
-          {session.log.length === 0 && <div style={{ fontSize: 12.5, color: "var(--faint)" }}>No samples yet…</div>}
-          {session.log.map((s, i) => (
-            <div key={s.at + "" + i} style={{ display: "flex", gap: 10, fontSize: 12.5, padding: "3px 0" }}>
-              <span className="mono" style={{ color: "var(--faint)", width: 64 }}>
-                {new Date(s.at).toLocaleTimeString("en-GB")}
-              </span>
-              <span className="mono" style={{ flex: 1 }}>{s.mbps} Mbps</span>
-              <span style={{ color: s.ok ? "var(--ok)" : "var(--bad)", fontWeight: 700 }}>
-                {s.ok ? "✓ within agreement" : "✕ below agreement"}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
 function SessionCard({ session }: { session: Session }) {
-  useSessionTicker(true);
+  useTicker(true);
 
   if (session.ended) {
     return (
       <div className="card">
         <div className="pad">
-          <div className="sess-head">
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <StrengthBars filled={0} cls="strength-2" />
-            <div className="grow">
-              <div className="t">Temporary plan ended</div>
-              <div className="s">The {session.min}-minute capacity plan expired.</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>Recovery session ended</div>
+              <div style={{ color: "var(--muted)", fontSize: 12.5 }}>{session.endNote ?? "Plan duration expired."}</div>
             </div>
           </div>
-          {session.checks.total > 0 && (
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 10 }}>
-              Final verification: {session.checks.passed}/{session.checks.total} checks within agreement · average{" "}
-              {(session.checks.avgSum / session.checks.total).toFixed(1)} Mbps of {session.agreed} agreed.
-            </div>
-          )}
         </div>
       </div>
     );
@@ -111,32 +83,40 @@ function SessionCard({ session }: { session: Session }) {
   const mm = Math.floor(totSec / 60);
   const ss = Math.floor(totSec % 60);
   const tput = (session.mbps - 1.4 + Math.random() * 3.2).toFixed(1);
-  const lat = Math.round(36 + Math.random() * 8);
-  const loss = (0.1 + Math.random() * 0.25).toFixed(1);
-  const healthy = session.mbps >= session.agreed;
+  const lat = Math.round(18 + Math.random() * 4);
 
   return (
-    <div className="card">
+    <div className="card" style={{ borderColor: "var(--accent)" }}>
       <div className="pad">
-        <div className="sess-head">
-          <StrengthBars filled={healthy ? 4 : 2} cls={healthy ? "" : "strength-2"} />
-          <div className="grow">
-            <div className="t">Recovery session · {healthy ? "Excellent" : "Fair"}</div>
-            <div className="s">{session.agreed} Mbps agreed plan · {session.min} min</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>Active Autonomous Recovery Session</div>
+            <div style={{ color: "var(--muted)", fontSize: 12.5 }}>
+              +{session.agreed} Mbps via KilatLink FWA · {session.min} min duration
+            </div>
+          </div>
+          <span className="chip sui">Sui Escrow Locked</span>
+        </div>
+
+        <div className="sess-grid" style={{ marginTop: 12 }}>
+          <div className="n">
+            <div className="nk">Delivered Throughput</div>
+            <div className="nv" style={{ color: "var(--ok)" }}>
+              {tput} Mbps
+            </div>
+          </div>
+          <div className="n">
+            <div className="nk">Latency</div>
+            <div className="nv">{lat} ms</div>
           </div>
         </div>
-        <div className="sess-grid">
-          <div className="n"><div className="nk">Throughput</div><div className="nv">{tput} Mbps</div></div>
-          <div className="n"><div className="nk">Latency</div><div className="nv">{lat} ms</div></div>
-          <div className="n"><div className="nk">Packet loss</div><div className="nv">{loss} %</div></div>
-          <div className="n"><div className="nk">Agreed capacity</div><div className="nv">{session.agreed} Mbps</div></div>
-        </div>
-        <VerificationLog session={session} />
+
         <div className="sess-foot">
-          <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>Time remaining</span>
-          <span className="cd">{mm}:{String(ss).padStart(2, "0")}</span>
-          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{rm(session.cost)}</span>
-          <span className="hint">demo speed ×60</span>
+          <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>Time remaining:</span>
+          <span className="cd">
+            {mm}:{String(ss).padStart(2, "0")}
+          </span>
+          <span style={{ fontSize: 12.5, color: "var(--muted)", marginLeft: "auto" }}>{rm(session.cost)}</span>
         </div>
       </div>
     </div>
@@ -146,48 +126,69 @@ function SessionCard({ session }: { session: Session }) {
 export default function HomePage() {
   const s = useAppStore();
   const state = s.protectionState;
+  const isDegraded = state === "attention" || state === "recovering" || s.capacity.primaryDown;
+  const isRecovered = s.capacity.extra > 0;
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // Suppress strength to 1 bar or 0 bars when degraded, otherwise 4/4
+  const signalFilled = isDegraded && !isRecovered ? 1 : 4;
+  const signalCls = isDegraded && !isRecovered ? "strength-bad" : "";
+  const signalLabel = isDegraded && !isRecovered ? "Suppressed / Weak" : "Excellent (1,000M Fiber)";
+
+  const currentDisplayMbps = isDegraded && !isRecovered ? 0 : isRecovered ? s.capacity.current : 1000;
+
   const hero = {
-    protected: { cls: "green", text: "CONNECTION PROTECTED" },
-    recovering: { cls: "blue", text: "RECOVERING CONNECTION" },
-    attention: { cls: "amber", text: "ATTENTION REQUIRED" },
-  }[state];
-  const heroSub = {
-    protected: "If your connection fails or falls short, NetChain finds extra capacity — you just reply with a duration and budget.",
-    recovering: "Handling your recovery request. No action needed.",
-    attention: s.sessionExpired
-      ? "Your temporary plan ended and the primary line is still down. Send a new recovery request."
-      : "Recovery failed — you weren't charged. Your connection is still down.",
+    protected: { cls: "green", text: "Connection Protected" },
+    recovering: { cls: "blue", text: "Acquiring Backup Capacity…" },
+    attention: { cls: "amber", text: "Line Degradation Detected (Suppressed)" },
   }[state];
 
-  const signal = signalFor(s.capacity.current, s.demand, s.capacity.primaryDown);
-
-  const problem =
-    state !== "protected" ? (
-      <div className="card problem">
-        <div className="pad">
-          <h3>Connection problem detected</h3>
-          <div className="d">
-            Your main connection is unavailable
-            {state === "attention"
-              ? s.sessionExpired
-                ? " and the temporary plan has expired"
-                : " — the extra capacity could not be added"
-              : ""}
-            . NetChain can buy replacement capacity until your line is restored.
-          </div>
-          <div className="nums">
-            <div className="n"><div className="nk">Available now</div><div className="nv">{s.capacity.current}</div></div>
-            <div className="n"><div className="nk">Your demand</div><div className="nv">{s.demand}</div></div>
-            <div className="n"><div className="nk">Shortage</div><div className="nv bad">{Math.max(0, s.demand - s.capacity.current)}</div></div>
-          </div>
-          {state === "attention" && (
-            <div style={{ marginTop: 14 }}>
-              <button className="btn primary" onClick={() => s.startRecovery("main")}>New recovery request</button>
-            </div>
-          )}
-        </div>
-      </div>
-    ) : null;
+  // Dynamic Discovery & Multi-Agent Interaction Log entries
+  const incident = s.incident;
+  const interactionLogs = [
+    {
+      time: "T+0.0s",
+      title: "Discovery Agent",
+      type: "warn",
+      desc: "Physical WAN degradation detected: latency surged to 142ms, packet loss reached 4.2%, 500 Mbps shortfall identified.",
+    },
+    {
+      time: "T+1.2s",
+      title: "A2A Broadcast Protocol",
+      type: "sui",
+      desc: "Broadcast parallel query to 3 nearby registered providers: NusaNet 5G, KilatLink FWA, and OrbitSat GO.",
+    },
+    {
+      time: "T+2.0s",
+      title: "Provider Quotes Received",
+      type: "ok",
+      desc: "KilatLink FWA (500M @ RM 12.60, 18ms), NusaNet 5G (500M @ RM 18.50, 25ms), OrbitSat GO (150M @ RM 24.00, 65ms).",
+    },
+    {
+      time: "T+2.6s",
+      title: "SMS Reply Channel",
+      type: "sui",
+      desc: "Shortage prompt sent to subscriber. User approved: 30 min duration within RM 14.00 budget.",
+    },
+    {
+      time: "T+4.5s",
+      title: "Gonka 3-Agent Consensus",
+      type: "ok",
+      desc: "DeepSeek-V3 + Kimi-k1.5 + MiniMax-ABAB6.5 reached 3/3 unanimous consensus selecting KilatLink FWA.",
+    },
+    {
+      time: "T+5.5s",
+      title: "Sui Escrow Dual-Sig Lock",
+      type: "sui",
+      desc: "Smart contract object locked on Sui Testnet: RM 11.97 provider amount + RM 0.63 platform fee.",
+    },
+    {
+      time: "T+7.2s",
+      title: "CAMARA QoD Path Active",
+      type: "ok",
+      desc: "Programmable high-speed slice established. Full 500 Mbps capacity verified and online.",
+    },
+  ];
 
   return (
     <div className="cols">
@@ -198,59 +199,123 @@ export default function HomePage() {
             {hero.text}
           </div>
           <h1>
-            {s.capacity.current}
+            {currentDisplayMbps}
             <span className="u">Mbps</span>
           </h1>
-          <div className="sub">Current capacity · {heroSub}</div>
-          {s.capacity.extra > 0 && state === "protected" && (
-            <span className="pill-note">⚡ +{s.capacity.extra} Mbps temporary plan</span>
-          )}
+          <div className="sub">
+            {isRecovered
+              ? `Running on autonomous backup capacity (+${s.capacity.extra} Mbps).`
+              : isDegraded
+              ? "Primary line suppressed. Autonomous rescue engine is resolving shortfall."
+              : "Primary fiber link operating normally with autonomous SLA resilience."}
+          </div>
         </div>
-        {problem}
+
+        {/* Shortfall Alert */}
+        {state !== "protected" && (
+          <div className="card" style={{ borderLeft: "4px solid var(--warn)", background: "#fffdfa" }}>
+            <div className="pad">
+              <div style={{ fontWeight: 800, fontSize: 15 }}>Connectivity Shortfall Detected</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
+                Primary link degraded to 0 Mbps. Interactive SMS recovery protocol active.
+              </p>
+              <div style={{ marginTop: 14 }}>
+                <button className="btn primary" onClick={() => s.startRecovery("main")}>
+                  Acquire Replacement Capacity (Reply by SMS)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {state === "protected" && s.session && <SessionCard session={s.session} />}
+
+        {/* Telemetry Card */}
+        <div className="card-title">Live Link Telemetry</div>
+        <SimulatedTelemetryCard
+          isDegraded={isDegraded && !isRecovered}
+          isRecovered={isRecovered}
+          extraMbps={s.capacity.extra}
+        />
+
+        {/* Live Discovery & Agent Interaction Log on Dashboard */}
+        <div className="card-title">Discovery & Multi-Agent Interaction Log</div>
+        <div className="interaction-feed">
+          {(incident ? interactionLogs : interactionLogs.slice(0, 3)).map((log, i) => (
+            <div key={i} className="feed-item">
+              <span className={`feed-dot ${log.type}`} />
+              <div className="feed-content">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="feed-title">{log.title}</span>
+                  <span className="feed-time">{log.time}</span>
+                </div>
+                <div className="feed-desc">{log.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div>
-        <div className="card-title" style={{ marginTop: 16 }}>Connection</div>
+        <div className="card-title" style={{ marginTop: 8 }}>Status Overview</div>
         <div className="card">
           <div className="row">
-            <span className="grow k">Primary network</span>
-            <span className={`v ${!s.capacity.primaryDown ? "ok" : ""}`}>{s.capacity.primaryDown ? "Down" : "Connected"}</span>
-          </div>
-          <div className="row"><span className="grow k">NetChain protection</span><span className="v ok">Active</span></div>
-          <div className="row">
-            <span className="grow k">Network strength</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <StrengthBars filled={signal.filled} cls={signal.cls} />
-              <span className={`v ${signal.filled >= 3 ? "ok" : ""}`}>{signal.label}</span>
+            <span className="grow k">Primary Link</span>
+            <span className={`v ${!isDegraded || isRecovered ? "ok" : "bad"}`}>
+              {isDegraded && !isRecovered ? "Degraded / Suppressed" : "Connected (1,000 Mbps)"}
             </span>
           </div>
-          {state === "protected" && s.session && !s.session.ended && (
+          <div className="row">
+            <span className="grow k">Autonomous Protection</span>
+            <span className="v ok">Active</span>
+          </div>
+          <div className="row">
+            <span className="grow k">Signal Quality</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <StrengthBars filled={signalFilled} cls={signalCls} />
+              <span className={`v ${signalFilled >= 3 ? "ok" : "bad"}`}>{signalLabel}</span>
+            </span>
+          </div>
+          <div className="row">
+            <span className="grow k">Auto-Recovery</span>
+            <span className={`v ${s.auto ? "ok" : ""}`}>{s.auto ? "ON" : "OFF"}</span>
+          </div>
+          {s.auto && (
             <div className="row">
-              <span className="grow k">Live verification</span>
-              <span className="v ok">
-                {s.session.checks.total > 0
-                  ? `✓ ${s.session.checks.passed}/${s.session.checks.total} checks`
-                  : "running…"}
-              </span>
+              <span className="grow k">Monthly Spending Limit</span>
+              <span className="v">RM {s.monthlyLimit} / mo</span>
             </div>
           )}
         </div>
 
-        <div className="card-title">Your protection</div>
+        {/* Simulation Actions */}
+        <div className="card-title">Simulation Controls</div>
         <div className="card">
-          <div className="row"><span className="grow k">Auto recovery</span><span className={`v ${s.auto ? "ok" : ""}`}>{s.auto ? "ON" : "OFF"}</span></div>
-          <div className="row"><span className="grow k">Charges</span><span className="v">per transaction · {rm(0.3)} fee</span></div>
-          <div className="row">
-            <span className="grow k">Recovery budget</span>
-            <span className="v">
-              {rm0(s.monthlyLimit)}
-              <span style={{ color: "var(--muted)", fontWeight: 500 }}> / month</span>
-            </span>
+          <div className="pad" style={{ display: "grid", gap: 8 }}>
+            <button
+              className="btn primary"
+              onClick={() => s.startRecovery("main")}
+              disabled={s.running}
+            >
+              Suppress Link & Test Recovery (SMS Reply)
+            </button>
+            <button
+              className="btn subtle"
+              onClick={() => setModalOpen(true)}
+            >
+              Configure Protection Settings
+            </button>
+            <button
+              className="btn subtle"
+              onClick={s.resetSim}
+            >
+              Reset to Normal Link (1,000 Mbps)
+            </button>
           </div>
         </div>
-        <p className="note">No plans, no subscription — you pay per recovery, only after verified delivery. Emergency and life-safety traffic always has priority.</p>
       </div>
+
+      {modalOpen && <ProtectionModal onClose={() => setModalOpen(false)} />}
     </div>
   );
 }
