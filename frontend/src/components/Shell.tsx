@@ -1,13 +1,18 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 
-const NAV = [
+const NAV_DESKTOP = [
+  { to: "/home", label: "Dashboard" },
+  { to: "/services", label: "Enterprise QoS" },
+  { to: "/activity", label: "Activity Log" },
+] as const;
+
+const NAV_MOBILE = [
   { to: "/home", label: "Home", icon: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /> },
-  { to: "/protection", label: "Protection", icon: <><path d="M12 3l7 3v5.2c0 4.6-3 8.1-7 9.8-4-1.7-7-5.2-7-9.8V6z" /><path d="M9.2 12l2 2 3.6-4" /></> },
+  { to: "/services", label: "Enterprise", icon: <><path d="M12 3 3 8l9 5 9-5-9-5z" /><path d="M3 12l9 5 9-5" /></> },
   { to: "/activity", label: "Activity", icon: <path d="M3 12h4l2.5-6.5 5 13L17 12h4" /> },
-  { to: "/wallet", label: "Wallet", icon: <><rect x="2.5" y="5" width="19" height="14" rx="3" /><path d="M2.5 10h19" /></> },
   { to: "/profile", label: "Profile", icon: <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20.5c1.4-3.6 4.2-5.4 7.5-5.4s6.1 1.8 7.5 5.4" /></> },
 ] as const;
 
@@ -26,7 +31,7 @@ export function StateChip() {
   }[protectionState];
   return (
     <span className={`chip ${map.cls}`} aria-live="polite">
-      <span className="dot" style={{ background: "currentColor" }} />
+      <span className={`dot ${map.dot}`} />
       {map.label}
     </span>
   );
@@ -34,31 +39,66 @@ export function StateChip() {
 
 export default function Shell({ children }: { children: ReactNode }) {
   const balance = useAppStore((s) => s.balance);
+  const zkLogin = useAppStore((s) => s.zkLogin);
+  const isWalletConfigured = Boolean(zkLogin);
+
   return (
     <div className="app-col">
+      {/* Desktop Topbar */}
       <header className="topnav">
-        <span className="logo"><span className="dot">·</span>NetChain</span>
-        <nav className="links" aria-label="Main">
-          {NAV.map((n) => (
+        <Link to="/home" className="logo">
+          <span className="dot">●</span> NetChain
+        </Link>
+
+        <nav className="links" aria-label="Main Navigation">
+          {NAV_DESKTOP.map((n) => (
             <NavLink key={n.to} to={n.to} className={({ isActive }) => (isActive ? "on" : "")}>
               {n.label}
             </NavLink>
           ))}
         </nav>
-        <StateChip />
-        <span className="nav-balance">Balance <b>{rm(balance)}</b></span>
+
+        <div className="topnav-actions">
+          <StateChip />
+
+          {/* Single Unified User & Wallet Pill */}
+          <Link to="/profile" className="user-pill" aria-label="Profile and Wallet">
+            <span className="user-pill-avatar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
+              </svg>
+            </span>
+            <span style={{ color: isWalletConfigured ? "var(--ink)" : "var(--accent)" }}>
+              {isWalletConfigured ? rm(balance) : "Connect Wallet"}
+            </span>
+          </Link>
+        </div>
       </header>
 
+      {/* Mobile Topbar */}
       <div className="topbar">
-        <span className="logo"><span className="dot">·</span>NetChain</span>
+        <Link to="/home" className="logo">
+          <span className="dot">●</span> NetChain
+        </Link>
         <span className="grow" />
         <StateChip />
+        <Link to="/profile" className="user-pill" style={{ padding: "4px 10px 4px 6px" }}>
+          <span className="user-pill-avatar" style={{ width: 20, height: 20 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
+            </svg>
+          </span>
+          <span style={{ fontSize: 12 }}>{isWalletConfigured ? rm(balance) : "Wallet"}</span>
+        </Link>
       </div>
 
-      <div className="content full">{children}</div>
+      <main className="content full">{children}</main>
 
-      <nav className="bottomnav" aria-label="Main">
-        {NAV.map((n) => (
+      {/* Mobile Bottom Navigation */}
+      <nav className="bottomnav" aria-label="Main Navigation">
+        {NAV_MOBILE.map((n) => (
           <NavLink key={n.to} to={n.to} className={({ isActive }) => (isActive ? "on" : "")}>
             {navIcon(n.icon)}
             <span>{n.label}</span>

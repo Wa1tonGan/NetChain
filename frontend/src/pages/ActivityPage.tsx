@@ -23,8 +23,17 @@ export default function ActivityPage() {
   }
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.01em", paddingTop: 6 }}>Activity</h1>
+    <div style={{ maxWidth: 860, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingTop: 6 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.02em" }}>Autonomous Activity Ledger</h1>
+          <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 4 }}>
+            Immutable audit trail of network probe events, Gonka decisions, CAMARA activations, and Sui split
+            settlements.
+          </p>
+        </div>
+      </div>
+
       {groups.map((g) => (
         <div key={g.label}>
           <div className="act-date">{g.label}</div>
@@ -37,23 +46,35 @@ export default function ActivityPage() {
                   <div className="s">{a.sub}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  {a.time && <div className="s" style={{ color: "var(--ink)", fontWeight: 700 }}>{a.time}</div>}
-                  <div className="s">{a.cost != null && a.cost > 0 ? rm(a.cost) : a.note}</div>
+                  {a.time && <div className="s mono" style={{ color: "var(--ink)", fontWeight: 700 }}>{a.time}</div>}
+                  <div className="s" style={{ fontWeight: 600 }}>
+                    {a.cost != null && a.cost > 0 ? rm(a.cost) : a.note}
+                  </div>
                 </div>
-                {a.recordId && <span style={{ color: "var(--faint)" }}>›</span>}
+                {a.recordId && <span style={{ color: "var(--faint)", fontSize: 18, marginLeft: 4 }}>›</span>}
               </>
             );
             return a.recordId ? (
-              <button key={a.id} className="card row act-item" onClick={() => navigate("/activity/" + a.recordId)}>
+              <button
+                key={a.id}
+                className="card row act-item"
+                style={{ width: "100%", cursor: "pointer", textAlign: "left" }}
+                onClick={() => navigate("/activity/" + a.recordId)}
+              >
                 {inner}
               </button>
             ) : (
-              <div key={a.id} className="card"><div className="row">{inner}</div></div>
+              <div key={a.id} className="card">
+                <div className="row">{inner}</div>
+              </div>
             );
           })}
         </div>
       ))}
-      <p className="note">Activity shows what NetChain did on your behalf — recoveries, checks and refunds.</p>
+      <p className="note">
+        Click any recovery incident to inspect cryptographic signatures, Time-to-Recovery breakdown, and SuiScan testnet
+        explorer verification proofs.
+      </p>
     </div>
   );
 }

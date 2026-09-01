@@ -1,16 +1,18 @@
 import { create } from "zustand";
 import {
   adjustPlan,
+  calcSplitSettlement,
   costOf,
   DEMAND_MBPS,
   parseSms,
   rm,
   rm0,
   UNDER_DELIVERY_RATIO,
-  PLATFORM_FEE,
 } from "../services/pricing";
 import { EVENT_LABELS, FLOWS } from "../services/flows";
 import { daysAgo, fmtClock } from "../services/format";
+import { startConnectivity, setMockDownlink, setMockFailure, type NetworkSample } from "../services/connectivity";
+import type { ZkLoginSession } from "../services/zklogin";
 import type {
   ActivityItem,
   Capacity,
@@ -19,22 +21,10 @@ import type {
   ProtectionState,
   RecoveryKind,
   RecoveryRecord,
+  ServiceItem,
   Session,
   VerificationSample,
 } from "../services/types";
-
-/* ================================================================
-   App store (zustand). The recovery state machine lives at module
-   level so its timers can advance state outside React's render
-   cycle — the same shape the real backend's SSE events will drive.
-
-   Model notes:
-   - No onboarding: the app opens straight to a protected Home.
-   - Individual users have NO backup network. When the primary line
-     fails the full demand is short, and NetChain buys all of it.
-   - No subscription plans: pay per transaction (provider price +
-     a small platform fee), only after verified delivery.
-   ================================================================ */
 
 interface AppState {
   // account & preferences
@@ -49,12 +39,13 @@ interface AppState {
   balance: number;
   notif: boolean;
   walletAddr: string;
+  zkLogin: ZkLoginSession | null;
 
   // network
   capacity: Capacity;
   demand: number;
 
-  // money
+  // money & trust layer
   month: { usage: number; fees: number };
   locked: number;
   recoverySeq: number;
@@ -67,51 +58,103 @@ interface AppState {
   session: Session | null;
   sessionExpired: boolean;
 
+  // device connectivity
+  netSample: NetworkSample | null;
+  outageSource: "real" | "simulated" | null;
+  mockProbeOutage: boolean;
+  mockWeakSignal: boolean;
+
   // history
   activity: ActivityItem[];
   payments: Payment[];
   records: Record<string, RecoveryRecord>;
   disclosures: Record<string, boolean>;
 
+  // enterprise services
+  services: ServiceItem[];
+  serviceSeq: number;
+
   // actions — settings
   setAuto: (v: boolean) => void;
+  setMaxPerRecovery: (v: number) => void;
+  setMonthlyLimit: (v: number) => void;
   setNotif: (v: boolean) => void;
   addFunds: (v: number) => void;
   disclose: (key: string) => void;
+  setZkLogin: (session: ZkLoginSession | null) => void;
+
+  // actions — enterprise services
+  saveService: (svc: Omit<ServiceItem, "id">, editId?: string) => void;
+  removeService: (id: string) => void;
 
   // actions — recovery
-  startRecovery: (kind: RecoveryKind) => void;
+  startRecovery: (kind: RecoveryKind, customShortage?: number) => void;
+  runScenario: (scenarioId: "S1" | "S2" | "S3" | "S4" | "S5" | "S6") => void;
   sendSms: (text: string, opts?: { auto?: boolean }) => void;
   dismissOverlay: () => void;
   resetSim: () => void;
   addCheck: () => void;
+  startConnectivityWatcher: () => void;
+  toggleMockOutage: () => void;
+  toggleMockWeakSignal: () => void;
 }
 
 const seedActivity: ActivityItem[] = [
-  { id: "a-seed-2", ts: daysAgo(1, 9, 14), type: "check",
-    title: "Network check", sub: "Connection healthy", note: "No action required" },
-  { id: "a-seed-1", ts: daysAgo(4, 16, 40), type: "failed",
-    title: "Provider failed", sub: "Temporary capacity could not activate",
-    note: "No charge — automatically refunded" },
+  {
+    id: "a-seed-2",
+    ts: daysAgo(1, 9, 14),
+    type: "check",
+    title: "Network check",
+    sub: "Connection healthy",
+    note: "No action required",
+  },
+  {
+    id: "a-seed-1",
+    ts: daysAgo(4, 16, 40),
+    type: "failed",
+    title: "Primary connection failed",
+    sub: "Switched to KilatLink FWA",
+    note: "Sui escrow settled",
+  },
 ];
 
+const seedServices: ServiceItem[] = [
+  { id: "svc-1", name: "CCTV / Security", prio: "P1", minSpeed: 100 },
+  { id: "svc-2", name: "Payments / POS", prio: "P1", minSpeed: 100 },
+  { id: "svc-3", name: "Live Broadcast", prio: "P2", minSpeed: 300 },
+  { id: "svc-4", name: "Operations VPN", prio: "P3", minSpeed: 50 },
+  { id: "svc-5", name: "Guest Wi-Fi", prio: "P5", minSpeed: 250 },
+];
+
+function getStoredZkLogin(): ZkLoginSession | null {
+  try {
+    const raw = localStorage.getItem("netchain_zklogin");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+const initialZkLogin = getStoredZkLogin();
+
 export const useAppStore = create<AppState>((set, get) => ({
-  service: "Mobile / eSIM",
-  deviceName: "My Phone",
+  service: "Autonomous Mobile / eSIM",
+  deviceName: "Pixel 9 Pro",
   auto: true,
-  autoBelow: 10,
+  autoBelow: 14,
   maxPerRecovery: 20,
-  monthlyLimit: 50,
+  monthlyLimit: 100,
   minSpeed: 100,
   maxDuration: 60,
-  balance: 50,
+  balance: 65,
   notif: true,
-  walletAddr: "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C",
+  walletAddr: initialZkLogin?.address ?? "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
+  zkLogin: initialZkLogin,
 
   capacity: { primary: DEMAND_MBPS, current: DEMAND_MBPS, extra: 0, primaryDown: false },
   demand: DEMAND_MBPS,
 
-  month: { usage: 0, fees: 0 },
+  month: { usage: 12.6, fees: 0.63 },
   locked: 0,
   recoverySeq: 1023,
 
@@ -122,23 +165,61 @@ export const useAppStore = create<AppState>((set, get) => ({
   session: null,
   sessionExpired: false,
 
+  netSample: null,
+  outageSource: null,
+  mockProbeOutage: false,
+  mockWeakSignal: false,
+
   activity: seedActivity,
   payments: [],
   records: {},
   disclosures: {},
 
+  services: seedServices,
+  serviceSeq: 6,
+
   // ----- settings -----
   setAuto: (v) => set({ auto: v }),
+  setMaxPerRecovery: (v) => set({ maxPerRecovery: v }),
+  setMonthlyLimit: (v) => set({ monthlyLimit: v }),
   setNotif: (v) => set({ notif: v }),
   addFunds: (v) => set((s) => ({ balance: +(s.balance + v).toFixed(2) })),
   disclose: (key) => set((s) => ({ disclosures: { ...s.disclosures, [key]: !s.disclosures[key] } })),
+  setZkLogin: (session) => {
+    try {
+      if (session) {
+        localStorage.setItem("netchain_zklogin", JSON.stringify(session));
+      } else {
+        localStorage.removeItem("netchain_zklogin");
+      }
+    } catch {}
+    set({
+      zkLogin: session,
+      walletAddr: session ? session.address : "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
+    });
+  },
+
+  // ----- enterprise services -----
+  saveService: (svc, editId) =>
+    set((s) => ({
+      services: editId
+        ? s.services.map((x) => (x.id === editId ? { ...x, ...svc } : x))
+        : [...s.services, { ...svc, id: "svc-" + s.serviceSeq }],
+      serviceSeq: editId ? s.serviceSeq : s.serviceSeq + 1,
+    })),
+  removeService: (id) =>
+    set((s) => ({
+      services: s.services.filter((x) => x.id !== id),
+    })),
 
   // ----- recovery -----
-  startRecovery: (kind) => {
+  startRecovery: (kind, customShortage) => {
     if (get().running) return;
     clearMachine();
     const flow = FLOWS[kind];
     const st = get();
+    const shortage = customShortage ?? st.demand;
+
     set({
       running: true,
       overlayDismissed: false,
@@ -148,6 +229,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       capacity: { ...st.capacity, current: 0, primaryDown: true, extra: 0 },
     });
     const seq = st.recoverySeq + 1;
+
     const inc: Incident = {
       id: "NC-" + seq,
       kind: flow.key,
@@ -163,12 +245,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       result: null,
       req: null,
       sentAt: null,
-      required: st.demand,
-      available: 0, // no backup network for individual users
-      shortage: st.demand,
+      required: shortage,
+      available: 0,
+      shortage,
     };
-    set({ incident: inc, recoverySeq: seq });
-    scheduleFrom(1); // phases[0] (detected) is already recorded
+
+    set({ incident: inc, recoverySeq: seq, outageSource: st.outageSource ?? "simulated" });
+    scheduleFrom(1);
+  },
+
+  runScenario: (scenarioId) => {
+    const st = get();
+    if (st.running) return;
+
+    if (scenarioId === "S1") {
+      get().startRecovery("auto", 300);
+    } else if (scenarioId === "S2") {
+      get().startRecovery("auto", 500);
+    } else if (scenarioId === "S3") {
+      get().startRecovery("auto", 250);
+    } else if (scenarioId === "S4") {
+      get().startRecovery("main", 500);
+    } else if (scenarioId === "S5") {
+      get().startRecovery("auto", 500);
+    } else {
+      get().startRecovery("auto", 500);
+    }
   },
 
   sendSms: (text, opts) => {
@@ -196,7 +298,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       {
         from: "sys" as const,
         text:
-          `Request detected — ${inc.shortage} Mbps · ${plan.min} min · ${rm(plan.cost)}` +
+          `Intent accepted — ${inc.shortage} Mbps · ${plan.min} min · ${rm(plan.cost)}` +
           (plan.adjusted
             ? ` (closest option within your ${rm0(p.budget)} budget)`
             : ` (within your ${rm0(p.budget)} budget ✓)`),
@@ -209,7 +311,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         req,
         sentAt: now,
         pausedAt: null,
-        startedAt: now - inc.elapsedBase * 1000, // timer continuity across the pause
+        startedAt: now - inc.elapsedBase * 1000,
       },
       locked: plan.cost,
     });
@@ -232,21 +334,111 @@ export const useAppStore = create<AppState>((set, get) => ({
       locked: 0,
       session: null,
       sessionExpired: false,
+      outageSource: null,
     });
+  },
+
+  startConnectivityWatcher: () => {
+    startConnectivity({
+      onSample: (sample) => {
+        set({ netSample: sample });
+        handleRealNetworkTransition();
+      },
+      onOutage: () => handleRealNetworkTransition(),
+      onRestore: () => handleRealNetworkTransition(),
+    });
+  },
+
+  toggleMockOutage: () => {
+    const next = !get().mockProbeOutage;
+    set({ mockProbeOutage: next });
+    setMockFailure(next);
+  },
+
+  toggleMockWeakSignal: () => {
+    const next = !get().mockWeakSignal;
+    set({ mockWeakSignal: next });
+    setMockDownlink(next ? 20 : null);
   },
 
   addCheck: () =>
     set((s) => ({
       activity: [
-        { id: "chk-" + Date.now(), ts: Date.now(), type: "check",
-          title: "Network check", sub: "Connection healthy", note: "No action required" },
+        {
+          id: "chk-" + Date.now(),
+          ts: Date.now(),
+          type: "check",
+          title: "Network check",
+          sub: "Connection healthy",
+          note: "No action required",
+        },
         ...s.activity,
       ],
     })),
 }));
 
-/* ---------------- recovery machine (module level) ---------------- */
+/* ---------------- real-network watcher ---------------- */
+function handleRealNetworkTransition() {
+  const st = useAppStore.getState();
+  const sample = st.netSample;
+  if (!sample) return;
 
+  if (!sample.online) {
+    if (st.outageSource !== null || st.running || st.protectionState !== "protected") return;
+    const patch: Partial<AppState> = {
+      outageSource: "real",
+      capacity: { ...st.capacity, primaryDown: true, current: 0, extra: 0 },
+    };
+    if (st.session && !st.session.ended) {
+      patch.session = { ...st.session, ended: true, endNote: "Connection lost — send a new recovery request." };
+    }
+    useAppStore.setState(patch);
+    if (st.auto) {
+      useAppStore.getState().startRecovery("main");
+    } else {
+      useAppStore.setState({ protectionState: "attention" });
+    }
+    return;
+  }
+
+  if (sample.online && st.mockWeakSignal && sample.downlinkMbps != null && sample.downlinkMbps < st.demand) {
+    if (st.outageSource !== null || st.running || st.protectionState !== "protected") return;
+    const patch: Partial<AppState> = {
+      outageSource: "real",
+      capacity: { ...st.capacity, primaryDown: true, current: sample.downlinkMbps, extra: 0 },
+    };
+    if (st.session && !st.session.ended) {
+      patch.session = { ...st.session, ended: true, endNote: "Signal too weak — send a new recovery request." };
+    }
+    useAppStore.setState(patch);
+    if (st.auto) {
+      useAppStore.getState().startRecovery("main");
+    } else {
+      useAppStore.setState({ protectionState: "attention" });
+    }
+    return;
+  }
+
+  if (
+    sample.online &&
+    !st.mockWeakSignal &&
+    st.outageSource === "real" &&
+    !st.running &&
+    st.protectionState === "protected" &&
+    st.capacity.primaryDown
+  ) {
+    const patch: Partial<AppState> = {
+      outageSource: null,
+      capacity: { ...st.capacity, primaryDown: false, current: st.capacity.primary, extra: 0 },
+    };
+    if (st.session && !st.session.ended) {
+      patch.session = { ...st.session, ended: true, endNote: "Primary connection restored." };
+    }
+    useAppStore.setState(patch);
+  }
+}
+
+/* ---------------- recovery machine (module level) ---------------- */
 let machineTimers: ReturnType<typeof setTimeout>[] = [];
 
 function clearMachine() {
@@ -254,7 +446,6 @@ function clearMachine() {
   machineTimers = [];
 }
 
-/** Schedule remaining phases at their absolute offsets from the current point. */
 function scheduleFrom(fromIdx: number) {
   const inc = useAppStore.getState().incident;
   if (!inc) return;
@@ -279,13 +470,12 @@ function advance(status: string) {
     incident: {
       ...inc,
       status,
-      events: [...inc.events, { label: EVENT_LABELS[status], at: Date.now() }],
+      events: [...inc.events, { label: EVENT_LABELS[status] || status, at: Date.now() }],
     },
   });
 
   const cap = useAppStore.getState().capacity;
   if ((status === "verifying" || status === "restored") && inc.outcome !== "failed") {
-    // purchased capacity replaces the failed primary line entirely
     const delivered = inc.outcome === "under" ? Math.round(inc.shortage * UNDER_DELIVERY_RATIO) : inc.shortage;
     useAppStore.setState({ capacity: { ...cap, current: delivered, extra: delivered } });
   }
@@ -313,8 +503,8 @@ function pauseForSms() {
         {
           from: "net",
           text:
-            `Your connection is down and you need ${inc.shortage} Mbps. ` +
-            `Reply with a duration and budget — e.g. “30 min, RM 14”.`,
+            `Line degraded · Shortage: ${inc.shortage} Mbps. ` +
+            `Reply with duration & budget — e.g. “30 min, RM 14”.`,
         },
       ],
     },
@@ -334,11 +524,13 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
   const time = +((Date.now() - (inc.sentAt || inc.startedAt)) / 1000).toFixed(1);
   const cost = inc.req ? inc.req.cost : costOf(inc.shortage, 30);
   const reqMin = inc.req?.min ?? 30;
-  const delivered = kind === "under" ? Math.round(inc.shortage * UNDER_DELIVERY_RATIO) : kind === "ok" ? inc.shortage : 0;
+  const delivered =
+    kind === "under" ? Math.round(inc.shortage * UNDER_DELIVERY_RATIO) : kind === "ok" ? inc.shortage : 0;
 
+  const split = calcSplitSettlement(cost);
   let charged = 0;
   let refund = 0;
-  let fee = 0;
+  let fee = split.platformFee;
   let state = "";
   let actTitle = "";
   let actSub = "";
@@ -349,21 +541,18 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
 
   if (kind === "ok") {
     charged = cost;
-    fee = PLATFORM_FEE;
     state = "Settled";
     actTitle = "Recovery completed";
-    actSub = "Primary connection failed";
+    actSub = "KilatLink FWA active";
     actNote = `+${inc.shortage} Mbps · ${reqMin} min`;
     session = makeSession(inc.id, reqMin, cost, inc.shortage, inc.shortage);
   } else if (kind === "under") {
     refund = +(cost * (1 - UNDER_DELIVERY_RATIO)).toFixed(2);
     charged = +(cost - refund).toFixed(2);
-    fee = PLATFORM_FEE;
     state = "Refund issued";
     actTitle = "Recovery completed";
     actSub = "Provider under-delivered";
     actNote = `+${delivered} Mbps · ${rm(refund)} refunded`;
-    // the plan keeps running at the under-delivered level; live checks stay failing
     session = makeSession(inc.id, reqMin, cost, delivered, inc.shortage);
   } else {
     refund = cost;
@@ -377,13 +566,14 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
 
   const timeline = inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label }));
   const tx = "0x" + Math.random().toString(16).slice(2, 6) + "…" + Math.random().toString(16).slice(2, 6);
+  const logHash = "0x" + Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
 
   const record: RecoveryRecord = {
     id: inc.id,
     time,
     timeline,
     outcome: kind,
-    provider: "Provider B",
+    provider: "KilatLink FWA",
     cap: inc.shortage,
     min: reqMin,
     smsText: inc.req?.text ?? "",
@@ -396,6 +586,9 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     tx,
     restored: kind !== "failed",
     delivered,
+    providerAddr: split.providerAddress,
+    platformAddr: split.platformAddress,
+    logHash,
   };
 
   const payments = [...st.payments];
@@ -403,8 +596,8 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     payments.unshift({
       id: inc.id,
       ts: Date.now(),
-      label: "Temporary capacity",
-      provider: "Provider B",
+      label: "Autonomous recovery",
+      provider: "KilatLink FWA",
       cap: `+${inc.shortage} Mbps · ${reqMin} min`,
       amount: charged,
       refund: refund > 0 && kind !== "failed" ? refund : kind === "failed" ? cost : 0,
@@ -423,9 +616,15 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     records: { ...st.records, [inc.id]: record },
     activity: [
       {
-        id: inc.id, ts: Date.now(), type: kind === "failed" ? "failed" : "ok",
-        title: actTitle, sub: actSub, note: actNote,
-        time: time + " sec", cost: charged, recordId: inc.id,
+        id: inc.id,
+        ts: Date.now(),
+        type: kind === "failed" ? "failed" : "ok",
+        title: actTitle,
+        sub: actSub,
+        note: actNote,
+        time: time + " sec",
+        cost: charged,
+        recordId: inc.id,
       },
       ...st.activity,
     ],
@@ -449,11 +648,7 @@ function makeSession(id: string, min: number, cost: number, mbps: number, agreed
   };
 }
 
-/* ---------------- live SLA verification (demo speed ×60) ----------------
-   While a purchased plan runs, delivered throughput is checked once per
-   simulated minute against the agreed capacity. Samples are kept in a
-   rolling log so the user can track the whole duration. */
-
+/* ---------------- live SLA verification ---------------- */
 setInterval(() => {
   const st = useAppStore.getState();
   const s = st.session;
@@ -465,8 +660,7 @@ setInterval(() => {
     return;
   }
 
-  // one verification per tick
-  const jitter = (Math.random() - 0.4) * 6; // −2.4 … +3.6 Mbps
+  const jitter = (Math.random() - 0.4) * 6;
   const sample: VerificationSample = {
     at: Date.now(),
     mbps: Math.max(0, +(s.mbps + jitter).toFixed(1)),
@@ -494,7 +688,6 @@ function endSession() {
   });
 }
 
-/** Elapsed recovery seconds for the live timer display. */
 export function elapsedSecAt(inc: Incident, now: number): number {
   if (inc.result) return inc.result.time;
   if (inc.pausedAt != null) return inc.elapsedBase;
