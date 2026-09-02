@@ -6,10 +6,17 @@
     "type": "PRIMARY_LINK_DOWN",
     "severity": "critical"
   },
-  "detectedConditions": ["LINK_FAILURE", "CAPACITY_SHORTFALL"],
+  "detectedConditions": [
+    "LINK_FAILURE",
+    "CAPACITY_SHORTFALL"
+  ],
   "networkState": {
-    "activeLinkIds": ["WAN-B"],
-    "unavailableLinkIds": ["WAN-A"],
+    "activeLinkIds": [
+      "WAN-B"
+    ],
+    "unavailableLinkIds": [
+      "WAN-A"
+    ],
     "rawAvailableCapacityMbps": 500,
     "usableCapacityMbps": 500,
     "requiredCapacityMbps": 700,
@@ -47,7 +54,7 @@
     "emergencyOverride": false
   },
   "constraints": {
-    "maxBudget": 100,
+    "maxBudget": 5,
     "durationMinutes": 60
   },
   "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",

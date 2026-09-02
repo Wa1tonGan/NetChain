@@ -23,6 +23,7 @@ module netchain::escrow_tests {
     const E_NOT_EXPIRED: u64 = 9;
     const E_INVALID_FEE: u64 = 10;
     const E_INVALID_PENALTY: u64 = 11;
+    const E_INSUFFICIENT_ESCROW: u64 = 6;
 
     // Commitment status mirrors.
     const STATUS_COMMITTED: u8 = 0;
@@ -515,5 +516,133 @@ module netchain::escrow_tests {
             clock::destroy_for_testing(clock);
         };
         finish(scenario, escrow, authority);
+    }
+
+    // ---- commit_as_buyer (zkLogin buyer-direct path) -----------------------
+
+    fun do_commit_as_buyer<T>(
+        escrow: &mut Escrow<T>,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        let payment = coin::mint_for_testing(AMOUNT, ctx);
+        escrow::commit_as_buyer(
+            escrow, clock,
+            b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+            PLATFORM, FEE,
+            buyer_msg(), buyer_sig(), buyer_pk(),
+            provider_msg(), provider_sig(), provider_pk(),
+            payment,
+            ctx,
+        );
+    }
+
+    #[test]
+    fun commit_as_buyer_happy_path_no_cap() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let mut escrow: Escrow<sui::SUI>;
+        {
+            let ctx = scenario.ctx();
+            escrow = escrow::new(ctx);
+        };
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit_as_buyer(&mut escrow, &clock, ctx);
+            clock::destroy_for_testing(clock);
+        };
+        {
+            // Lock happens without any pre-funded pool and without a cap.
+            let ctx = scenario.ctx();
+            assert!(escrow::has_commitment(&escrow, nonce()), 0);
+            assert!(escrow::locked_value(&escrow, nonce()) == AMOUNT, 0);
+            assert!(escrow::commitment_status(&escrow, nonce()) == STATUS_COMMITTED, 0);
+        };
+        transfer::public_transfer(escrow, @0xBEEF);
+        scenario.end();
+    }
+
+    #[test]
+    fun commit_as_buyer_replay_returns_coin() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let mut escrow: Escrow<sui::SUI>;
+        {
+            let ctx = scenario.ctx();
+            escrow = escrow::new(ctx);
+        };
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            do_commit_as_buyer(&mut escrow, &clock, ctx);
+            // Byte-identical resubmission: no-op success, coin handed back.
+            do_commit_as_buyer(&mut escrow, &clock, ctx);
+            clock::destroy_for_testing(clock);
+        };
+        {
+            let ctx = scenario.ctx();
+            assert!(escrow::locked_value(&escrow, nonce()) == AMOUNT, 0);
+        };
+        transfer::public_transfer(escrow, @0xBEEF);
+        scenario.end();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_SIGNATURE_INVALID, location = netchain::escrow)]
+    fun commit_as_buyer_rejects_bad_buyer_sig() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let mut escrow: Escrow<sui::SUI>;
+        {
+            let ctx = scenario.ctx();
+            escrow = escrow::new(ctx);
+        };
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            let payment = coin::mint_for_testing<sui::SUI>(AMOUNT, ctx);
+            escrow::commit_as_buyer(
+                &mut escrow, &clock,
+                b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, FEE,
+                buyer_msg_tampered(), buyer_sig(), buyer_pk(),
+                provider_msg(), provider_sig(), provider_pk(),
+                payment,
+                ctx,
+            );
+            clock::destroy_for_testing(clock);
+        };
+        transfer::public_transfer(escrow, @0xBEEF);
+        scenario.end();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_INSUFFICIENT_ESCROW, location = netchain::escrow)]
+    fun commit_as_buyer_rejects_wrong_amount() {
+        let mut scenario = test_scenario::begin(BUYER);
+        let mut escrow: Escrow<sui::SUI>;
+        {
+            let ctx = scenario.ctx();
+            escrow = escrow::new(ctx);
+        };
+        {
+            let ctx = scenario.ctx();
+            let mut clock = clock::create_for_testing(ctx);
+            clock::set_for_testing(&mut clock, NOW);
+            let payment = coin::mint_for_testing<sui::SUI>(AMOUNT - 1, ctx);
+            escrow::commit_as_buyer(
+                &mut escrow, &clock,
+                b"INC-T", b"PROVIDER-B", AMOUNT, EXPIRY, nonce(), PROVIDER,
+                PLATFORM, FEE,
+                buyer_msg(), buyer_sig(), buyer_pk(),
+                provider_msg(), provider_sig(), provider_pk(),
+                payment,
+                ctx,
+            );
+            clock::destroy_for_testing(clock);
+        };
+        transfer::public_transfer(escrow, @0xBEEF);
+        scenario.end();
     }
 }

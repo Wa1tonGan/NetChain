@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import type { Priority, ServiceItem } from "../services/types";
+import {
+  fetchMarket,
+  setFailureMode,
+  type FailureMode,
+  type ProviderMarketEntry,
+} from "../services/market";
 
 const PRIORITIES: Priority[] = ["P1", "P2", "P3", "P4", "P5"];
 
@@ -141,6 +147,137 @@ function ServiceModal({
   );
 }
 
+const MODE_LABEL: Record<FailureMode, string> = {
+  healthy: "Healthy",
+  down: "Down",
+  unresponsive: "Unresponsive",
+  slow: "Slow",
+  fail_activation: "Activation fails",
+  laggy: "Laggy",
+};
+
+function MarketPanel() {
+  const [market, setMarket] = useState<ProviderMarketEntry[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      const next = await fetchMarket();
+      if (alive) setMarket(next);
+    };
+    void tick();
+    const timer = setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const kill = async (entry: ProviderMarketEntry, mode: FailureMode) => {
+    setBusy(entry.providerId);
+    await setFailureMode(entry.endpoint, mode);
+    const next = await fetchMarket();
+    setMarket(next);
+    setBusy(null);
+  };
+
+  if (!market) {
+    return (
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="pad" style={{ color: "var(--muted)", fontSize: 13 }}>
+          Probing the live provider market… (start it with <code className="mono">node scripts/start-all.mjs</code>)
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <div className="pad">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 14 }}>Live Provider Market</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              Real A2A agents on 8101–8103 · identities re-dressed per request · payout address pinned to each agent's signing key
+            </div>
+          </div>
+          <span className="chip blue" style={{ fontSize: 11 }}>
+            {market.filter((m) => m.reachable).length}/{market.length} online
+          </span>
+        </div>
+
+        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+          {market.map((entry) => (
+            <div
+              key={entry.endpoint}
+              style={{
+                border: "1px solid var(--line-soft)",
+                borderRadius: "var(--radius-sm)",
+                padding: "10px 12px",
+                display: "flex",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ minWidth: 180, flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>
+                    {entry.brand ?? "— offline —"}
+                  </span>
+                  {entry.reachable ? (
+                    entry.healthy ? (
+                      <span className="chip green" style={{ fontSize: 10.5 }}>
+                        {MODE_LABEL[entry.failureMode ?? "healthy"]}
+                      </span>
+                    ) : (
+                      <span className="chip red" style={{ fontSize: 10.5 }}>
+                        {MODE_LABEL[entry.failureMode ?? "down"]}
+                      </span>
+                    )
+                  ) : (
+                    <span className="chip amber" style={{ fontSize: 10.5 }}>unreachable</span>
+                  )}
+                  {entry.reachable && (
+                    <span className="mono" style={{ color: "var(--faint)", fontSize: 10.5 }}>
+                      {entry.providerId} · :{entry.endpoint.slice(-4)}
+                    </span>
+                  )}
+                </div>
+                {entry.reachable && entry.policy && (
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                    {entry.policy.maxCapacityMbps} Mbps · base {entry.policy.baseFee}{" "}
+                    {entry.policy.currency} ·{" "}
+                    {entry.policy.pricePer100MbpsPerHour}/{entry.policy.currency} per 100M·h
+                    {entry.capabilities ? ` · ${entry.capabilities.join(", ")}` : ""}
+                  </div>
+                )}
+              </div>
+
+              {entry.reachable && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(["healthy", "down", "unresponsive", "slow"] as FailureMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`btn sm ${entry.failureMode === mode ? "primary" : "subtle"}`}
+                      disabled={busy === entry.providerId || entry.failureMode === mode}
+                      onClick={() => kill(entry, mode)}
+                      title={`POST ${entry.endpoint}/admin/mode {"mode":"${mode}"}`}
+                    >
+                      {MODE_LABEL[mode]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ServicesPage() {
   const services = useAppStore((s) => s.services);
   const saveService = useAppStore((s) => s.saveService);
@@ -174,6 +311,9 @@ export default function ServicesPage() {
           + Add Service
         </button>
       </div>
+
+      {/* Live provider market (real A2A agents) */}
+      <MarketPanel />
 
       {/* Traffic Throttling Simulation */}
       <div className="card" style={{ marginTop: 14 }}>

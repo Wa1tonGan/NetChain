@@ -63,20 +63,27 @@ customer/provider/judge re-checks the verdict without trusting this server.
 
 ## Sui objects & addresses (testnet) — TWO-TRACK BUILD (Buyer 1)
 
-Live on Sui **testnet** (2026-08-30): the escrow holds **real Circle USDC**
-(Sui Track 01 — Payments & Stablecoins); the A2A agent commerce + verification
-layer serves Track 02 (AI × SUI). Signed by **Buyer 1** — a real self-custody
-buyer wallet (`SUI_BUYER_SECRET`, gitignored). Verifiable on
-[SuiScan](https://suiscan.xyz/testnet):
+Live on Sui **testnet** (refreshed 2026-09-03): the escrow holds **real Circle
+USDC** (Sui Track 01 — Payments & Stablecoins); the A2A agent commerce +
+verification layer serves Track 02 (AI × SUI). Signed by **Buyer 1** — a real
+self-custody buyer wallet (`SUI_BUYER_SECRET`, gitignored). Verifiable on
+[SuiScan](https://suiscan.xyz/testnet). Re-deploying is normal during the
+build (regenesis/faucet/refunding) — `.sui/config.testnet.json` is always the
+source of truth for the current addresses:
 
 | Object | ID |
 | --- | --- |
-| Package (`netchain`) | `0xa648e1fbb1ae8f04ce6c3b0790c36f2f0a1a1f6e59368946f76f37a0020235bf` |
+| Package (`netchain`) | `0x531c16cde1a45391ab90f21c9f1e3f06ae3d2965965caee5c3de608a5ed50170` |
 | USDC coin type (Circle, gasless-allowlisted) | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |
-| Shared `Escrow<USDC>` pool (Buyer 1-funded, 12 USDC) | `0x65b3503164b9de0b35ab0b7e49b0d13d5c8721a42570e814119f7143a1299125` |
-| `AuthorityCap` | `0xedd9c5e475f6de6a855a4db0b7d6299c4bb317557e016276c3154505c618cbc9` |
-| Buyer 1 (testnet buyer) | `0xbed2dff8b7a0c265d2e25d8835057a8a0acb017eb03718fccd38832c0a758cf0` |
+| Shared `Escrow<USDC>` pool (Buyer 1-funded, 12 USDC) | `0x9c4c5958a942daba695b1a6cfceeec7bf522ed25bc7d55fc5f4d2d828c2a6a63` |
+| `AuthorityCap` (max 12 USDC / voucher) | `0x25f8b7990966f30ecf4864e74033f6e67cc22394a7708bc51a1d920990a339bf` |
+| TreasuryCap<MYRC> (demo-coin treasury; supply 0 on testnet) | `0x76afeb422db6b64212ea82d706a2f5d8c7838f0edfba90bf0970af38f69922cf` |
+| Buyer 1 (testnet buyer) | `0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24` |
 | Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
+
+Recent proof txs (2026-09-03 session, USDC-native small-budget offers):
+LOCK `YQ3yeXgActwaNfHpjJgqrgehvv` (1.47 USDC = 1.40 + 0.07 fee) ·
+COMPLETE `HGbrda3TGoF4YXzPwr1ZbyD9SR` (split settlement, penalty 0).
 
 ### Proof transactions — every use case, once (blueprint §12 + Sui tracks)
 
@@ -103,9 +110,12 @@ Live integration: `npm run integrate:sui` (one AI-driven loop) or
 `SUI_INTEGRATION_MODE=full npm run trust:server` (auto-settle every incident;
 `SUI_INTEGRATION_MODE` = `standalone | one-loop | full` — see
 `documents/person3/person3-implementation-guide.md`).
-Testnet fixture amounts are price-scaled (×0.05) to fit faucet drips —
-`SUI_TESTNET_PRICE_SCALE` / `STABLECOIN_ESCROW_FUND` scale them up.
-Localnet runs the identical contracts on the MYRC demo coin (2 decimals).
+Provider profiles are natively priced in affordable USDC-scale amounts —
+typical recovery offers quote 1–5 USDC, the same money the user's SMS budget
+offers — so no scale-down happens anywhere in the flow. To shrink quotes for
+a tiny escrow pool instead, set `SUI_TESTNET_PRICE_SCALE` < 1 (quote-time
+scaling; the fixture generator honors the same env). Localnet runs the
+identical contracts on the MYRC demo coin (2 decimals).
 
 `fixtures/sui/` is gitignored (per-run generated, 5-min TTL — the generator
 is the single source of truth); `fixtures/selected/` + `fixtures/providers/`
@@ -115,8 +125,74 @@ stay committed. Localnet addresses: `.sui/config.localnet.json`.
 
 Prereqs: Node ≥ 20, [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) on PATH or at `%USERPROFILE%/sui-cli/sui.exe`.
 
+### Full UI demo — TESTNET (agent market + zkLogin + Sui escrow)
+
+Everything below runs against **Sui testnet with real Circle USDC** — the
+default demo mode. Four terminals, copy-paste as-is:
+
+```bash
+# One-time (fresh clone): deps + demo signing keys + publish contracts &
+# fund the shared escrow pool with 12 real USDC on testnet.
+npm install
+npm run provision
+SUI_NETWORK=testnet npm run sui:setup
+```
+
+```bash
+# Terminal 1 — agent market: 3 provider agents (:8101-8103)
+#   + rescue gateway (:8082) + claim agent (:8105). Quotes in USD.
+SUI_NETWORK=testnet node scripts/start-all.mjs
+```
+
+```bash
+# Terminal 2 — Sui trust server (:8200): /v1/commit, /v1/activation,
+#   /v1/fund, SSE /v1/events — settles in REAL USDC on testnet.
+SUI_NETWORK=testnet npm run trust:server
+```
+
+```bash
+# Terminal 3 — zkLogin bridge (:8787): Google sign-in, salt, zk proofs.
+npm run zklogin:server
+```
+
+```bash
+# Terminal 4 — frontend (:5173)
+cd frontend && npm run dev
+```
+
+Then open `http://localhost:5173`:
+
+1. **Sign in** → Continue with Google (zkLogin) — the browser derives your
+   zk identity and (via the prover) signs escrow commitments itself.
+2. **Fund your zk wallet once** (the escrow is paid from YOUR USDC):
+   ```bash
+   curl -X POST http://127.0.0.1:8200/v1/fund -H 'content-type: application/json' \
+     -d '{"address":"<YOUR_ZK_ADDRESS>","stableBase":3000000,"suiMist":50000000}'
+   ```
+3. **`/dev`** → pick scenario **S2** → run LIVE → reply `60 min, USDC 5` →
+   providers quote (USD) → the browser zk-signs the commit → verify →
+   split settlement, both tx digests land in Activity + SuiScan.
+
+Health checks (all should respond):
+
+```bash
+curl http://127.0.0.1:8082/health            # agent market
+curl http://127.0.0.1:8200/v1/status/x       # trust server
+curl http://127.0.0.1:8787/api/zklogin/health
+```
+
+Rules of the road: keep `SUI_NETWORK=testnet` on **both** the market and the
+trust server (mismatched money → `UNSUPPORTED_CURRENCY`); if you ever redeploy
+the package, restart the trust server so it reloads `.sui/config.testnet.json`
+(the single source of truth for addresses). Localnet is still available for
+offline rehearsal: drop the env prefix and run `sui start --with-faucet`.
+
 ```bash
 npm install
+
+# One-time (fresh clones): generate signing keys locally.
+# Private keys are gitignored on purpose — never commit them again.
+npm run provision
 
 # Persons 1+2 contracts + Person 3 offline tests
 npm test

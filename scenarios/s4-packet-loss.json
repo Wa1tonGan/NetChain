@@ -6,9 +6,14 @@
     "type": "HIGH_PACKET_LOSS_DETECTED",
     "severity": "high"
   },
-  "detectedConditions": ["NETWORK_DEGRADATION", "HIGH_PACKET_LOSS"],
+  "detectedConditions": [
+    "NETWORK_DEGRADATION",
+    "HIGH_PACKET_LOSS"
+  ],
   "networkState": {
-    "activeLinkIds": ["WAN-A"],
+    "activeLinkIds": [
+      "WAN-A"
+    ],
     "unavailableLinkIds": [],
     "rawAvailableCapacityMbps": 1000,
     "usableCapacityMbps": 0,
@@ -47,7 +52,7 @@
     "emergencyOverride": false
   },
   "constraints": {
-    "maxBudget": 100,
+    "maxBudget": 5,
     "durationMinutes": 60
   },
   "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",

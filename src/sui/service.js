@@ -5,7 +5,8 @@
 // restart) short-circuits duplicates; the chain aborts same-nonce/different-
 // bytes replays and no-ops byte-identical ones (defense in depth).
 import { EventLedger } from "./events.js";
-import { loadConfig, makeClient, buyerKeypair, commitVoucher, settleVoucher, refundVoucher, reclaimVoucher, verifyDeliveryOnChain } from "./client.js";
+import { loadConfig, makeClient, buyerKeypair, platformKeypair, commitVoucher, settleVoucher, refundVoucher, reclaimVoucher, verifyDeliveryOnChain, buildCommitAsBuyerTx } from "./client.js";
+import { sendCoin } from "./gasless.js";
 import { buildVoucher, VoucherError } from "./voucher.js";
 import { checkDelivery, connectionLog, connectionLogDigest } from "./verify.js";
 
@@ -18,7 +19,10 @@ export class TrustService {
       throw new Error("no .sui/config.json — run npm run sui:setup first");
     }
     this.client = makeClient(config.network);
-    this.keypair = buyerKeypair(paths.keysDir);
+    // Operator key for settle/refund/verify (AuthorityCap holder). The
+    // buyer-side key/env is retired from the product path: commitments are
+    // signed by the zkLogin user (commit_as_buyer) or the demo cap path.
+    this.keypair = platformKeypair() ?? buyerKeypair(paths.keysDir);
   }
 
   pathsFor() {
@@ -84,6 +88,149 @@ export class TrustService {
       }
     });
     return { status: "COMMITTED", duplicate: false, idempotent, txDigest: result.digest, voucher };
+  }
+
+  /**
+   * zkLogin buyer-direct commit, step 1 (build-only): run every voucher
+   * validation, then return the UNSIGNED commit_as_buyer PTB bytes for the
+   * buyer to zk-sign in their browser. No key material leaves the user's
+   * session; the service never sees a buyer signature over the tx.
+   */
+  async buildCommitForZkLogin(selectedOffer) {
+    // Strip transport-only fields before schema validation (strict schema
+    // rejects unknown keys): submit flag + the buyer's payment coin object.
+    const { submit, paymentCoinId, ...offer } = selectedOffer ?? {};
+    const existing = this.ledger.lookup(offer.agreement?.nonce);
+    if (existing) {
+      return { status: existing.status, duplicate: true, commitment: existing };
+    }
+
+    let voucher;
+    try {
+      voucher = buildVoucher(offer, this.pathsFor());
+    } catch (err) {
+      const code = err instanceof VoucherError ? err.code : "VOUCHER_INVALID";
+      this.ledger.emit("VERIFICATION_FAILED", {
+        incidentId: selectedOffer.incidentId,
+        nonce: selectedOffer.agreement?.nonce ?? null,
+        data: { code, message: err.message }
+      });
+      err.code = code;
+      throw err;
+    }
+
+    this.ledger.emit("VERIFIED", {
+      incidentId: voucher.incidentId,
+      nonce: voucher.nonce,
+      data: {
+        provider: voucher.providerId,
+        amount: voucher.amount,
+        platformFee: voucher.platformFee,
+        verifiedAtMs: voucher.verifiedAtMs
+      }
+    });
+
+    const tx = buildCommitAsBuyerTx(this.config, voucher, selectedOffer.paymentCoinId);
+    const txBytes = await tx.build({ client: this.client });
+    return {
+      status: "BUILD_OK",
+      voucher,
+      txBytes: Buffer.from(txBytes).toString("base64")
+    };
+  }
+
+  /**
+   * zkLogin commit, step 2 (confirm): the buyer submitted the zk-signed tx.
+   * Verify the digest exists and carries our Committed event for this nonce,
+   * then write the ledger row (same shape as the cap path).
+   */
+  async confirmZkCommit({ incidentId, nonce, txDigest, voucher }) {
+    if (!txDigest) throw new Error("txDigest required");
+    const existing = this.ledger.lookup(nonce);
+    if (existing) {
+      this.ledger.emit("DUPLICATE_BLOCKED", {
+        incidentId: existing.incidentId,
+        nonce: existing.nonce,
+        data: { reason: "nonce already has a commitment", status: existing.status }
+      });
+      return { status: existing.status, duplicate: true, commitment: existing };
+    }
+
+    const result = await this.client.waitForTransaction({
+      digest: txDigest,
+      options: { showEvents: true, showEffects: true }
+    });
+    const committedEvent = result.events?.find(
+      (e) => e.json?.idempotent !== undefined || (e.id?.name === "Committed" && e.json?.nonce)
+    );
+    const failed = result.effects?.status?.status !== "success";
+    if (failed || !committedEvent) {
+      this.ledger.emit("VERIFICATION_FAILED", {
+        incidentId,
+        nonce,
+        txDigest,
+        data: { code: "CHAIN_CONFIRM_FAILED", message: result.effects?.status?.error ?? "no Committed event" }
+      });
+      throw new Error("on-chain confirmation failed");
+    }
+
+    const idempotent = committedEvent.json?.idempotent ?? false;
+    this.ledger.emit("COMMITTED", {
+      incidentId,
+      nonce,
+      txDigest,
+      data: {
+        idempotent,
+        amount: voucher?.amount,
+        providerAmount: voucher?.providerAmount,
+        platformFee: voucher?.platformFee,
+        platformAddress: voucher?.platformAddress,
+        buyer: committedEvent.json?.buyer,
+        voucherDigest: voucher?.voucherDigest ? Buffer.from(voucher.voucherDigest).toString("hex") : undefined
+      }
+    });
+    return { status: "COMMITTED", duplicate: false, idempotent, txDigest };
+  }
+
+  /**
+   * Cold-start funding for zkLogin users: the platform key sends stablecoin
+   * (+ optional SUI gas) to the user's wallet so they can pay their own
+   * commit_as_buyer. Requires PLATFORM_SECRET; refuses silently otherwise.
+   * Body: { address, stableBase?, suiMist? }
+   */
+  async fundUser({ address, stableBase = 0, suiMist = 0 }) {
+    const platform = platformKeypair();
+    if (!platform) {
+      throw Object.assign(new Error("PLATFORM_SECRET not configured"), { code: "FUNDING_DISABLED" });
+    }
+
+    const results = {};
+    if (stableBase > 0) {
+      // Network money: MYRC (localnet demo coin) or the configured testnet
+      // asset (real Circle USDC) — never hardcode the demo coin.
+      const stableType = this.config.stablecoin?.type ?? `${this.config.packageId}::myrc::MYRC`;
+      const stable = await sendCoin(this.client, platform, {
+        coinType: stableType,
+        recipient: address,
+        amountBase: stableBase
+      });
+      results.stableTxDigest = stable.digest;
+    }
+    if (suiMist > 0) {
+      const sui = await sendCoin(this.client, platform, {
+        coinType: "0x2::sui::SUI",
+        recipient: address,
+        amountBase: suiMist
+      });
+      results.suiTxDigest = sui.digest;
+    }
+
+    this.ledger.emit("USER_FUNDED", {
+      incidentId: null,
+      nonce: `fund:${address}:${Date.now()}`,
+      data: { address, stableBase, suiMist, ...results }
+    });
+    return { status: "FUNDED", ...results };
   }
 
   /**

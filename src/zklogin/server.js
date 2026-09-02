@@ -1,13 +1,22 @@
-// NetChain Model A zkLogin bridge.
+// NetChain zkLogin bridge.
 //
-// The frontend uses this service only for Google OAuth and zkLogin address
-// derivation. Sui transactions are still signed by the existing trust layer
-// (server-side buyer key) — this is the custodial / relayer model.
+// Two signing modes:
+//   ZK_SIGNING=true (default intent): the browser generates an ephemeral
+//     keypair, sends its pubkey + maxEpoch to /authorize; Google's OIDC
+//     `nonce` binds the zk proof to that key. /callback returns salt +
+//     idToken so the browser can request the zk proof at /prove and sign
+//     transactions locally (non-custodial; the bridge never holds the key).
+//   ZK_SIGNING=false (fallback): the bridge derives a per-session keypair
+//     server-side (HMAC(sub) — never persisted to disk) and signs on the
+//     user's behalf. Clearly labeled "custodial fallback" in the UI.
 //
 // Endpoints:
-//   GET  /api/zklogin/authorize?redirect=/wallet -> { url }
+//   GET  /api/zklogin/authorize?redirect=/wallet&ephemeralPubKey=..&maxEpoch=..&network=..
+//                                  -> { url }
 //   GET  /api/zklogin/callback?code=...&state=... -> zkLogin session
-//   GET  /api/zklogin/health                   -> { ok: true }
+//   POST /api/zklogin/prove     { jwt } -> { proof, issMaxEpoch } (Sui prover proxy)
+//   POST /api/zklogin/session   { sub } -> custodial fallback session key
+//   GET  /api/zklogin/health                   -> { ok, zkSigning }
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
@@ -71,13 +80,16 @@ function readUrl(url) {
   return new URL(url, `http://${process.env.ZKL_HOST ?? "127.0.0.1"}`);
 }
 
-function createState(redirectPath) {
+function createState(redirectPath, zk) {
   const nonce = randomBytes(16).toString("base64url");
   const payload = Buffer.from(
     JSON.stringify({
       redirect: redirectPath || "/wallet",
       nonce,
       exp: Date.now() + 10 * 60 * 1000,
+      // zk-login flow bindings (absent in the custodial fallback flow)
+      ephemeralPubKey: zk?.ephemeralPubKey ?? null,
+      maxEpoch: zk?.maxEpoch ?? null,
     })
   ).toString("base64url");
 
@@ -148,8 +160,11 @@ async function exchangeCodeForIdToken(code) {
 
 async function handleAuthorize(url, response) {
   const redirectPath = url.searchParams.get("redirect") || "/wallet";
-  const state = createState(redirectPath);
-  console.log("[zklogin] authorize requested:", { redirect: redirectPath });
+  const ephemeralPubKey = url.searchParams.get("ephemeralPubKey");
+  const maxEpoch = url.searchParams.get("maxEpoch");
+  const zkSigning = process.env.ZK_SIGNING !== "false";
+  const state = createState(redirectPath, { ephemeralPubKey, maxEpoch: maxEpoch ? Number(maxEpoch) : null });
+  console.log("[zklogin] authorize requested:", { redirect: redirectPath, zk: Boolean(ephemeralPubKey && maxEpoch) });
 
   if (!CLIENT_ID) {
     sendJson(response, 400, {
@@ -166,8 +181,16 @@ async function handleAuthorize(url, response) {
   googleUrl.searchParams.set("state", state);
   googleUrl.searchParams.set("access_type", "online");
   googleUrl.searchParams.set("prompt", "select_account");
+  // Nonce binding for the zk proof (JWT claim): the browser computes the Sui
+  // nonce — poseidon(extendedEphemeralPubKey, maxEpoch, jwtRandomness) — and
+  // it MUST be issued verbatim inside the id_token, or the prover rejects the
+  // proof and every login silently degrades to the custodial fallback.
+  const nonce = url.searchParams.get("nonce");
+  if (nonce) {
+    googleUrl.searchParams.set("nonce", nonce);
+  }
 
-  sendJson(response, 200, { url: googleUrl.toString() });
+  sendJson(response, 200, { url: googleUrl.toString(), zkSigning });
 }
 
 async function handleCallback(url, response) {
@@ -195,6 +218,12 @@ async function handleCallback(url, response) {
       iss: claims.iss,
       aud: claims.aud,
       redirect: record.redirect,
+      // zk signing needs these three client-side; the idToken is the proof
+      // input, not a long-lived secret (aud-bound, short-lived).
+      salt,
+      idToken,
+      maxEpoch: record.maxEpoch ?? null,
+      ephemeralPubKey: record.ephemeralPubKey ?? null,
     });
   } catch (error) {
     console.error("[zklogin] callback error:", error instanceof Error ? error.message : error);
@@ -215,7 +244,73 @@ const server = createServer(async (request, response) => {
   const url = readUrl(request.url ?? "/");
 
   if (url.pathname === "/api/zklogin/health") {
-    sendJson(response, 200, { ok: true });
+    sendJson(response, 200, {
+      ok: true,
+      zkSigning: process.env.ZK_SIGNING !== "false",
+      proverConfigured: Boolean(process.env.ZK_PROVER_URL),
+    });
+    return;
+  }
+
+  // zk proof proxy: forwards the short-lived idToken to the Sui prover
+  // service and returns the groth16 proof for local signing. The bridge
+  // stores nothing — the proof goes straight back to the browser.
+  if (request.method === "POST" && url.pathname === "/api/zklogin/prove") {
+    let raw = "";
+    request.on("data", (chunk) => (raw += chunk));
+    request.on("end", async () => {
+      try {
+        const { jwt, salt, extendedEphemeralPublicKey, maxEpoch, jwtRandomness, keyClaimName } =
+          JSON.parse(raw || "{}");
+        if (!jwt) throw new Error("jwt required");
+        const proverUrl = process.env.ZK_PROVER_URL ?? "https://prover-dev.mystenlabs.com/v1";
+        const proverRes = await fetch(proverUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          // The prover validates the OAuth nonce against the full ephemeral
+          // bundle — forwarding only {jwt, salt} fails its input validation.
+          body: JSON.stringify({
+            jwt,
+            salt,
+            extendedEphemeralPublicKey,
+            maxEpoch,
+            jwtRandomness,
+            keyClaimName: keyClaimName ?? "sub"
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const payload = await proverRes.json();
+        sendJson(response, proverRes.ok ? 200 : 502, payload);
+      } catch (error) {
+        sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) });
+      }
+    });
+    return;
+  }
+
+  // Custodial fallback (ZK_SIGNING=false or prover outage): derive a
+  // per-session keypair from HMAC(stateSecret, sub). Never persisted; the
+  // same user maps to the same key for this bridge's lifetime. The UI must
+  // label this mode — it is the demo continuity path, not the real thing.
+  if (request.method === "POST" && url.pathname === "/api/zklogin/session") {
+    let raw = "";
+    request.on("data", (chunk) => (raw += chunk));
+    request.on("end", async () => {
+      try {
+        const { sub, address } = JSON.parse(raw || "{}");
+        if (!sub) throw new Error("sub required");
+        const seed = createHmac("sha256", stateSecret()).update(`session:${sub}`).digest();
+        const { Ed25519Keypair } = await import("@mysten/sui/keypairs/ed25519");
+        const keypair = Ed25519Keypair.fromSecretKey(seed);
+        sendJson(response, 200, {
+          mode: "custodial-fallback",
+          address: keypair.toSuiAddress(),
+          boundToZkAddress: address ?? null,
+        });
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+    });
     return;
   }
 

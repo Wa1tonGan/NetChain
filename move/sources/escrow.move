@@ -227,6 +227,112 @@ module netchain::escrow {
         });
     }
 
+    /// zkLogin-native commit (buyer-direct path): the transaction sender IS
+    /// the buyer — they sign in their browser with an ephemeral key behind a
+    /// zk proof, so they cannot carry the platform-held AuthorityCap (an
+    /// owned object). Instead of spending the shared pre-funded pool, the
+    /// buyer hands in the exact payment Coin from their own wallet in the
+    /// same PTB, which makes "lock someone else's funds" structurally
+    /// impossible: the coin must have come from the sender.
+    ///
+    /// Everything else mirrors `commit`: both A2A signatures verified
+    /// on-chain, expiry and fee checks, nonce idempotency (byte-identical
+    /// replay is a no-op success). The buyer address is recorded as
+    /// tx_context::sender and settle/refund/reclaim still pay out to the
+    /// addresses recorded here.
+    public fun commit_as_buyer<T>(
+        escrow: &mut Escrow<T>,
+        clock: &Clock,
+        incident_id: vector<u8>,
+        provider_id: vector<u8>,
+        amount: u64,
+        expiry_ms: u64,
+        nonce: vector<u8>,
+        provider: address,
+        platform: address,
+        platform_fee: u64,
+        buyer_msg: vector<u8>,
+        buyer_sig: vector<u8>,
+        buyer_pk: vector<u8>,
+        provider_msg: vector<u8>,
+        provider_sig: vector<u8>,
+        provider_pk: vector<u8>,
+        payment: Coin<T>,
+        ctx: &mut TxContext,
+    ) {
+        let digest = hash::blake2b256(&buyer_msg);
+        let buyer = tx_context::sender(ctx);
+
+        if (table::contains(&escrow.commitments, nonce)) {
+            let existing = table::borrow(&escrow.commitments, nonce);
+            // Byte-identical resubmission: same no-op contract as commit,
+            // with the handed-in coin returned to the sender so a retried
+            // PTB never burns funds.
+            assert!(existing.voucher_digest == digest, E_NONCE_REPLAY);
+            transfer::public_transfer(payment, buyer);
+            event::emit(Committed {
+                escrow_id: object::id(escrow),
+                incident_id: existing.incident_id,
+                provider_id: existing.provider_id,
+                nonce,
+                amount: existing.amount,
+                expiry_ms: existing.expiry_ms,
+                voucher_digest: digest,
+                buyer: existing.buyer,
+                provider: existing.provider,
+                platform: existing.platform,
+                platform_fee: existing.fee,
+                idempotent: true,
+                status: existing.status,
+            });
+            return
+        };
+
+        assert!(platform_fee < amount, E_INVALID_FEE);
+        assert!(
+            ed25519::ed25519_verify(&provider_sig, &provider_pk, &provider_msg),
+            E_SIGNATURE_INVALID
+        );
+        assert!(
+            ed25519::ed25519_verify(&buyer_sig, &buyer_pk, &buyer_msg),
+            E_SIGNATURE_INVALID
+        );
+        assert!(coin::value(&payment) == amount, E_INSUFFICIENT_ESCROW);
+        assert!(clock::timestamp_ms(clock) < expiry_ms, E_VOUCHER_EXPIRED);
+
+        table::add(&mut escrow.locked, nonce, coin::into_balance(payment));
+        table::add(&mut escrow.commitments, nonce, Commitment {
+            incident_id,
+            provider_id,
+            amount,
+            expiry_ms,
+            voucher_digest: digest,
+            buyer,
+            provider,
+            platform,
+            fee: platform_fee,
+            log_digest: vector::empty(),
+            penalty: 0,
+            status: STATUS_COMMITTED,
+        });
+
+        event::emit(Committed {
+            escrow_id: object::id(escrow),
+            incident_id,
+            provider_id,
+            nonce,
+            amount,
+            expiry_ms,
+            voucher_digest: digest,
+            buyer,
+            provider,
+            platform,
+            platform_fee,
+            idempotent: false,
+            status: STATUS_COMMITTED,
+        });
+    }
+
     /// Record the deterministic delivery verdict on-chain (blueprint §4.3,
     /// §12 "Verification proof"): the Verification Agent compares delivered
     /// samples against the promise OFF-CHAIN (pure algorithm, no LLM), then

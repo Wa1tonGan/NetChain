@@ -1,4 +1,54 @@
+import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { GATEWAY_URL, SCENARIOS, TRUST_URL } from "../services/live";
+
+function LiveBackendCard({ running }: { running: boolean }) {
+  const startLiveRecovery = useAppStore((s) => s.startLiveRecovery);
+  const [scenario, setScenario] = useState("s2");
+
+  return (
+    <div className="card highlight">
+      <div className="pad">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span className="chip green">LIVE BACKEND — real agents + Sui escrow</span>
+          <button
+            className="btn sm primary"
+            onClick={() => startLiveRecovery(scenario)}
+            disabled={running}
+          >
+            Run live
+          </button>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <select
+            className="input"
+            style={{ width: "100%" }}
+            value={scenario}
+            onChange={(e) => setScenario(e.target.value)}
+            disabled={running}
+          >
+            {SCENARIOS.map((sc) => (
+              <option key={sc.key} value={sc.key}>
+                {sc.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, lineHeight: 1.6 }}>
+          The reply you type in the SMS sheet becomes a REAL <b>RecoveryIntent</b> broadcast to three
+          A2A provider agents; the winner is committed on Sui and settled by the trust layer. Chain SSE
+          narrates every ledger row in the thread.
+          <br />
+          Backend: gateway <span className="mono">{GATEWAY_URL}</span> · trust{" "}
+          <span className="mono">{TRUST_URL}</span>
+          <br />
+          Start it with <span className="mono">node scripts/start-all.mjs</span> +{" "}
+          <span className="mono">npm run trust:server</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DevPage() {
   const s = useAppStore();
@@ -107,7 +157,10 @@ export default function DevPage() {
         <div className="cols wide-left" style={{ marginTop: 14 }}>
           {/* Scenario Cards */}
           <div>
-            <div className="card-title">Blueprint Scenarios (Section 5)</div>
+            <LiveBackendCard running={s.running} />
+            <div className="card-title" style={{ marginTop: 14 }}>
+              Simulated demo stories (scripted timers)
+            </div>
             <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
               {scenarios.map((sc) => (
                 <div key={sc.id} className={`card ${sc.id === "S1" ? "highlight" : ""}`}>

@@ -677,21 +677,21 @@ test("fee engine: plan price + 5% platform fee, split fields handed to Person 3"
     );
     const agreement = envelope.selectedOffer.agreement;
 
-    // KilatLink plan price is 60 MYR (§1.3 worked example at a different
-    // base): fee is computed on the plan price only and added on top.
-    assert.equal(agreement.planPrice, 60);
+    // KilatLink plan price is 1.8 USDC-scale (§1.3 worked example at a
+    // different base): fee is computed on the plan price only and added on top.
+    assert.equal(agreement.planPrice, 1.8);
     assert.equal(agreement.platformFeePercent, 5);
-    assert.equal(agreement.platformFee, 3);
-    assert.equal(agreement.providerAmount, 60);
-    assert.equal(agreement.amount, 63); // escrow lock
+    assert.equal(agreement.platformFee, 0.09);
+    assert.equal(agreement.providerAmount, 1.8);
+    assert.equal(agreement.amount, 1.89); // escrow lock
     assert.equal(agreement.platformAddress, "0xPLATFORM_TEST");
 
     // Person 3's split-settlement proof: one escrow, two destinations.
     assert.ok(agreement.amount > agreement.providerAmount);
-    assert.equal(agreement.providerAmount + agreement.platformFee, agreement.amount);
+    assert.equal(Math.round((agreement.providerAmount + agreement.platformFee) * 100) / 100, agreement.amount);
 
     // The provider side never saw the fee — offers quote the plan price only.
-    assert.equal(envelope.selectedOffer.selectedProvider.price, 60);
+    assert.equal(envelope.selectedOffer.selectedProvider.price, 1.8);
   } finally {
     await cleanup();
   }

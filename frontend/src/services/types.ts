@@ -2,7 +2,7 @@
 
 export type ProtectionState = "protected" | "recovering" | "attention";
 
-export type RecoveryKind = "main" | "auto" | "under" | "failed";
+export type RecoveryKind = "main" | "auto" | "under" | "failed" | "live";
 
 export type Outcome = "ok" | "under" | "failed";
 
@@ -18,6 +18,12 @@ export interface RecoveryRequest {
   cost: number;
   adjusted: boolean;
   text: string;
+  // live-mode additions (real Selected Offer values replace local estimates)
+  provider?: string;
+  planPrice?: number;
+  platformFee?: number;
+  escrow?: number;
+  nonce?: string;
 }
 
 export interface IncidentEvent {
@@ -50,6 +56,7 @@ export interface Incident {
   required: number;
   available: number;
   shortage: number;
+  scenarioKey?: string;
 }
 
 export interface RecoveryRecord {
@@ -73,6 +80,10 @@ export interface RecoveryRecord {
   providerAddr?: string;
   platformAddr?: string;
   logHash?: string;
+  // live-mode additions
+  nonce?: string;
+  commitTx?: string;
+  comparison?: { name: string; state: string; sel: boolean }[];
 }
 
 export interface Payment {

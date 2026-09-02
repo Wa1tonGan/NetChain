@@ -43,10 +43,39 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
+    // Browser clients (dashboard chain feed, zkLogin commit) call cross-origin
+    // from the Vite dev origin — same CORS contract as the P2 gateway.
+    res.setHeader("access-control-allow-origin", "*");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type"
+      });
+      res.end();
+      return;
+    }
     try {
       if (req.method === "POST" && url.pathname === "/v1/commit") {
         const selected = JSON.parse(await readBody(req));
+        // submit:false → zkLogin buyer-direct path: validate + build the
+        // unsigned commit_as_buyer PTB for the browser to zk-sign.
+        if (selected.submit === false) {
+          return json(res, 200, await service.buildCommitForZkLogin(selected));
+        }
         return json(res, 200, await service.commit(selected));
+      }
+      if (req.method === "POST" && url.pathname === "/v1/commit/confirm") {
+        return json(res, 200, await service.confirmZkCommit(JSON.parse(await readBody(req))));
+      }
+      // Cold-start funding: the platform (setup authority, PLATFORM_SECRET)
+      // tops up a zkLogin user's wallet — stablecoin + gas — so the buyer can
+      // pay for their own commit_as_buyer. Platform-key gated; no buyer key.
+      if (req.method === "POST" && url.pathname === "/v1/fund") {
+        const body = JSON.parse(await readBody(req));
+        if (!service.fundUser) {
+          return json(res, 501, { error: "funding not configured (set PLATFORM_SECRET + run sui:setup)" });
+        }
+        return json(res, 200, await service.fundUser(body));
       }
       if (req.method === "POST" && url.pathname === "/v1/activation") {
         return json(res, 200, await service.activation(JSON.parse(await readBody(req))));

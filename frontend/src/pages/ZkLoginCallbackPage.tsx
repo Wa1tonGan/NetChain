@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { completeZkLogin } from "../services/zklogin";
+import { completeZkLogin, createFallbackSession, requestZkProof } from "../services/zklogin";
 import { useAppStore } from "../store/useAppStore";
 
 let exchangeStarted = false;
@@ -22,8 +22,17 @@ export default function ZkLoginCallbackPage() {
     exchangeStarted = true;
 
     completeZkLogin(code, state)
-      .then((session) => {
-        setZkLogin(session);
+      .then(async (session) => {
+        // ZK mode: request the groth16 proof so the browser can sign
+        // escrow commitments itself (non-custodial). On prover failure,
+        // degrade to the clearly-labeled custodial fallback session.
+        try {
+          const proof = await requestZkProof(session);
+          setZkLogin({ ...session, proof, signingMode: "zk" });
+        } catch (reason) {
+          console.warn("[zklogin] prover unavailable — custodial fallback:", reason);
+          setZkLogin(await createFallbackSession(session));
+        }
         window.location.replace("/#/home");
       })
       .catch((reason) => {

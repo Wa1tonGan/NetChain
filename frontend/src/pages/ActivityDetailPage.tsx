@@ -244,18 +244,31 @@ export default function ActivityDetailPage() {
                     </div>
 
                     <div className="tech-item">
-                      <span className="tk">Sui Transaction</span>
+                      <span className="tk">Sui Transaction {r.commitTx ? "(on-chain digest)" : "(demo)"}</span>
                       <div className="tv">
                         <a
                           className="txlink"
-                          href="https://suiscan.xyz/testnet"
+                          href={
+                            r.commitTx
+                              ? `https://suiscan.xyz/testnet/tx/${r.commitTx}`
+                              : "https://suiscan.xyz/testnet"
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          {r.tx} ↗ SuiScan
+                          {r.commitTx ?? r.tx} ↗ SuiScan
                         </a>
                       </div>
                     </div>
+                    {r.nonce && (
+                      <div className="tech-item">
+                        <span className="tk">Escrow Nonce (idempotency key)</span>
+                        <div className="tv">
+                          <span>{r.nonce}</span>
+                          {renderCopyButton(r.nonce, "nonce")}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -263,7 +276,15 @@ export default function ActivityDetailPage() {
           </div>
 
           {/* Gonka Multi-Agent Consensus Decision Log */}
-          {r.outcome !== "failed" && <DecisionCard cap={r.cap} cost={r.cost} budget={r.budget} />}
+          {r.outcome !== "failed" && (
+            <DecisionCard
+              cap={r.cap}
+              cost={r.cost}
+              budget={r.budget}
+              provider={r.provider}
+              comparison={r.comparison}
+            />
+          )}
         </div>
       </div>
     </div>

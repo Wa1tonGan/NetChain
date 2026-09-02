@@ -10,19 +10,19 @@
     "expectedActivationClass": "FAST",
     "expectedActivationTimeMs": 1500,
     "activationLane": "STANDARD",
-    "price": 60,
+    "price": 1.8,
     "currency": "MYR",
     "reliabilityScore": 0.999,
     "latencyMs": 35,
     "packetLossPercent": 0.5
   },
   "agreement": {
-    "planPrice": 60,
-    "platformFee": 3,
-    "providerAmount": 60,
-    "amount": 63,
+    "planPrice": 1.8,
+    "platformFee": 0.09,
+    "providerAmount": 1.8,
+    "amount": 1.89,
     "platformFeePercent": 5,
-    "platformAddress": "0xPLATFORM_DEMO",
+    "platformAddress": "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4",
     "currency": "MYR",
     "durationMinutes": 60,
     "nonce": "INC-S2:PROVIDER-B:001",
@@ -32,12 +32,12 @@
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-b-demo",
-      "value": "WPXZeRjONn6d58HAP0rBYK37NY+/WOqySAjzF1YECQgdI0nb2xs/bv4Hk7nISq3z/xH2Jc6275Vuw2e9tnBPAA=="
+      "value": "W2D/ZL/GXYePiI6fuQLWd/6m1U65IIhTCY+EGQXUh2smQY5CM5QfkrUKNhUBJI+Ue53oAIwEp2zxrsKQAZmFAg=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "4hp5RES73PzOKLlG+pvBgbFJJ/hwDqZPlWSmHKPnbeAzS9w2O+LyQyR6jiqKd8GZiIGiOdyO/8eKs39Zfn/MCw=="
+      "value": "+6WGpjWXA5aWOthBmzYX98nEaT9PIBO+CUhUYSTIZ3Ji1Gik4RXSKSfD7+0oJuvw10hQDy7UxDWeU+qqC/8SBw=="
     }
   },
   "rejectedOffers": [

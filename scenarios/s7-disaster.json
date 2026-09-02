@@ -15,8 +15,12 @@
     "CAPACITY_SHORTFALL"
   ],
   "networkState": {
-    "activeLinkIds": ["WAN-B"],
-    "unavailableLinkIds": ["WAN-A"],
+    "activeLinkIds": [
+      "WAN-B"
+    ],
+    "unavailableLinkIds": [
+      "WAN-A"
+    ],
     "rawAvailableCapacityMbps": 120,
     "usableCapacityMbps": 0,
     "requiredCapacityMbps": 300,
@@ -61,7 +65,7 @@
     "emergencyOverride": true
   },
   "constraints": {
-    "maxBudget": 1000,
+    "maxBudget": 8,
     "durationMinutes": 120
   },
   "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",

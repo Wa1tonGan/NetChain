@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
+import { chainBalanceText, useChainBalance } from "../hooks/useChainBalance";
 import WalletConnectModal from "../components/WalletConnectModal";
 
 export default function WalletPage() {
@@ -8,6 +9,7 @@ export default function WalletPage() {
   const walletAddress = s.zkLogin?.address ?? s.walletAddr;
   const [copied, setCopied] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const chain = useChainBalance();
 
   function copyAddress() {
     navigator.clipboard.writeText(walletAddress);
@@ -38,23 +40,27 @@ export default function WalletPage() {
       {/* Balance Card */}
       <div className="card" style={{ marginTop: 16 }}>
         <div className="pad">
-          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>
-            Available NetChain Balance
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>
+              Sui Wallet Balance
+            </div>
+            {chain?.online ? (
+              <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                <span className="dot" /> on-chain
+              </span>
+            ) : (
+              <span className="chip amber" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                <span className="dot" /> offline
+              </span>
+            )}
           </div>
           <div className="big-num" style={{ marginTop: 4 }}>
-            {rm(s.balance)}
+            {chainBalanceText(chain)}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-            Instant spending authority for autonomous recovery
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>Top up:</span>
-            {[20, 50, 100].map((v) => (
-              <button key={v} className="btn sm subtle" onClick={() => s.addFunds(v)}>
-                + RM {v}
-              </button>
-            ))}
+            {chain?.online
+              ? `Live from Sui testnet · gas ${chain.sui.total.toFixed(3)} SUI`
+              : "Chain unreachable — balance unavailable"}
           </div>
         </div>
       </div>

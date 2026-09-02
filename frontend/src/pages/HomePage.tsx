@@ -129,6 +129,9 @@ export default function HomePage() {
   const isDegraded = state === "attention" || state === "recovering" || s.capacity.primaryDown;
   const isRecovered = s.capacity.extra > 0;
   const [modalOpen, setModalOpen] = useState(false);
+  // LIVE = real A2A agents + Sui escrow (falls back to simulation when the
+  // backend is down); SIM = scripted timers. Persists for the session.
+  const [liveMode, setLiveMode] = useState(true);
 
   // Suppress strength to 1 bar or 0 bars when degraded, otherwise 4/4
   const signalFilled = isDegraded && !isRecovered ? 1 : 4;
@@ -143,9 +146,21 @@ export default function HomePage() {
     attention: { cls: "amber", text: "Line Degradation Detected (Suppressed)" },
   }[state];
 
-  // Dynamic Discovery & Multi-Agent Interaction Log entries
+  // Dynamic Discovery & Multi-Agent Interaction Log.
+  // Live mode with an active incident → the REAL SSE narration (thread
+  // bubbles); otherwise the scripted showcase entries.
   const incident = s.incident;
-  const interactionLogs = [
+  const liveLogs = liveMode && incident
+    ? incident.thread.slice(-8).map((b, i) => ({
+        time: "T+" + ((Date.now() - incident.startedAt) / 1000).toFixed(1) + "s",
+        title:
+          b.from === "user" ? "Subscriber Intent (SMS)" : b.from === "net" ? "Edge Watcher" : "Agent Market",
+        type: b.from === "user" ? "sui" : b.text.startsWith("✗") || b.text.startsWith("⚠️") ? "warn" : "ok",
+        desc: b.text,
+        key: "live-" + i,
+      }))
+    : null;
+  const interactionLogs = liveLogs ?? [
     {
       time: "T+0.0s",
       title: "Discovery Agent",
@@ -162,13 +177,13 @@ export default function HomePage() {
       time: "T+2.0s",
       title: "Provider Quotes Received",
       type: "ok",
-      desc: "KilatLink FWA (500M @ RM 12.60, 18ms), NusaNet 5G (500M @ RM 18.50, 25ms), OrbitSat GO (150M @ RM 24.00, 65ms).",
+      desc: "KilatLink FWA (500M @ USDC 12.60, 18ms), NusaNet 5G (500M @ USDC 18.50, 25ms), OrbitSat GO (150M @ USDC 24.00, 65ms).",
     },
     {
       time: "T+2.6s",
       title: "SMS Reply Channel",
       type: "sui",
-      desc: "Shortage prompt sent to subscriber. User approved: 30 min duration within RM 14.00 budget.",
+      desc: "Shortage prompt sent to subscriber. User approved: 30 min duration within USDC 14.00 budget.",
     },
     {
       time: "T+4.5s",
@@ -180,7 +195,7 @@ export default function HomePage() {
       time: "T+5.5s",
       title: "Sui Escrow Dual-Sig Lock",
       type: "sui",
-      desc: "Smart contract object locked on Sui Testnet: RM 11.97 provider amount + RM 0.63 platform fee.",
+      desc: "Smart contract object locked on Sui Testnet: USDC 11.97 provider amount + USDC 0.63 platform fee.",
     },
     {
       time: "T+7.2s",
@@ -219,9 +234,23 @@ export default function HomePage() {
               <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
                 Primary link degraded to 0 Mbps. Interactive SMS recovery protocol active.
               </p>
-              <div style={{ marginTop: 14 }}>
-                <button className="btn primary" onClick={() => s.startRecovery("main")}>
-                  Acquire Replacement Capacity (Reply by SMS)
+              <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button
+                  className="btn primary"
+                  onClick={() =>
+                    liveMode ? s.startLiveRecovery("s2") : s.startRecovery("main")
+                  }
+                >
+                  {liveMode
+                    ? "Acquire Replacement Capacity (Live A2A + Sui)"
+                    : "Acquire Replacement Capacity (Reply by SMS)"}
+                </button>
+                <button
+                  className={`btn sm ${liveMode ? "subtle" : "primary"}`}
+                  onClick={() => setLiveMode(!liveMode)}
+                  title="Toggle between the live backend and the scripted simulation"
+                >
+                  {liveMode ? "● LIVE backend" : "○ SIM mode"}
                 </button>
               </div>
             </div>
@@ -239,10 +268,13 @@ export default function HomePage() {
         />
 
         {/* Live Discovery & Agent Interaction Log on Dashboard */}
-        <div className="card-title">Discovery & Multi-Agent Interaction Log</div>
+        <div className="card-title">
+          Discovery &amp; Multi-Agent Interaction Log
+          {liveLogs && <span className="chip green" style={{ marginLeft: 8, fontSize: 10 }}>live</span>}
+        </div>
         <div className="interaction-feed">
           {(incident ? interactionLogs : interactionLogs.slice(0, 3)).map((log, i) => (
-            <div key={i} className="feed-item">
+            <div key={(log as { key?: string }).key ?? i} className="feed-item">
               <span className={`feed-dot ${log.type}`} />
               <div className="feed-content">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -283,7 +315,7 @@ export default function HomePage() {
           {s.auto && (
             <div className="row">
               <span className="grow k">Monthly Spending Limit</span>
-              <span className="v">RM {s.monthlyLimit} / mo</span>
+              <span className="v">USDC {s.monthlyLimit} / mo</span>
             </div>
           )}
         </div>

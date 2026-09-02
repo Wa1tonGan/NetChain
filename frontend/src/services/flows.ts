@@ -40,17 +40,17 @@ export interface Flow {
 
 export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
-  auto: { key: "auto", outcome: "ok", autoSend: "30 min, RM 14", phases: [...PRE_SMS, ...POST_SMS] },
+  auto: { key: "auto", outcome: "ok", autoSend: "30 min, USDC 14", phases: [...PRE_SMS, ...POST_SMS] },
   under: {
     key: "under",
     outcome: "under",
-    autoSend: "30 min, RM 14",
+    autoSend: "30 min, USDC 14",
     phases: [...PRE_SMS, ...POST_SMS],
   },
   failed: {
     key: "failed",
     outcome: "failed",
-    autoSend: "30 min, RM 14",
+    autoSend: "30 min, USDC 14",
     phases: [
       ...PRE_SMS,
       ["request_detected", 2800],
@@ -60,6 +60,9 @@ export const FLOWS: Record<RecoveryKind, Flow> = {
       ["failed", 11200],
     ],
   },
+  // Live mode: the SMS reply hands control to the REAL backend — the gateway
+  // SSE stream drives every post-reply phase (no scripted timers).
+  live: { key: "live", outcome: "ok", phases: [...PRE_SMS] },
 };
 
 export const STEP_LABELS = [
@@ -85,6 +88,7 @@ export const EVENT_LABELS: Record<string, string> = {
   verifying: "Bandwidth & latency verified",
   restored: "Connection restored & settled",
   failed: "Provider activation failed — funds refunded",
+  noop: "No recovery needed",
 };
 
 export const STEP_INDEX: Record<string, number> = {

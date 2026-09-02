@@ -3,7 +3,6 @@ import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 import { STEP_INDEX } from "../services/flows";
 import type { Incident } from "../services/types";
-
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
     <span className={`strength ${cls ?? ""}`} role="img" aria-label={`${filled} of 4 signal bars`}>
@@ -49,15 +48,23 @@ function Thread({ incident }: { incident: Incident }) {
   );
 }
 
-function Composer({ shortage }: { shortage: number }) {
+function Composer({ shortage, live }: { shortage: number; live?: boolean }) {
   const sendSms = useAppStore((s) => s.sendSms);
   const [value, setValue] = useState("");
   const price = (min: number) => +(shortage * min * 0.00084).toFixed(2);
-  const chips = [
-    { label: "15 min (RM " + price(15) + ")", text: `15 min, RM ${price(15)}` },
-    { label: "30 min (RM " + price(30) + ")", text: `30 min, RM ${price(30)}` },
-    { label: "60 min (RM " + price(60) + ")", text: `60 min, RM ${price(60)}` },
-  ];
+  // Live mode: quotes are real agent prices, so chips suggest realistic
+  // budgets instead of the demo rate.
+  const chips = live
+    ? [
+        { label: "30 min, USDC 2", text: "30 min, USDC 2" },
+        { label: "60 min, USDC 5", text: "60 min, USDC 5" },
+        { label: "120 min, USDC 8", text: "120 min, USDC 8" },
+      ]
+    : [
+        { label: "15 min (USDC " + price(15) + ")", text: `15 min, USDC ${price(15)}` },
+        { label: "30 min (USDC " + price(30) + ")", text: `30 min, USDC ${price(30)}` },
+        { label: "60 min (USDC " + price(60) + ")", text: `60 min, USDC ${price(60)}` },
+      ];
 
   const send = (customText?: string) => {
     const textToSend = (customText ?? value).trim();
@@ -91,7 +98,7 @@ function Composer({ shortage }: { shortage: number }) {
           className="input"
           style={{ borderRadius: 20, padding: "9px 16px" }}
           value={value}
-          placeholder="Or type reply: e.g. 30 min, RM 14"
+          placeholder={live ? "Or type reply: e.g. 60 min, USDC 5" : "Or type reply: e.g. 30 min, USDC 14"}
           aria-label="Reply with duration and budget"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
@@ -113,6 +120,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const dismiss = useAppStore((s) => s.dismissOverlay);
   const curIdx = STEP_INDEX[incident.status] ?? 0;
   const inSms = incident.status === "sms";
+  const isLive = incident.kind === "live";
   const completed = Boolean(incident.result);
 
   useTicker(!completed);
@@ -213,7 +221,17 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               <span>Interactive Recovery Channel</span>
             </div>
             <Thread incident={incident} />
-            <Composer shortage={incident.shortage} />
+            <Composer shortage={incident.shortage} live={isLive} />
+          </div>
+        )}
+
+        {/* Live waiting state: agents are quoting, purchase sheet not ready */}
+        {isLive && !inSms && !completed && incident.status === "request_detected" && (
+          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
+            <Thread incident={incident} />
+            <div className="money-state" style={{ marginTop: 10 }}>
+              📡 Provider agents are quoting — ranking the signed offers…
+            </div>
           </div>
         )}
 
@@ -234,7 +252,8 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             />
             <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
             <div style={{ fontSize: 16, fontWeight: 800 }}>
-              {incident.status === "provider_selected" && "Matching Best Provider (KilatLink FWA)…"}
+              {incident.status === "request_detected" && "Broadcasting intent to the live market…"}
+              {incident.status === "provider_selected" && (isLive ? "Signing & committing the Selected Offer…" : "Matching Best Provider (KilatLink FWA)…")}
               {incident.status === "activating" && "Activating High-Speed Backup Link…"}
               {incident.status === "verifying" && "Verifying Delivered Throughput & SLA…"}
             </div>
@@ -244,8 +263,16 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </div>
         )}
 
-        {/* Agent Signing Terminal (Simulated Escrow Lock) */}
-        {!inSms && !completed && incident.status === "escrow_locked" && (
+        {/* Live narration: the thread carries real SSE events throughout */}
+        {isLive && !inSms && !completed && (
+          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "14px 18px", marginTop: 10 }}>
+            <Thread incident={incident} />
+          </div>
+        )}
+
+        {/* Agent Signing Terminal (Simulated Escrow Lock) — simulation only;
+            live mode narrates the REAL chain rows in the thread instead */}
+        {!inSms && !isLive && !completed && incident.status === "escrow_locked" && (
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 15, fontWeight: 800, textAlign: "center", marginBottom: 12 }}>
               Locking Escrow on Sui Trust Layer…
@@ -286,8 +313,11 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           <div>
             <div
               style={{
-                background: "var(--ok-soft)",
-                color: "var(--ok-ink)",
+                background:
+                  incident.status === "failed"
+                    ? "var(--bad-soft)"
+                    : "var(--ok-soft)",
+                color: incident.status === "failed" ? "var(--bad-ink)" : "var(--ok-ink)",
                 borderRadius: 12,
                 padding: "14px 18px",
                 display: "flex",
@@ -296,34 +326,56 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 marginTop: 10,
               }}
             >
-              <span style={{ fontSize: 24 }}>✓</span>
+              <span style={{ fontSize: 24 }}>
+                {incident.status === "failed" ? "✕" : incident.status === "noop" ? "✓" : "✓"}
+              </span>
               <div>
                 <div style={{ fontWeight: 800, fontSize: 15 }}>
-                  Connection Successfully Restored
+                  {incident.status === "failed"
+                    ? "Recovery Failed"
+                    : incident.status === "noop"
+                      ? "All Clear — No Recovery Needed"
+                      : "Connection Successfully Restored"}
                 </div>
                 <div style={{ fontSize: 12.5, opacity: 0.9 }}>
-                  KilatLink FWA active · SLA verification passed
+                  {incident.status === "failed"
+                    ? `Reason: ${incident.result.state}.`
+                    : incident.status === "noop"
+                      ? "Agents confirmed healthy capacity — no escrow, no purchase"
+                      : `${incident.req?.provider ?? "KilatLink FWA"} active · SLA verification passed${isLive ? " · settled on Sui" : ""}`}
                 </div>
               </div>
             </div>
 
             <div className="result-grid" style={{ marginTop: 14 }}>
-              <div className="rg">
-                <div className="rk">Recovered Capacity</div>
-                <div className="rv ok">+{incident.shortage} Mbps</div>
-              </div>
-              <div className="rg">
-                <div className="rk">Time to Recovery</div>
-                <div className="rv">{incident.result.time}s</div>
-              </div>
-              <div className="rg">
-                <div className="rk">Escrow Settled</div>
-                <div className="rv">{rm(incident.result.charged)}</div>
-              </div>
-              <div className="rg">
-                <div className="rk">Trust Layer</div>
-                <div className="rv ok">Sui Dual-Sig ✓</div>
-              </div>
+              {incident.status !== "noop" && (
+                <>
+                  <div className="rg">
+                    <div className="rk">Recovered Capacity</div>
+                    <div className="rv ok">+{incident.available || incident.shortage} Mbps</div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">Time to Recovery</div>
+                    <div className="rv">{incident.result.time}s</div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">{incident.result.refund > 0 ? "Refunded" : "Escrow Settled"}</div>
+                    <div className="rv">
+                      {incident.result.refund > 0 ? rm(incident.result.refund) : rm(incident.result.charged)}
+                    </div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">Trust Layer</div>
+                    <div className="rv ok">{isLive ? "Sui On-Chain ✓" : "Sui Dual-Sig ✓"}</div>
+                  </div>
+                </>
+              )}
+              {incident.status === "noop" && (
+                <div className="rg">
+                  <div className="rk">Charged</div>
+                  <div className="rv ok">USDC 0.00</div>
+                </div>
+              )}
             </div>
 
             <div style={{ marginTop: 18 }}>

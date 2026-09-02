@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createProviderAgent, loadProviderIdentity } from "../src/agents/providerAgent.js";
+import { loadProviderProfiles, loadStaticProfiles } from "../src/a2a/dynamicProviders.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -72,14 +73,27 @@ console.log(
 
 const agents = [];
 
+// Dynamic market: prefer the shared dynamic snapshot rolled by start-all
+// (falling back to a fresh roll for standalone startups). Ids and keys stay
+// pinned — brand/characteristics are re-dressed per REQUEST (seeded by the
+// incident id); the full static base map is what per-incident derivation
+// overlays (must match what the rescue agent derives from).
+const baseProfiles = loadStaticProfiles(projectRoot);
+const { profiles: dynamicProfiles } = loadProviderProfiles(projectRoot, {
+  seed: process.env.PROVIDER_SEED
+});
+
 for (const providerId of PROVIDER_IDS) {
-  const { profile, privateKeyPem } = loadProviderIdentity(
+  const profile = dynamicProfiles[providerId];
+  // Keys stay pinned to the static fixture files — only the persona is dynamic.
+  const { privateKeyPem } = loadProviderIdentity(
     path.join(projectRoot, "fixtures", "providers", `${providerId.toLowerCase()}.json`),
     path.join(projectRoot, "fixtures", "keys", `${providerId.toLowerCase()}.private.pem`)
   );
   const agent = createProviderAgent({
     profile,
     privateKeyPem,
+    baseProfiles,
     gonka,
     logger: (level, message) => console[level === "warn" ? "warn" : "log"](`[provider:${providerId}] ${message}`)
   });

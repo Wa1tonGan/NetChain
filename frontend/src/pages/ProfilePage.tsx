@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
+import { useChainBalance } from "../hooks/useChainBalance";
 import ProtectionModal from "../components/ProtectionModal";
 import WalletConnectModal from "../components/WalletConnectModal";
 
@@ -11,14 +12,18 @@ export default function ProfilePage() {
   const [protectionModalOpen, setProtectionModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Which balance the card headline shows; "auto" prefers the escrow
+  // stablecoin, then SUI gas.
+  const [currency, setCurrency] = useState<"auto" | "sui" | "stable">("auto");
+
+  const walletAddress = s.zkLogin?.address ?? s.walletAddr;
+  const isWalletConfigured = Boolean(s.zkLogin);
+  const chain = useChainBalance();
 
   function handleLogOut() {
     s.setZkLogin(null);
     navigate("/login");
   }
-
-  const walletAddress = s.zkLogin?.address ?? s.walletAddr;
-  const isWalletConfigured = Boolean(s.zkLogin);
 
   function copyAddress() {
     navigator.clipboard.writeText(walletAddress);
@@ -126,7 +131,7 @@ export default function ProfilePage() {
               <span className="grow">
                 <span className="t">Protection & Spending Limits</span>
                 <div className="s">
-                  Auto-recovery is {s.auto ? `ON · Capped at RM ${s.monthlyLimit}/mo` : "OFF"}
+                  Auto-recovery is {s.auto ? `ON · Capped at USDC ${s.monthlyLimit}/mo` : "OFF"}
                 </div>
               </span>
               <span style={{ color: "var(--faint)", fontSize: 18 }}>›</span>
@@ -191,28 +196,96 @@ export default function ProfilePage() {
                 <div className="pad">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>
-                      Pre-Funded Escrow Balance
+                      {chain?.online ? "On-Chain Escrow Balance" : "Sui Wallet Balance"}
                     </div>
-                    <span className="chip green" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                      <span className="dot" /> Ready
-                    </span>
+                    {chain?.online ? (
+                      <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                        <span className="dot" /> on-chain
+                      </span>
+                    ) : (
+                      <span className="chip amber" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                        <span className="dot" /> offline
+                      </span>
+                    )}
                   </div>
 
-                  <div className="big-num" style={{ marginTop: 4 }}>
-                    {rm(s.balance)}
-                  </div>
-                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                    Instant spending authority for autonomous recovery
-                  </div>
+                  {/* Currency selector — which balance the headline shows.
+                      Only rendered while the chain read succeeds. */}
+                  {chain?.online && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                      {([
+                        { key: "auto", label: "Auto" },
+                        { key: "sui", label: "SUI" },
+                        ...(chain.stable
+                          ? [{ key: "stable" as const, label: chain.stable.label }]
+                          : []),
+                      ] as { key: "auto" | "sui" | "stable"; label: string }[])
+                        .map((opt) => {
+                          const active = currency === opt.key;
+                          return (
+                            <button
+                              key={opt.key}
+                              onClick={() => setCurrency(opt.key)}
+                              aria-pressed={active}
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                padding: "3px 10px",
+                                borderRadius: 999,
+                                cursor: "pointer",
+                                border: `1px solid ${active ? "var(--accent)" : "var(--line)"}`,
+                                background: active ? "var(--accent-soft)" : "transparent",
+                                color: active ? "var(--accent-ink)" : "var(--muted)",
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
 
-                  <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>Top up:</span>
-                    {[20, 50, 100].map((v) => (
-                      <button key={v} className="btn sm subtle" onClick={() => s.addFunds(v)}>
-                        + RM {v}
-                      </button>
-                    ))}
-                  </div>
+                  {(() => {
+                    if (!chain?.online) {
+                      return (
+                        <>
+                          <div className="big-num" style={{ marginTop: 4 }}>
+                            —
+                          </div>
+                          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
+                            Chain unreachable — balance unavailable
+                          </div>
+                        </>
+                      );
+                    }
+                    const resolved =
+                      currency === "auto" ? (chain.stable ? "stable" : "sui") : currency;
+                    if (resolved === "stable" && chain.stable) {
+                      return (
+                        <>
+                          <div className="big-num" style={{ marginTop: 4 }}>
+                            {chain.stable.total.toFixed(2)} {chain.stable.label}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
+                            Live from Sui testnet · gas {chain.sui.total.toFixed(3)} SUI
+                          </div>
+                        </>
+                      );
+                    }
+                    return (
+                      <>
+                        <div className="big-num" style={{ marginTop: 4 }}>
+                          {chain.sui.total.toFixed(3)} SUI
+                        </div>
+                        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
+                          Live from Sui testnet
+                          {chain.stable
+                            ? ` · ${chain.stable.total.toFixed(2)} ${chain.stable.label}`
+                            : ""}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -222,9 +295,19 @@ export default function ProfilePage() {
                   <div className="grow">
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span className="t">{walletSourceLabel}</span>
-                      <span className="chip green" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                        <span className="dot" /> Sui Testnet
-                      </span>
+                      {s.zkLogin?.signingMode === "zk" ? (
+                        <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                          <span className="dot" /> zk-signing (self-custody)
+                        </span>
+                      ) : s.zkLogin?.signingMode === "custodial-fallback" ? (
+                        <span className="chip amber" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                          <span className="dot" /> custodial fallback
+                        </span>
+                      ) : (
+                        <span className="chip green" style={{ fontSize: 10.5, padding: "2px 6px" }}>
+                          <span className="dot" /> Sui Testnet
+                        </span>
+                      )}
                     </div>
                     <div className="s mono" style={{ wordBreak: "break-all", fontSize: 12, marginTop: 3 }}>
                       {walletAddress.slice(0, 14)}…{walletAddress.slice(-10)}

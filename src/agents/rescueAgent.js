@@ -36,6 +36,7 @@ import { computeFeeSplit } from "../a2a/fees.js";
 import { orderedViable } from "../a2a/offerEvaluator.js";
 import { rankWithConsensus } from "../a2a/gonkaRanker.js";
 import { createActivationAdapter } from "../a2a/activationAdapter.js";
+import { derivePersonasForIncident } from "../a2a/dynamicProviders.js";
 import { feeConfigFromEnv } from "../a2a/fees.js";
 import { providerOfferSchema } from "../a2a/schemas/providerOffer.js";
 import { selectedOfferSchema } from "../a2a/schemas/selectedOffer.js";
@@ -63,6 +64,7 @@ function rejection(providerId, reason, detail) {
 
 export function createRescueAgent({
   providers,
+  baseProviders,
   buyerPrivateKeyPem,
   fetchImpl = fetch,
   logger = () => {},
@@ -79,6 +81,27 @@ export function createRescueAgent({
   const person3AckUrl = person3.ackUrl ?? process.env.PERSON3_ACK_URL ?? "";
   const person3AckTimeoutMs =
     person3.ackTimeoutMs ?? DEFAULT_PERSON3_ACK_TIMEOUT_MS;
+
+  // Per-incident market: personas re-dressed for every incident, seeded by
+  // the incident id so the provider agents derive the SAME faces on their
+  // side (see dynamicProviders.derivePersonasForIncident). Without
+  // `baseProviders` (tests, CLI) the passed-in providers are used as-is.
+  const personasByIncident = new Map();
+
+  function profileFor(provider, incidentId) {
+    if (!baseProviders || !incidentId) {
+      return provider;
+    }
+
+    let personas = personasByIncident.get(incidentId);
+
+    if (!personas) {
+      personas = derivePersonasForIncident(baseProviders, incidentId);
+      personasByIncident.set(incidentId, personas);
+    }
+
+    return personas[provider.providerId] ?? provider;
+  }
 
   // -- Incident records: the dashboard/Person 3 view (async contract). ----
   const incidents = new Map(); // incidentId -> record
@@ -385,7 +408,7 @@ export function createRescueAgent({
         );
 
         const selected = buildSelectedOffer(
-          profile,
+          profileFor(profile, request.incidentId),
           candidate,
           request,
           [...rejected, ...neverAttempted],
@@ -690,15 +713,23 @@ export function createRescueAgent({
   }
 
   async function readiness() {
+    // Latest incident's personas (or base profiles before any incident) —
+    // the market panel shows the current faces plus their pinned addresses.
+    const latestIncident = [...personasByIncident.keys()].at(-1);
     const entries = await Promise.all(
       providers.map(async (provider) => {
+        const face = profileFor(provider, latestIncident);
         const health = await getHealth(provider);
 
         return {
           providerId: provider.providerId,
-          brand: provider.brand,
+          brand: face.brand,
+          category: face.category,
+          description: face.description,
           agentCard: provider.agentCard,
-          policy: provider.policy,
+          policy: face.policy,
+          performance: face.performance,
+          activation: face.activation,
           healthy: health.healthy,
           detail: health.detail,
           lastHealthCheckAt: new Date(health.probedAtMs).toISOString()
@@ -708,6 +739,7 @@ export function createRescueAgent({
 
     return {
       rescueAgent: { healthy: true },
+      incidentId: latestIncident ?? null,
       providers: entries
     };
   }
@@ -721,6 +753,19 @@ export function createRescueAgent({
 
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://localhost");
+
+    // Browser clients (RecoveryOverlay live mode) preflight every JSON POST
+    // — answer before routing or the preflight 404s and the browser blocks
+    // the real request ("agent market unreachable").
+    if (request.method === "OPTIONS") {
+      response.writeHead(204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type"
+      });
+      response.end();
+      return;
+    }
 
     const json = (statusCode, payload) => {
       response.statusCode = statusCode;

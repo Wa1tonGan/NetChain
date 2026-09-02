@@ -12,6 +12,7 @@ function ActIcon({ type }: { type: ActivityItem["type"] }) {
 export default function ActivityPage() {
   const navigate = useNavigate();
   const activity = useAppStore((s) => s.activity);
+  const chainRows = useAppStore((s) => s.chainRows);
 
   const sorted = [...activity].sort((a, b) => b.ts - a.ts);
   const groups: { label: string; items: ActivityItem[] }[] = [];
@@ -33,6 +34,43 @@ export default function ActivityPage() {
           </p>
         </div>
       </div>
+
+      {/* On-chain ledger rows (trust server SSE — real tx digests) */}
+      {chainRows.length > 0 && (
+        <>
+          <div className="act-date" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Sui Trust Ledger
+            <span className="chip sui" style={{ fontSize: 10 }}>live</span>
+          </div>
+          <div className="card">
+            {chainRows.slice(0, 12).map((row, i) => (
+              <div key={(row.seq ?? 0) + "-" + i} className="row">
+                <div className="grow">
+                  <div className="t" style={{ fontSize: 13 }}>{row.label ?? row.type}</div>
+                  <div className="s mono" style={{ fontSize: 11 }}>
+                    {row.incidentId ?? "—"} · nonce {row.nonce ?? "—"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {row.txDigest ? (
+                    <a
+                      className="s mono"
+                      style={{ color: "var(--sui)", fontWeight: 700, textDecoration: "none" }}
+                      href={`https://suiscan.xyz/testnet/tx/${row.txDigest}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {row.txDigest.slice(0, 10)}… ↗
+                    </a>
+                  ) : (
+                    <span className="s">no digest</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {groups.map((g) => (
         <div key={g.label}>

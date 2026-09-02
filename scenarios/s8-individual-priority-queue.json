@@ -12,7 +12,9 @@
     "CAPACITY_SHORTFALL"
   ],
   "networkState": {
-    "activeLinkIds": ["TEMP-RECOVERY-A"],
+    "activeLinkIds": [
+      "TEMP-RECOVERY-A"
+    ],
     "unavailableLinkIds": [],
     "rawAvailableCapacityMbps": 100,
     "usableCapacityMbps": 100,
@@ -65,7 +67,7 @@
     "emergencyOverride": true
   },
   "constraints": {
-    "maxBudget": 500,
+    "maxBudget": 8,
     "durationMinutes": 60
   },
   "recoveryDecision": "EXTERNAL_RECOVERY_REQUIRED",

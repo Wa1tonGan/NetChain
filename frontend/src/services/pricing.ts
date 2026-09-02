@@ -3,14 +3,14 @@
 
 export const RATE = 0.00084;
 export const PLATFORM_FEE_PERCENT = 5; // 5%
-export const PLATFORM_FEE = 0.30; // Min RM 0.30
+export const PLATFORM_FEE = 0.30; // Min USDC 0.30
 export const DEMAND_MBPS = 500;
 export const UNDER_DELIVERY_RATIO = 0.9;
 
 export const rm = (n: number): string =>
-  "RM " + n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  "USDC " + n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const rm0 = (n: number): string => (Number.isInteger(n) ? "RM " + n : rm(n));
+export const rm0 = (n: number): string => (Number.isInteger(n) ? "USDC " + n : rm(n));
 
 export const costOf = (mbps: number, min: number): number => +(mbps * min * RATE).toFixed(2);
 
@@ -61,10 +61,13 @@ export interface ParsedSms {
   budget: number;
 }
 
-/** Parse SMS reply like "30 min, RM 14" into duration + budget. */
+/** Parse SMS reply like "30 min, USDC 14" into duration + budget.
+    Accepts USDC-both-ways ("USDC 14", "14 usdc") and the legacy "RM 14". */
 export function parseSms(text: string, defaultBudget: number): ParsedSms | null {
   const m = /(\d+)\s*(?:m\b|min\b|mins\b|minute|minutes)\b/i.exec(text || "");
-  const b = /rm\s*(\d+(?:\.\d{1,2})?)\b/i.exec(text || "");
+  const b =
+    /(?:usdc|rm)\s*(\d+(?:\.\d{1,2})?)\b/i.exec(text || "") ??
+    /(\d+(?:\.\d{1,2})?)\s*usdc\b/i.exec(text || "");
   if (!m && !b) return null;
   return {
     min: m ? Math.max(5, parseInt(m[1], 10)) : 30,

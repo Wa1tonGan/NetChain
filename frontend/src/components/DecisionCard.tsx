@@ -2,23 +2,41 @@ import { useState } from "react";
 import { rm, rm0 } from "../services/pricing";
 import { COMPARISON } from "../services/flows";
 
+export interface ComparisonRow {
+  name: string;
+  state: string;
+  sel: boolean;
+}
+
 export default function DecisionCard({
   cap,
   cost,
   budget,
+  provider,
+  comparison,
 }: {
   cap: number;
   cost: number;
   budget: number;
+  provider?: string;
+  comparison?: ComparisonRow[];
 }) {
   const [showAgentLogs, setShowAgentLogs] = useState(true);
+  const winner = provider ?? "KilatLink FWA";
+  const isLive = Boolean(comparison);
 
+  // Live runs carry the REAL A2A race (winner, arrivals, rejection reasons
+  // embedded in each row's state line) — no scripted price guesses.
   const priceFor = (name: string): string | null =>
-    name.includes("Provider B")
-      ? rm(cost)
-      : name.includes("Provider C")
-      ? rm(+(cost * 1.4).toFixed(2))
-      : null;
+    isLive
+      ? null
+      : name.includes("Provider B")
+        ? rm(cost)
+        : name.includes("Provider C")
+        ? rm(+(cost * 1.4).toFixed(2))
+        : null;
+
+  const rows = comparison ?? COMPARISON;
 
   const agentLogs = [
     {
@@ -26,7 +44,7 @@ export default function DecisionCard({
       role: "Market Pricing & Latency Agent",
       score: "0.96",
       vote: "KilatLink FWA",
-      reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ RM 18.50) and OrbitSat GO (satellite 65ms @ RM 24.00).`,
+      reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 18.50) and OrbitSat GO (satellite 65ms @ USDC 24.00).`,
     },
     {
       name: "Kimi-k1.5",
@@ -53,22 +71,22 @@ export default function DecisionCard({
               Gonka 3-Agent Consensus Engine
             </div>
             <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>
-              Selected: KilatLink FWA (+{cap} Mbps)
+              Selected: {winner} (+{cap} Mbps)
             </div>
           </div>
-          <span className="chip green" style={{ fontSize: 11, padding: "3px 8px" }}>
-            3/3 Consensus (Score 0.96)
+          <span className={`chip ${isLive ? "sui" : "green"}`} style={{ fontSize: 11, padding: "3px 8px" }}>
+            {isLive ? "Live A2A race evidence" : "3/3 Consensus (Score 0.96)"}
           </span>
         </div>
 
         {/* Evaluated Provider Quotes Table */}
         <div style={{ marginTop: 14, borderTop: "1px solid var(--line-soft)", paddingTop: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase" }}>
-            Evaluated Provider Quotes
+            {isLive ? "Real A2A race outcome" : "Evaluated Provider Quotes"}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {COMPARISON.map((c) => {
+            {rows.map((c) => {
               const price = priceFor(c.name);
               return (
                 <div
