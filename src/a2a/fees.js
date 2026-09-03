@@ -10,6 +10,12 @@ function round2(value) {
 
 export const DEFAULT_PLATFORM_FEE_PERCENT = 5;
 
+// The platform's payout address for the fee split — Person 3's Move tests
+// pin this as "the team's real testnet wallet" (move/tests/escrow_tests.move
+// PLATFORM). The demo escrow settles the fee slice here at settlement.
+export const DEFAULT_PLATFORM_ADDRESS =
+  "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4";
+
 // Env-driven config with the blueprint's example (5%) as the default.
 export function feeConfigFromEnv(env = process.env) {
   const percent = Number(env.PLATFORM_FEE_PERCENT ?? DEFAULT_PLATFORM_FEE_PERCENT);
@@ -20,7 +26,7 @@ export function feeConfigFromEnv(env = process.env) {
       : DEFAULT_PLATFORM_FEE_PERCENT,
     // The platform's own payout address for the fee split. Person 3's Move
     // contract sends this slice of the escrow here at settlement.
-    platformAddress: env.PLATFORM_ADDRESS ?? "0xPLATFORM_DEMO"
+    platformAddress: env.PLATFORM_ADDRESS ?? DEFAULT_PLATFORM_ADDRESS
   };
 }
 

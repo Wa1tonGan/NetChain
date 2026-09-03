@@ -134,7 +134,13 @@ export const selectedOfferSchema = z
   })
   .strict()
   .superRefine((selected, context) => {
-    if (selected.agreement.planPrice !== selected.selectedProvider.price) {
+    // Monetary comparisons must tolerate float representation error:
+    // 12.35 + 0.62 === 12.969999999999999 in IEEE 754, and a strict !==
+    // rejected mathematically-valid splits once dynamic (non-integer)
+    // prices entered the market.
+    const sameMoney = (a, b) => Math.abs(a - b) < 0.005;
+
+    if (!sameMoney(selected.agreement.planPrice, selected.selectedProvider.price)) {
       context.addIssue({
         code: "custom",
         path: ["agreement", "planPrice"],
@@ -147,7 +153,7 @@ export const selectedOfferSchema = z
         selected.agreement.planPrice * (selected.agreement.platformFeePercent / 100) * 100
       ) / 100;
 
-    if (selected.agreement.platformFee !== expectedFee) {
+    if (!sameMoney(selected.agreement.platformFee, expectedFee)) {
       context.addIssue({
         code: "custom",
         path: ["agreement", "platformFee"],
@@ -155,7 +161,7 @@ export const selectedOfferSchema = z
       });
     }
 
-    if (selected.agreement.providerAmount !== selected.agreement.planPrice) {
+    if (!sameMoney(selected.agreement.providerAmount, selected.agreement.planPrice)) {
       context.addIssue({
         code: "custom",
         path: ["agreement", "providerAmount"],
@@ -163,7 +169,7 @@ export const selectedOfferSchema = z
       });
     }
 
-    if (selected.agreement.amount !== selected.agreement.planPrice + selected.agreement.platformFee) {
+    if (!sameMoney(selected.agreement.amount, selected.agreement.planPrice + selected.agreement.platformFee)) {
       context.addIssue({
         code: "custom",
         path: ["agreement", "amount"],

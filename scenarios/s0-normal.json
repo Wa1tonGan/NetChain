@@ -8,7 +8,9 @@
   },
   "detectedConditions": [],
   "networkState": {
-    "activeLinkIds": ["WAN-A"],
+    "activeLinkIds": [
+      "WAN-A"
+    ],
     "unavailableLinkIds": [],
     "rawAvailableCapacityMbps": 1000,
     "usableCapacityMbps": 1000,
@@ -32,7 +34,7 @@
     "emergencyOverride": false
   },
   "constraints": {
-    "maxBudget": 100,
+    "maxBudget": 5,
     "durationMinutes": 60
   },
   "recoveryDecision": "NO_EXTERNAL_RECOVERY_NEEDED",

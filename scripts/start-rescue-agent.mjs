@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { createRescueAgent } from "../src/agents/rescueAgent.js";
 import { providerProfileSchema } from "../src/a2a/schemas/providerProfile.js";
+import { loadProviderProfiles, loadStaticProfiles } from "../src/a2a/dynamicProviders.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -28,16 +29,19 @@ try {
 
 const PROVIDER_IDS = ["PROVIDER-A", "PROVIDER-B", "PROVIDER-C"];
 
+// Dynamic market: same shared snapshot the provider agents read, so both
+// sides quote the same personas for this run (see src/a2a/dynamicProviders.js).
+const { profiles: dynamicProfiles } = loadProviderProfiles(projectRoot, {
+  seed: process.env.PROVIDER_SEED
+});
+
 const providers = PROVIDER_IDS.map((providerId) =>
-  providerProfileSchema.parse(
-    JSON.parse(
-      readFileSync(
-        path.join(projectRoot, "fixtures", "providers", `${providerId.toLowerCase()}.json`),
-        "utf8"
-      )
-    )
-  )
+  providerProfileSchema.parse(dynamicProfiles[providerId])
 );
+
+for (const provider of providers) {
+  console.log(`[rescue-agent] market: ${provider.providerId} = ${provider.brand} (${provider.category})`);
+}
 
 const buyerPrivateKeyPem = readFileSync(
   path.join(projectRoot, "fixtures", "keys", "buyer.private.pem"),
@@ -51,6 +55,9 @@ console.log(
 
 const agent = createRescueAgent({
   providers,
+  // Identity-stable base profiles: per-incident personas are derived from
+  // these (seeded by incidentId) — same derivation the provider agents run.
+  baseProviders: loadStaticProfiles(projectRoot),
   buyerPrivateKeyPem,
   person3: { ackUrl: process.env.PERSON3_ACK_URL ?? "" },
   logger: (level, message) => console[level === "warn" ? "warn" : "log"](`[rescue-agent] ${message}`)

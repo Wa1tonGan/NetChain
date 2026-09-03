@@ -7,8 +7,8 @@
 // the SAME deterministic selection with a live clock instead.
 //
 // Outputs to fixtures/sui/ (Person 2's fixtures/ are left untouched):
-//   s2-selected-offer.json               NORMAL  → B commits (60 MYR)
-//   s7-disaster-selected-offer.json      EMERGENCY → A commits (140 MYR)
+//   s2-selected-offer.json               NORMAL  → B commits (~3 USDC)
+//   s7-disaster-selected-offer.json      EMERGENCY → A commits (~5.8 USDC)
 //   s7-fallback-selected-offer.json      EMERGENCY, A excluded (failed) → B takes over
 //   s2-refund-selected-offer.json        alias of s2 (B commits → FAILS → refund)
 //
@@ -39,13 +39,14 @@ const ARRIVALS = { "PROVIDER-A": 600, "PROVIDER-B": 900, "PROVIDER-C": 300 };
 // Person 2's fee engine, same env contract the Rescue Agent uses live.
 const FEES = feeConfigFromEnv();
 
-// Two-track asset sizing: on testnet the escrow holds REAL Circle USDC (6
-// decimals) and the buyer only has faucet drips — so testnet fixtures scale
-// the quoted prices down (default ×0.025 → S2 ≈ 1.5 USDC) and denominate in
-// USD. Localnet keeps the MYRC demo coin at profile prices, untouched.
+// Two-track asset sizing: provider profiles are natively priced in
+// affordable USDC-scale amounts, so fixtures quote the SAME money the live
+// market quotes — no scale-down anywhere in the flow (scale 1). On testnet
+// the escrow holds REAL Circle USDC (6 decimals) denominated USD; localnet
+// keeps the MYRC demo coin at profile prices, untouched.
 const NETWORK = process.env.SUI_NETWORK ?? "localnet";
 const PRICE_SCALE =
-  NETWORK === "testnet" ? Number(process.env.SUI_TESTNET_PRICE_SCALE ?? 0.025) : 1;
+  NETWORK === "testnet" ? Number(process.env.SUI_TESTNET_PRICE_SCALE ?? 1) : 1;
 const TESTNET_CURRENCY = process.env.SUI_TESTNET_CURRENCY ?? "USD";
 
 const offerExpiry = new Date(EPOCH_MS + TTL_MS).toISOString();
@@ -70,7 +71,7 @@ function buildOffer(profile, request) {
     (profile.policy.baseFee +
       profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) * 100
   ) / 100;
-  // Scale in the cents domain so 0.025 × 60 = 1.5 lands exactly (no float dust).
+  // Scale in the cents domain so any legacy scale lands exactly (no float dust).
   const price = PRICE_SCALE === 1
     ? policyPrice
     : Math.round(policyPrice * 100 * PRICE_SCALE) / 100;

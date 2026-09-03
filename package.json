@@ -10,9 +10,11 @@
     "sui:setup": "node --env-file-if-exists=.env scripts/sui-setup.mjs",
     "sui:fixtures": "node --env-file-if-exists=.env scripts/sui-fixtures.mjs",
     "trust": "node --env-file-if-exists=.env scripts/trust.mjs",
+    "zklogin:server": "node --env-file-if-exists=.env src/zklogin/server.js",
     "harness:sui": "node --env-file-if-exists=.env scripts/sui-harness.mjs",
     "demo:sui": "node --env-file-if-exists=.env scripts/sui-demo.mjs",
     "trust:server": "node --env-file-if-exists=.env src/sui/server.js",
+    "claim:server": "node --env-file-if-exists=.env src/a2a/claimAgent.js",
     "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs",
     "integrate:sui": "node --env-file-if-exists=.env scripts/integrate-sui.mjs",
     "walrus:proof": "node --env-file-if-exists=.env scripts/sui-walrus.mjs"

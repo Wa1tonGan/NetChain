@@ -11,3 +11,5 @@ fixtures/sui/
 
 # frontend build output
 frontend/dist/
+fixtures/providers/dynamic.json
+fixtures/keys/*.private.pem

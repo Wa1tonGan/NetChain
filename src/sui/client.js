@@ -51,12 +51,21 @@ export function saveConfig(config, filePath = configPath()) {
 }
 
 export function buyerKeypair(keysDir = "fixtures/keys") {
-  // Two-track buyer identity: SUI_BUYER_SECRET (env, gitignored) is a REAL
-  // self-custody buyer wallet (e.g. the 60-USDC testnet buyer); the committed
-  // demo PEM stays the localnet buyer. zkLogin replaces this in the real UI.
+  // Demo-only buyer identity, kept for the cap-based localnet flow and
+  // tests. The PRODUCT path signs with the zkLogin user (commit_as_buyer);
+  // operator actions (settle/refund/verify) use platformKeypair().
   const secret = process.env.SUI_BUYER_SECRET;
   if (secret) return Ed25519Keypair.fromSecretKey(secret);
   return keypairFromPem(readFileSync(path.join(keysDir, "buyer.private.pem"), "utf8"));
+}
+
+/** Platform operator key (AuthorityCap holder): settle / refund / verify.
+    PLATFORM_SECRET in .env (gitignored). Absent env → null so callers can
+    fall back to the demo buyer key in localnet mode. */
+export function platformKeypair() {
+  const secret = process.env.PLATFORM_SECRET;
+  if (!secret) return null;
+  return Ed25519Keypair.fromSecretKey(secret);
 }
 
 function compiledModules(moveDir = "move") {
@@ -240,6 +249,50 @@ function rawVector(tx, u8) {
 
 /** escrow::commit — on-chain dual ed25519 verification + nonce lock. */
 export async function commitVoucher(client, keypair, config, voucher) {
+  const tx = buildCommitVoucherTx(config, voucher);
+  return signAndRun(client, keypair, tx);
+}
+
+/** escrow::commit_as_buyer — zkLogin buyer-direct path (no AuthorityCap;
+    the buyer hands in their own payment Coin inside the same PTB).
+    `paymentCoinId` = the buyer's own Coin<MYRC> object id (splitting the gas
+    coin would produce Coin<SUI> — a type mismatch against Coin<MYRC>). */
+export function buildCommitAsBuyerTx(config, voucher, paymentCoinId) {
+  const myrc = coinType(config);
+  if (!paymentCoinId) {
+    throw new Error(
+      "paymentCoinId required — the buyer wallet has no stablecoin coin object; fund it via POST /v1/fund first"
+    );
+  }
+  const tx = new Transaction();
+  const payment = tx.object(paymentCoinId);
+  tx.moveCall({
+    target: `${config.packageId}::escrow::commit_as_buyer`,
+    typeArguments: [myrc],
+    arguments: [
+      tx.object(config.escrowId),
+      tx.object(SUI_CLOCK_ID),
+      utf8Vector(tx, voucher.incidentId),
+      utf8Vector(tx, voucher.providerId),
+      tx.pure.u64(voucher.amount), // TOTAL = plan + platform fee
+      tx.pure.u64(voucher.expiryMs),
+      utf8Vector(tx, voucher.nonce),
+      tx.pure.address(voucher.providerAddress),
+      tx.pure.address(voucher.platformAddress),
+      tx.pure.u64(voucher.platformFee),
+      rawVector(tx, voucher.buyerMsg),
+      rawVector(tx, voucher.buyerSig),
+      rawVector(tx, voucher.buyerPk),
+      rawVector(tx, voucher.providerMsg),
+      rawVector(tx, voucher.providerSig),
+      rawVector(tx, voucher.providerPk),
+      payment
+    ]
+  });
+  return tx;
+}
+
+export function buildCommitVoucherTx(config, voucher) {
   const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
@@ -265,7 +318,7 @@ export async function commitVoucher(client, keypair, config, voucher) {
       rawVector(tx, voucher.providerPk)
     ]
   });
-  return signAndRun(client, keypair, tx);
+  return tx;
 }
 
 export async function settleVoucher(client, keypair, config, voucher) {

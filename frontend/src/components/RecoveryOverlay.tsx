@@ -1,14 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAppStore, elapsedSecAt } from "../store/useAppStore";
-import { rm, PLATFORM_FEE } from "../services/pricing";
-import { STEP_INDEX, STEP_LABELS } from "../services/flows";
+import { rm } from "../services/pricing";
+import { STEP_INDEX } from "../services/flows";
 import type { Incident } from "../services/types";
-import DecisionCard from "./DecisionCard";
-
-/* Live recovery overlay: pipeline + timer on one side; SMS thread,
-   purchase approval, decision evidence and money state on the other.
-   Wide two-panel layout on desktop, bottom sheet on mobile. */
-
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
     <span className={`strength ${cls ?? ""}`} role="img" aria-label={`${filled} of 4 signal bars`}>
@@ -30,10 +24,23 @@ function useTicker(active: boolean) {
 
 function Thread({ incident }: { incident: Incident }) {
   return (
-    <div className="thread" aria-label="Recovery SMS thread">
+    <div className="thread" aria-label="Recovery SMS thread" style={{ maxHeight: 260, overflowY: "auto", padding: "4px 0" }}>
       {incident.thread.map((b, i) => (
-        <div key={i} className={`bubble ${b.from}`}>
-          {b.auto && <span className="auto-tag">auto reply</span>}
+        <div
+          key={i}
+          className={`bubble ${b.from}`}
+          style={{
+            fontSize: 13.5,
+            padding: "10px 14px",
+            borderRadius: 14,
+            lineHeight: 1.45,
+          }}
+        >
+          {b.auto && (
+            <span style={{ display: "block", fontSize: 10, fontWeight: 700, opacity: 0.7, marginBottom: 2 }}>
+              Autonomous Reply Engine
+            </span>
+          )}
           {b.text}
         </div>
       ))}
@@ -41,249 +48,343 @@ function Thread({ incident }: { incident: Incident }) {
   );
 }
 
-function Composer({ shortage }: { shortage: number }) {
+function Composer({ shortage, live }: { shortage: number; live?: boolean }) {
   const sendSms = useAppStore((s) => s.sendSms);
   const [value, setValue] = useState("");
   const price = (min: number) => +(shortage * min * 0.00084).toFixed(2);
-  const chips = [15, 30, 60].map((m) => `${m} min, RM ${price(m) % 1 === 0 ? price(m).toFixed(0) : price(m).toFixed(2)}`);
-  const send = () => {
-    if (value.trim()) {
-      sendSms(value.trim());
+  // Live mode: quotes are real agent prices, so chips suggest realistic
+  // budgets instead of the demo rate.
+  const chips = live
+    ? [
+        { label: "30 min, USDC 2", text: "30 min, USDC 2" },
+        { label: "60 min, USDC 5", text: "60 min, USDC 5" },
+        { label: "120 min, USDC 8", text: "120 min, USDC 8" },
+      ]
+    : [
+        { label: "15 min (USDC " + price(15) + ")", text: `15 min, USDC ${price(15)}` },
+        { label: "30 min (USDC " + price(30) + ")", text: `30 min, USDC ${price(30)}` },
+        { label: "60 min (USDC " + price(60) + ")", text: `60 min, USDC ${price(60)}` },
+      ];
+
+  const send = (customText?: string) => {
+    const textToSend = (customText ?? value).trim();
+    if (textToSend) {
+      sendSms(textToSend);
       setValue("");
     }
   };
+
   return (
-    <>
-      <div className="qchips">
-        {chips.map((t) => (
-          <button key={t} onClick={() => setValue(t)}>
-            {t}
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>
+        Quick Reply Suggestions:
+      </div>
+      <div className="qchips" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {chips.map((c) => (
+          <button
+            key={c.text}
+            type="button"
+            className="btn sm subtle"
+            style={{ fontSize: 12.5, padding: "6px 12px", borderRadius: 20 }}
+            onClick={() => send(c.text)}
+          >
+            {c.label}
           </button>
         ))}
       </div>
-      <div className="smsbar">
+
+      <div className="smsbar" style={{ display: "flex", gap: 8, marginTop: 10 }}>
         <input
+          className="input"
+          style={{ borderRadius: 20, padding: "9px 16px" }}
           value={value}
-          placeholder="e.g. 30 min, RM 14"
+          placeholder={live ? "Or type reply: e.g. 60 min, USDC 5" : "Or type reply: e.g. 30 min, USDC 14"}
           aria-label="Reply with duration and budget"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
           autoFocus
         />
-        <button className="btn primary" onClick={send}>
+        <button
+          className="btn primary"
+          style={{ width: "auto", borderRadius: 20, padding: "8px 20px" }}
+          onClick={() => send()}
+        >
           Send
         </button>
       </div>
-    </>
-  );
-}
-
-function Purchase({ incident }: { incident: Incident }) {
-  const r = incident.req;
-  if (!r) return null;
-  return (
-    <>
-      <div className="purchase">
-        <div className="ph">Purchase approved · {r.text}</div>
-        <div className="pr"><span className="k">Provider</span><span className="v">Provider B</span></div>
-        <div className="pr"><span className="k">Capacity</span><span className="v">{incident.shortage} Mbps</span></div>
-        <div className="pr"><span className="k">Duration</span><span className="v">{r.min} min</span></div>
-        <div className="pr"><span className="k">Provider price</span><span className="v">{rm(+(r.cost - PLATFORM_FEE).toFixed(2))}</span></div>
-        <div className="pr"><span className="k">Platform fee</span><span className="v">{rm(PLATFORM_FEE)}</span></div>
-        <div className="pr"><span className="k">Total</span><span className="v">{rm(r.cost)}</span></div>
-      </div>
-      <DecisionCard cap={incident.shortage} cost={r.cost} budget={r.budget} />
-      <div className="money-state">
-        🔒 {rm(r.cost)} locked in escrow — released only after verification passes
-      </div>
-    </>
-  );
-}
-
-function StepList({ incident }: { incident: Incident }) {
-  const cur = STEP_INDEX[incident.status] ?? 0;
-  return (
-    <div className="steps" style={{ marginTop: 8 }}>
-      {STEP_LABELS.map((label, i) => {
-        let cls = i < cur ? "done" : i === cur ? "now" : "";
-        if (incident.status === "failed" && i === 5) cls = "fail";
-        return (
-          <div key={label} className={`step ${cls}`}>
-            <span className="ic" />
-            {label}
-          </div>
-        );
-      })}
     </div>
   );
 }
 
 export default function RecoveryOverlay({ incident }: { incident: Incident }) {
-  const dismissOverlay = useAppStore((s) => s.dismissOverlay);
-  const records = useAppStore((s) => s.records);
-  const disclosures = useAppStore((s) => s.disclosures);
-  const disclose = useAppStore((s) => s.disclose);
-  const capacity = useAppStore((s) => s.capacity);
-  const running = useAppStore((s) => s.running);
+  const dismiss = useAppStore((s) => s.dismissOverlay);
+  const curIdx = STEP_INDEX[incident.status] ?? 0;
+  const inSms = incident.status === "sms";
+  const isLive = incident.kind === "live";
+  const completed = Boolean(incident.result);
 
-  useTicker(running || incident.status === "sms");
+  useTicker(!completed);
+  const now = Date.now();
+  const elapsed = elapsedSecAt(incident, now).toFixed(1);
 
-  if (incident.status === "restored") {
-    const r = records[incident.id];
-    if (!r) return null;
-    const under = r.outcome === "under";
-    const costHtml = r.refund ? (
-      <>
-        {rm(r.charged)}
-        <span style={{ fontSize: 12, color: "var(--warn)", fontWeight: 700, display: "block" }}>
-          {rm(r.refund)} refunded
-        </span>
-      </>
-    ) : (
-      rm(r.charged)
-    );
-    const capCharge = Math.max(0, +(r.charged - r.fee).toFixed(2));
-    return (
-      <div className="overlay">
-        <div className="sheet wide" role="dialog" aria-modal="true" aria-label="Recovery complete">
-          <div className="ov-main">
-            {under ? (
-              <span className="chip amber"><span className="dot" />RESTORED · PARTIAL REFUND</span>
-            ) : (
-              <span className="chip green"><span className="dot" />CONNECTION RESTORED</span>
-            )}
-            <h2>Connection restored</h2>
-            <p className="lede">
-              {under
-                ? `The provider delivered ${r.delivered} of ${r.cap} Mbps. A penalty refund was settled automatically, and live checks keep watching the plan.`
-                : "NetChain restored your connection with temporary capacity. Live checks will verify the agreed strength for the whole duration."}
-            </p>
-            <div className="result-grid">
-              <div className="rg"><div className="rk">Recovered capacity</div><div className="rv ok">+{r.cap} Mbps</div></div>
-              <div className="rg"><div className="rk">Current capacity</div><div className="rv">{capacity.current} Mbps</div></div>
-              <div className="rg"><div className="rk">Recovery time</div><div className="rv">{r.time} sec</div></div>
-              <div className="rg"><div className="rk">Cost</div><div className="rv" style={{ fontSize: 16 }}>{costHtml}</div></div>
+  const steps = [
+    { label: "Detected", done: curIdx >= 1 },
+    { label: "SMS Intent", done: curIdx >= 4 },
+    { label: "Provider & Sui Escrow", done: curIdx >= 6 },
+    { label: "Restored & Settled", done: completed },
+  ];
+
+  return (
+    <div className="overlay" onClick={(e) => e.target === e.currentTarget && dismiss()}>
+      <div
+        className="sheet"
+        style={{
+          maxWidth: 620,
+          width: "100%",
+          padding: "26px 28px",
+          borderRadius: 20,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              className="dot"
+              style={{
+                background: completed ? "var(--ok)" : "var(--accent)",
+                width: 10,
+                height: 10,
+              }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              {completed ? "Recovery Complete" : "Autonomous Recovery"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="mono" style={{ fontSize: 15, fontWeight: 800, color: "var(--muted)" }}>
+              {elapsed}s
+            </span>
+            <button
+              className="btn link"
+              onClick={dismiss}
+              style={{ fontSize: 18, padding: "0 4px", color: "var(--muted)" }}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Milestone Steps Bar */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: 6,
+            margin: "18px 0 16px",
+            background: "var(--bg)",
+            padding: "8px 10px",
+            borderRadius: 12,
+          }}
+        >
+          {steps.map((st, idx) => (
+            <div key={st.label} style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  height: 4,
+                  borderRadius: 2,
+                  background: st.done ? "var(--ok)" : idx === Math.min(curIdx, 3) ? "var(--accent)" : "#cbd5e1",
+                  marginBottom: 6,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: st.done ? "var(--ink)" : "var(--muted)",
+                }}
+              >
+                {st.label}
+              </span>
             </div>
-            <div className={`money-state ${under ? "" : "ok"}`} style={{ marginTop: 14 }}>
-              {under
-                ? `✓ ${rm(r.charged)} settled · ${rm(r.refund)} refunded — penalty applied for under-delivery`
-                : `✓ ${rm(r.charged)} settled — released only after verified delivery`}
+          ))}
+        </div>
+
+        {/* In-Progress SMS Chat */}
+        {inSms && (
+          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>Interactive Recovery Channel</span>
             </div>
-            <div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              Signal strength <StrengthBars filled={under ? 2 : 4} cls={under ? "strength-2" : ""} />
-              <b style={{ color: "var(--ink)" }}>{under ? "Fair" : "Excellent"}</b> · Provider {r.provider} · {r.min}-minute plan
+            <Thread incident={incident} />
+            <Composer shortage={incident.shortage} live={isLive} />
+          </div>
+        )}
+
+        {/* Live waiting state: agents are quoting, purchase sheet not ready */}
+        {isLive && !inSms && !completed && incident.status === "request_detected" && (
+          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
+            <Thread incident={incident} />
+            <div className="money-state" style={{ marginTop: 10 }}>
+              📡 Provider agents are quoting — ranking the signed offers…
             </div>
-            <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-              <button className="btn primary" onClick={dismissOverlay}>Done</button>
-              <button className="btn subtle" style={{ width: "auto" }} onClick={() => disclose("ov_" + incident.id)}>
-                Details
+          </div>
+        )}
+
+        {/* Transition / Activating state */}
+        {!inSms && !completed && incident.status !== "escrow_locked" && (
+          <div style={{ padding: "24px 0", textAlign: "center" }}>
+            <div
+              style={{
+                display: "inline-block",
+                width: 36,
+                height: 36,
+                border: "3px solid var(--accent-soft)",
+                borderTopColor: "var(--accent)",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+                marginBottom: 12,
+              }}
+            />
+            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>
+              {incident.status === "request_detected" && "Broadcasting intent to the live market…"}
+              {incident.status === "provider_selected" && (isLive ? "Signing & committing the Selected Offer…" : "Matching Best Provider (KilatLink FWA)…")}
+              {incident.status === "activating" && "Activating High-Speed Backup Link…"}
+              {incident.status === "verifying" && "Verifying Delivered Throughput & SLA…"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
+              Allocating +{incident.shortage} Mbps replacement bandwidth
+            </div>
+          </div>
+        )}
+
+        {/* Live narration: the thread carries real SSE events throughout */}
+        {isLive && !inSms && !completed && (
+          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "14px 18px", marginTop: 10 }}>
+            <Thread incident={incident} />
+          </div>
+        )}
+
+        {/* Agent Signing Terminal (Simulated Escrow Lock) — simulation only;
+            live mode narrates the REAL chain rows in the thread instead */}
+        {!inSms && !isLive && !completed && incident.status === "escrow_locked" && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, textAlign: "center", marginBottom: 12 }}>
+              Locking Escrow on Sui Trust Layer…
+            </div>
+            <div
+              style={{
+                background: "#0f172a",
+                color: "#38bdf8",
+                borderRadius: 12,
+                padding: "16px",
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 12,
+                textAlign: "left",
+                boxShadow: "inset 0 2px 10px rgba(0,0,0,0.5)",
+              }}
+            >
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ef4444" }} />
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#eab308" }} />
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#22c55e" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ animation: "fadeIn 0.2s" }}><span style={{ color: "#a855f7", fontWeight: "bold" }}>[Agent: MiniMax-ABAB6.5]</span> Constructing Programmable Transaction Block (PTB)...</div>
+                <div style={{ animation: "fadeIn 0.2s 0.8s backwards" }}><span style={{ color: "#eab308", fontWeight: "bold" }}>[PTB Builder]</span> Injecting SplitCoins: 11.97 SUI (Provider) + 0.63 SUI (Platform Fee)</div>
+                <div style={{ animation: "fadeIn 0.2s 1.6s backwards" }}><span style={{ color: "#3b82f6", fontWeight: "bold" }}>[Wallet]</span> Auto-signing payload with connected Sui identity...</div>
+                <div style={{ animation: "fadeIn 0.2s 2.4s backwards" }}><span style={{ color: "#22c55e", fontWeight: "bold" }}>[Network]</span> Broadcasting to Sui Testnet...</div>
+                <div style={{ animation: "fadeIn 0.2s 3.2s backwards", marginTop: 8, padding: 10, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)", borderRadius: 6 }}>
+                  <div style={{ color: "#4ade80", fontWeight: "bold", marginBottom: 4 }}>✓ Transaction Executed Successfully</div>
+                  <div style={{ color: "#cbd5e1" }}>Digest: <a href="https://suiscan.xyz/testnet/tx/8AbX9Z12398jklmnOPqrstUVWxyZ" target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "bold" }}>8AbX9Z12398jklmnOPqrstUVWxyZ ↗</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Completed State */}
+        {completed && incident.result && (
+          <div>
+            <div
+              style={{
+                background:
+                  incident.status === "failed"
+                    ? "var(--bad-soft)"
+                    : "var(--ok-soft)",
+                color: incident.status === "failed" ? "var(--bad-ink)" : "var(--ok-ink)",
+                borderRadius: 12,
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginTop: 10,
+              }}
+            >
+              <span style={{ fontSize: 24 }}>
+                {incident.status === "failed" ? "✕" : incident.status === "noop" ? "✓" : "✓"}
+              </span>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>
+                  {incident.status === "failed"
+                    ? "Recovery Failed"
+                    : incident.status === "noop"
+                      ? "All Clear — No Recovery Needed"
+                      : "Connection Successfully Restored"}
+                </div>
+                <div style={{ fontSize: 12.5, opacity: 0.9 }}>
+                  {incident.status === "failed"
+                    ? `Reason: ${incident.result.state}.`
+                    : incident.status === "noop"
+                      ? "Agents confirmed healthy capacity — no escrow, no purchase"
+                      : `${incident.req?.provider ?? "KilatLink FWA"} active · SLA verification passed${isLive ? " · settled on Sui" : ""}`}
+                </div>
+              </div>
+            </div>
+
+            <div className="result-grid" style={{ marginTop: 14 }}>
+              {incident.status !== "noop" && (
+                <>
+                  <div className="rg">
+                    <div className="rk">Recovered Capacity</div>
+                    <div className="rv ok">+{incident.available || incident.shortage} Mbps</div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">Time to Recovery</div>
+                    <div className="rv">{incident.result.time}s</div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">{incident.result.refund > 0 ? "Refunded" : "Escrow Settled"}</div>
+                    <div className="rv">
+                      {incident.result.refund > 0 ? rm(incident.result.refund) : rm(incident.result.charged)}
+                    </div>
+                  </div>
+                  <div className="rg">
+                    <div className="rk">Trust Layer</div>
+                    <div className="rv ok">{isLive ? "Sui On-Chain ✓" : "Sui Dual-Sig ✓"}</div>
+                  </div>
+                </>
+              )}
+              {incident.status === "noop" && (
+                <div className="rg">
+                  <div className="rk">Charged</div>
+                  <div className="rv ok">USDC 0.00</div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <button className="btn primary" onClick={dismiss}>
+                Done
               </button>
             </div>
           </div>
-          <div className="ov-side">
-            <div className="purchase" style={{ marginTop: 4 }}>
-              <div className="ph">Purchase · from your SMS “{r.smsText}”</div>
-              <div className="pr"><span className="k">Provider</span><span className="v">{r.provider}</span></div>
-              <div className="pr"><span className="k">Capacity · duration</span><span className="v">{r.cap} Mbps · {r.min} min</span></div>
-              <div className="pr"><span className="k">Provider price</span><span className="v">{rm(capCharge)}</span></div>
-              <div className="pr"><span className="k">Platform fee</span><span className="v">{rm(r.fee)}</span></div>
-              <div className="pr"><span className="k">Total</span><span className="v">{rm(r.cost)}</span></div>
-            </div>
-            <DecisionCard cap={r.cap} cost={r.cost} budget={r.budget} />
-            {disclosures["ov_" + incident.id] ? (
-              <div className="disc">
-                <div className="tech">
-                  <span className="k">Money state</span><span className="v">{r.state}</span>
-                  <span className="k">Verification</span>
-                  <span className="v">{under ? `Under-delivery — ${r.delivered}/${r.cap} Mbps` : "Passed"}</span>
-                  <span className="k">Network</span><span className="v">Sui</span>
-                  <span className="k">Transaction ID</span><span className="v">{r.tx}</span>
-                  <span className="k">View</span>
-                  <span className="v"><a className="txlink" href="https://suiscan.xyz/testnet" target="_blank" rel="noopener">SuiScan ↗</a></span>
-                  <span className="k">Recovery</span><span className="v">#{r.id}</span>
-                </div>
-              </div>
-            ) : (
-              <div style={{ marginTop: 12 }}>
-                <button className="btn link" style={{ paddingLeft: 0 }} onClick={() => disclose("ov_" + incident.id)}>
-                  Transaction details
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (incident.status === "failed") {
-    const r = records[incident.id];
-    if (!r) return null;
-    return (
-      <div className="overlay">
-        <div className="sheet" role="dialog" aria-modal="true" aria-label="Recovery failed">
-          <span className="chip red"><span className="dot" />RECOVERY FAILED</span>
-          <h2>Extra capacity couldn't be added</h2>
-          <p className="lede">
-            The provider could not activate the temporary capacity. Your connection is still down — and you weren't
-            charged.
-          </p>
-          <div className="result-grid">
-            <div className="rg"><div className="rk">Your charge</div><div className="rv ok">{rm(0)}</div></div>
-            <div className="rg"><div className="rk">Reservation</div><div className="rv" style={{ fontSize: 15 }}>{rm(r.cost)} refunded</div></div>
-            <div className="rg"><div className="rk">Available now</div><div className="rv">{capacity.current} Mbps</div></div>
-            <div className="rg"><div className="rk">Recovery time</div><div className="rv">{r.time} sec</div></div>
-          </div>
-          <div className="money-state ok">
-            ✓ {rm(r.cost)} refunded — the locked amount returned to your balance automatically
-          </div>
-          <p className="note">NetChain keeps watching. Send a new recovery request from Home anytime.</p>
-          <div style={{ marginTop: 14 }}>
-            <button className="btn primary" onClick={dismissOverlay}>Done</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // running (detected … verifying)
-  const waiting = incident.status === "sms";
-  const elapsed = elapsedSecAt(incident, Date.now()).toFixed(1);
-  return (
-    <div className="overlay">
-      <div className="sheet wide" role="dialog" aria-modal="true" aria-label="Recovery in progress">
-        <div className="ov-main">
-          <span className="chip blue"><span className="dot" />RECOVERING</span>
-          <h2>{waiting ? "Reply to approve your recovery" : "We're restoring your connection"}</h2>
-          <p className="lede">
-            {waiting
-              ? `Your main connection is down and you're ${incident.shortage} Mbps short.`
-              : "Handling your request automatically — no action needed."}
-          </p>
-          <div style={{ display: "flex", alignItems: "baseline", marginTop: 12 }}>
-            <div className="timer">
-              {elapsed}
-              <span className="u">sec</span>
-            </div>
-          </div>
-          <StepList incident={incident} />
-        </div>
-        <div className="ov-side">
-          {waiting ? (
-            <>
-              <Thread incident={incident} />
-              <Composer shortage={incident.shortage} />
-              <p className="note" style={{ marginTop: 12 }}>
-                Your reply approves this recovery up to the budget you send. Auto recovery can send it for you.
-              </p>
-            </>
-          ) : (
-            <>
-              <Thread incident={incident} />
-              <Purchase incident={incident} />
-            </>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

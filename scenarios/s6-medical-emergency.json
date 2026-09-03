@@ -6,9 +6,13 @@
     "type": "MEDICAL_EMERGENCY",
     "severity": "life_critical"
   },
-  "detectedConditions": ["MEDICAL_EMERGENCY"],
+  "detectedConditions": [
+    "MEDICAL_EMERGENCY"
+  ],
   "networkState": {
-    "activeLinkIds": ["WAN-A"],
+    "activeLinkIds": [
+      "WAN-A"
+    ],
     "unavailableLinkIds": [],
     "rawAvailableCapacityMbps": 1000,
     "usableCapacityMbps": 1000,
@@ -40,7 +44,7 @@
     "emergencyOverride": true
   },
   "constraints": {
-    "maxBudget": 500,
+    "maxBudget": 8,
     "durationMinutes": 60
   },
   "recoveryDecision": "NO_EXTERNAL_RECOVERY_NEEDED",

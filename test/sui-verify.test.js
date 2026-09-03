@@ -123,7 +123,7 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
       const nonce = committed.voucher.nonce;
 
       // Under-delivery: promised 200 Mbps, delivered avg 125 → shortfall 37.5%
-      // → penalty 27.5% of the provider share (60) = 16.5 → floor 16.
+      // → penalty 27.5% of the provider share (1.8) = 0.495 → floor 0.49.
       const verdict = await service.verifyDelivery("INC-S2", {
         promisedCapacity: 200,
         deliveredSamples: [120, 130],
@@ -131,7 +131,7 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
         sessionEnd: 2000
       });
       assert.equal(verdict.verdict, "PENALTY");
-      assert.equal(verdict.penaltyAmount, 1650); // 27.5% of 6000 base
+      assert.equal(verdict.penaltyAmount, 49); // 27.5% of 180 base
       assert.equal(verdict.txDigest, "TX-VERIFY-2");
 
       // §9 record landed in the ledger with its hash.
@@ -140,17 +140,17 @@ describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", (
       const verifiedRow = rows.find((r) => r.type === "DELIVERY_VERIFIED");
       assert.equal(verifiedRow.nonce, nonce);
       assert.equal(verifiedRow.data.record.verdict, "PENALTY");
-      assert.equal(verifiedRow.data.record.penalty_amount, 1650);
+      assert.equal(verifiedRow.data.record.penalty_amount, 49);
       assert.match(verifiedRow.data.connectionLogHash, /^[0-9a-f]{64}$/);
       assert.equal(verifiedRow.data.connectionLogHash, verdict.connectionLogHash);
 
-      // Settle reads the verdict: provider 60 − 16 = 44, buyer compensated 16.
+      // Settle reads the verdict: provider 1.8 − 0.49 = 1.31, buyer compensated 0.49.
       const settled = await service.activation({ incidentId: "INC-S2", status: "AVAILABLE", recoveredCapacityMbps: 125 });
       assert.equal(settled.status, "SETTLED");
       const settledRow = ledger.lookup(nonce);
-      assert.equal(settledRow.penaltyAmount, 1650);
-      assert.equal(settledRow.providerNetAmount, 4350); // 6000 − 1650
-      assert.equal(settledRow.platformFee, 300);
+      assert.equal(settledRow.penaltyAmount, 49);
+      assert.equal(settledRow.providerNetAmount, 131); // 180 − 49
+      assert.equal(settledRow.platformFee, 9);
       assert.equal(settledRow.platformAddress, PLATFORM_WALLET);
     } finally {
       delete process.env.PLATFORM_ADDRESS;

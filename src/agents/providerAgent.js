@@ -25,6 +25,7 @@ import { providerRequestSchema } from "../a2a/schemas/providerRequest.js";
 import { providerOfferSchema } from "../a2a/schemas/providerOffer.js";
 import { signOffer } from "../a2a/signing.js";
 import { quoteAsset } from "../a2a/quoteAsset.js";
+import { derivePersonasForIncident } from "../a2a/dynamicProviders.js";
 
 const OFFER_TTL_MS = 60_000;
 const MODE_VALUES = ["healthy", "down", "unresponsive", "slow", "fail_activation", "laggy"];
@@ -39,7 +40,7 @@ function round2(value) {
 // from the moment the request reached this agent), and it becomes part of
 // the signed payload (tamper-consistent). "LLM enriches, determinism
 // decides."
-async function enrichWithPitch(offer, request, profile, gonka, elapsedMs) {
+async function enrichWithPitch(offer, request, persona, gonka, elapsedMs) {
   if (!gonka?.apiKey || !gonka?.baseUrl || !gonka?.model) {
     return null;
   }
@@ -71,7 +72,7 @@ async function enrichWithPitch(offer, request, profile, gonka, elapsedMs) {
             {
               role: "user",
               content: JSON.stringify({
-                provider: { brand: profile.brand, category: profile.category },
+                provider: { brand: persona.brand, category: persona.category },
                 request: {
                   requestedCapacityMbps: request.requestedCapacityMbps,
                   maxBudget: request.maxBudget,
@@ -115,8 +116,36 @@ async function enrichWithPitch(offer, request, profile, gonka, elapsedMs) {
   }
 }
 
-export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
+export function createProviderAgent({ profile, privateKeyPem, baseProfiles, logger, gonka }) {
   let failureMode = "healthy";
+
+  // Per-incident persona cache: the market is re-dressed for every incident
+  // (seeded by incidentId, so the rescue agent derives the same personas);
+  // retries of the SAME incident reuse the cached quote untouched. The FULL
+  // base map (all providers) is required so the sorted tier assignment matches
+  // what the rescue agent derives on its side.
+  const personasByIncident = new Map();
+
+  function personaFor(incidentId) {
+    // Per-incident re-dressing is an explicit opt-in (production scripts pass
+    // the full static base map); without it the startup profile is quoted
+    // as-is — tests and CLI keep their deterministic characteristics.
+    if (!baseProfiles || !incidentId) {
+      return profile;
+    }
+
+    let persona = personasByIncident.get(incidentId);
+
+    if (!persona) {
+      persona = {
+        ...derivePersonasForIncident(baseProfiles, incidentId)[profile.providerId],
+        providerId: profile.providerId
+      };
+      personasByIncident.set(incidentId, persona);
+    }
+
+    return persona;
+  }
 
   // offer cache: identical requestId -> identical signed offer (A2A retries
   // must not mint a second commitment); activation cache: incident+offer ->
@@ -125,19 +154,19 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
   const offersByRequestId = new Map();
   const activationsByKey = new Map();
 
-  function buildOfferDraft(request) {
+  function buildOfferDraft(request, persona) {
     const lane = request.emergencyOverride
-      ? { ...profile.activation.p0FastLane, lane: "P0_FAST" }
-      : { ...profile.activation.standard, lane: "STANDARD" };
-    const capacityMbps = profile.policy.maxCapacityMbps;
+      ? { ...persona.activation.p0FastLane, lane: "P0_FAST" }
+      : { ...persona.activation.standard, lane: "STANDARD" };
+    const capacityMbps = persona.policy.maxCapacityMbps;
     const hours = request.durationMinutes / 60;
     // Quote in the money the escrow settles (quoteAsset mirrors the fixture
     // generator: testnet → scaled-down USD / real USDC; localnet → profile
     // prices in the profile's own currency).
-    const quote = quoteAsset(profile.policy.currency);
+    const quote = quoteAsset(persona.policy.currency);
     const price = round2(
-      (profile.policy.baseFee +
-        profile.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) *
+      (persona.policy.baseFee +
+        persona.policy.pricePer100MbpsPerHour * (capacityMbps / 100) * hours) *
         quote.scale
     );
 
@@ -153,9 +182,9 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
       activationLane: lane.lane,
       price,
       currency: quote.currency,
-      reliabilityScore: profile.performance.reliabilityScore,
-      latencyMs: profile.performance.latencyMs,
-      packetLossPercent: profile.performance.packetLossPercent,
+      reliabilityScore: persona.performance.reliabilityScore,
+      latencyMs: persona.performance.latencyMs,
+      packetLossPercent: persona.performance.packetLossPercent,
       offerExpiry: new Date(Date.now() + OFFER_TTL_MS).toISOString(),
       signature: { algorithm: "ed25519", keyId: profile.publicKey.keyId, value: "" }
     };
@@ -170,8 +199,9 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
       return cached;
     }
 
-    const offer = buildOfferDraft(request);
-    const enrichment = await enrichWithPitch(offer, request, profile, gonka, elapsedMs);
+    const persona = personaFor(request.incidentId);
+    const offer = buildOfferDraft(request, persona);
+    const enrichment = await enrichWithPitch(offer, request, persona, gonka, elapsedMs);
 
     if (enrichment) {
       offer.enrichment = enrichment;
@@ -235,6 +265,13 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
     });
   }
 
+  function reply(json, statusCode, payload) {
+    json.statusCode = statusCode;
+    json.setHeader("content-type", "application/json");
+    json.setHeader("access-control-allow-origin", "*");
+    json.end(JSON.stringify(payload));
+  }
+
   async function handleOffers(httpResponse, body, receivedAtMs) {
     let parsedRequest;
 
@@ -273,14 +310,19 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
     reply(httpResponse, 200, await quoteOffer(parsedRequest, Date.now() - receivedAtMs));
   }
 
-  function reply(json, statusCode, payload) {
-    json.statusCode = statusCode;
-    json.setHeader("content-type", "application/json");
-    json.end(JSON.stringify(payload));
-  }
-
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://localhost");
+
+    // Browser clients (ServicesPage market panel, dashboards) hit these
+    // endpoints cross-origin — answer preflights like the rescue agent does.
+    if (request.method === "OPTIONS") {
+      response.statusCode = 204;
+      response.setHeader("access-control-allow-origin", "*");
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      response.setHeader("access-control-allow-headers", "content-type");
+      response.end();
+      return;
+    }
 
     if (request.method === "GET" && url.pathname === "/health") {
       return reply(
@@ -296,7 +338,17 @@ export function createProviderAgent({ profile, privateKeyPem, logger, gonka }) {
     }
 
     if (request.method === "GET" && (url.pathname === "/agent-card" || url.pathname === "/v1/agent-card")) {
-      return reply(response, 200, { ...profile.agentCard, providerId: profile.providerId });
+      // agent-card reflects the persona of the most recently quoted incident
+      // (or the base profile before the first bid) — dashboards see the
+      // current market face.
+      const latest = [...personasByIncident.values()].at(-1);
+      const card = latest ? { ...profile.agentCard, name: latest.agentCard.name, capabilities: latest.agentCard.capabilities } : profile.agentCard;
+      return reply(response, 200, {
+        ...card,
+        providerId: profile.providerId,
+        brand: latest?.brand ?? profile.brand,
+        category: latest?.category ?? profile.category
+      });
     }
 
     if (request.method === "POST" && (url.pathname === "/offers" || url.pathname === "/v1/offers")) {

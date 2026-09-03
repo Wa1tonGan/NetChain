@@ -1,27 +1,29 @@
-/* Domain types shared across the app. These mirror what the backend
-   will eventually expose (Person 2's gateway + Person 3's trust layer),
-   so the mock adapter can be swapped for real API/SSE adapters later. */
+/* Domain types shared across the app. */
 
 export type ProtectionState = "protected" | "recovering" | "attention";
 
-export type RecoveryKind = "main" | "auto" | "under" | "failed";
+export type RecoveryKind = "main" | "auto" | "under" | "failed" | "live";
 
 export type Outcome = "ok" | "under" | "failed";
 
 export interface SmsBubble {
   from: "net" | "user" | "sys" | "err";
   text: string;
-  /** set when auto recovery sent this on the user's behalf */
   auto?: boolean;
 }
 
-/** The user's SMS reply: duration + budget, priced into a plan. */
 export interface RecoveryRequest {
   min: number;
   budget: number;
   cost: number;
   adjusted: boolean;
   text: string;
+  // live-mode additions (real Selected Offer values replace local estimates)
+  provider?: string;
+  planPrice?: number;
+  platformFee?: number;
+  escrow?: number;
+  nonce?: string;
 }
 
 export interface IncidentEvent {
@@ -40,7 +42,6 @@ export interface Incident {
   id: string;
   kind: RecoveryKind;
   outcome: Outcome;
-  /** phase the machine pauses at, waiting for the user's SMS reply */
   pauseAt: string;
   autoSend: string | null;
   status: string;
@@ -55,6 +56,7 @@ export interface Incident {
   required: number;
   available: number;
   shortage: number;
+  scenarioKey?: string;
 }
 
 export interface RecoveryRecord {
@@ -75,6 +77,13 @@ export interface RecoveryRecord {
   tx: string;
   restored: boolean;
   delivered: number;
+  providerAddr?: string;
+  platformAddr?: string;
+  logHash?: string;
+  // live-mode additions
+  nonce?: string;
+  commitTx?: string;
+  comparison?: { name: string; state: string; sel: boolean }[];
 }
 
 export interface Payment {
@@ -101,7 +110,6 @@ export interface ActivityItem {
   recordId?: string;
 }
 
-/** One live SLA verification sample during a purchased plan. */
 export interface VerificationSample {
   at: number;
   mbps: number;
@@ -115,19 +123,17 @@ export interface VerificationState {
   last: VerificationSample | null;
 }
 
-/** Live temporary-capacity session after a successful recovery. */
 export interface Session {
   id: string;
   start: number;
   min: number;
-  /** delivered baseline (equals `agreed` for a healthy provider) */
   mbps: number;
-  /** what the provider agreed to deliver for the whole duration */
   agreed: number;
   cost: number;
   ended: boolean;
   checks: VerificationState;
   log: VerificationSample[];
+  endNote?: string;
 }
 
 export interface Capacity {
@@ -135,4 +141,13 @@ export interface Capacity {
   current: number;
   extra: number;
   primaryDown: boolean;
+}
+
+export type Priority = "P1" | "P2" | "P3" | "P4" | "P5";
+
+export interface ServiceItem {
+  id: string;
+  name: string;
+  prio: Priority;
+  minSpeed: number;
 }

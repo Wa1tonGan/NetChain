@@ -23,7 +23,10 @@ import { loadProviderProfiles } from "../src/sui/voucher.js";
 
 function findSui() {
   // Empty-string env values (e.g. `SUI_BIN=` in .env) must fall through to the default.
-  return process.env.SUI_BIN || path.join(process.env.USERPROFILE ?? process.env.HOME, "sui-cli", "sui.exe");
+  const fallback = process.platform === "win32"
+    ? path.join(process.env.USERPROFILE ?? process.env.HOME, "sui-cli", "sui.exe")
+    : "sui"; // PATH lookup (brew install sui / cargo install)
+  return process.env.SUI_BIN || fallback;
 }
 
 const config = { ...(loadConfig() ?? {}), network: network() };
@@ -35,7 +38,8 @@ await ensureGas(client, keypair);
 
 if (!config.packageId || config.network !== network()) {
   console.log("[setup] building Move package…");
-  execSync(`"${findSui()}" move build --path move`, { stdio: "inherit" });
+  // Newer CLIs require an explicit build env for localnet deployments.
+  execSync(`"${findSui()}" move build --path move --build-env testnet`, { stdio: "inherit" });
   console.log("[setup] publishing…");
   const published = await publishPackage(client, keypair);
   Object.assign(config, published);
@@ -62,6 +66,7 @@ if (!config.escrowId || !config.authorityId) {
 const profiles = loadProviderProfiles("fixtures/providers");
 config.providers = {};
 for (const [providerId, profile] of profiles) {
+  if (!profile?.publicKey?.value) continue; // skip stray non-profile json
   config.providers[providerId] = suiAddressFromPem(profile.publicKey.value);
 }
 saveConfig(config);
