@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NetChain — AgentOps</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --panel: #ffffff;
+    --ink: #1d1d1f;
+    --ink-2: #3a3a3c;
+    --muted: #86868b;
+    --faint: #b9b9be;
+    --line: rgba(0,0,0,.06);
+    --blue: #0071e3;
+    --blue-soft: #e8f1fd;
+    --green: #34c759;
+    --green-ink: #1d8a44;
+    --green-soft: #e9f9ef;
+    --amber-ink: #a05a00;
+    --amber-soft: #fff4e5;
+    --red-ink: #c93030;
+    --sh: 0 1px 3px rgba(0,0,0,.04), 0 8px 28px rgba(0,0,0,.05);
+    --spring: cubic-bezier(0.32, 0.72, 0, 1); /* critically damped — damping 1.0 */
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    font: 100%/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace; }
+
+  /* ================= floating dock navbar (bottom) ================= */
+  .dock {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    z-index: 40;
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,.8);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid rgba(255,255,255,.55);
+    border-radius: 22px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.06);
+  }
+  .brand-mark {
+    width: 30px; height:30px; border-radius: 9px; flex:none; margin-right: 4px;
+    background: linear-gradient(135deg, #0071e3, #00c7be);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:14px; font-weight:800;
+  }
+  .dock-sep { width:1px; height:22px; background:var(--line); margin: 0 4px; flex:none; }
+  .nav-links { display:flex; gap:2px; }
+  .nav-item {
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    padding: 8px 11px; border-radius: 11px; cursor:pointer;
+    font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+    border: 0; background: transparent; font-family: inherit;
+    transition: background-color 160ms ease, color 160ms ease, transform 100ms ease-out;
+  }
+  .nav-item:hover { background: rgba(0,0,0,.05); }
+  .nav-item:active { transform: scale(0.94); transition: transform 100ms ease-out; }
+  .nav-item.on { background: var(--ink); color: #fff; font-weight: 600; }
+  .nav-item svg { width:16px; height:16px; opacity:.9; }
+  .nav-item .n-badge { font-size:9.5px; font-weight:700; color:var(--muted); background:rgba(0,0,0,.06); border-radius:8px; padding:1px 6px; }
+  .nav-item.on .n-badge { background:rgba(255,255,255,.22); color:#fff; }
+
+  .nav-right { display:flex; align-items:center; gap:5px; }
+  .scen-row { display:flex; gap:2px; background:rgba(0,0,0,.05); border-radius:10px; padding:2.5px; }
+  .scen {
+    border:0; cursor:pointer; font-family:inherit;
+    font-size:10.5px; font-weight:600; color:var(--muted);
+    background:transparent; border-radius:8px; padding:4px 10px;
+    transition: all 160ms var(--spring);
+  }
+  .scen.on { background:#fff; color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .scen:active { transform: scale(0.94); }
+  .run-btn {
+    border:0; cursor:pointer; font-family:inherit;
+    font-size:11.5px; font-weight:700; border-radius:980px; padding:7px 15px;
+    transition: all 150ms ease;
+  }
+  .run-primary { background:var(--blue); color:#fff; }
+  .run-primary:active { transform: scale(0.95); transition: transform 100ms ease-out; }
+
+  /* ================= layout ================= */
+  .content { padding: 26px 22px 118px; max-width: 1020px; margin: 0 auto; }
+  .view { display:none; }
+  .view.on { display:block; }
+  .view.on .fade-in { animation: materialIn 440ms var(--spring) backwards; }
+  .view.on .fade-in:nth-child(2) { animation-delay: 70ms; }
+  .view.on .fade-in:nth-child(3) { animation-delay: 140ms; }
+  @keyframes materialIn {
+    from { opacity: 0; transform: translateY(9px) scale(0.99); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .page-head { margin-bottom: 18px; }
+  .page-head h2 { font-size: 24px; font-weight: 800; letter-spacing:-0.02em; line-height:1.1; }
+  .page-head p { font-size: 13px; color: var(--muted); margin-top: 5px; line-height: 1.55; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    font-size: 11px; font-weight:700;
+    border-radius: 20px; padding: 4px 11px;
+  }
+  .chip .dot { width:7px; height:7px; border-radius:50%; }
+  .chip.live { color:var(--blue); background:var(--blue-soft); }
+  .chip.live .dot { background:var(--blue); animation: blink 1.4s ease infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  .chip.good { color:var(--green-ink); background:var(--green-soft); }
+  .chip.good .dot { background:var(--green); }
+  .chip.neutral { color:var(--muted); background:rgba(0,0,0,.05); }
+  .chip.neutral .dot { background:var(--faint); }
+
+  .card { background:var(--panel); border-radius:18px; box-shadow:var(--sh); }
+
+  /* ================= overview — network strength now ================= */
+  .hero {
+    display:grid; grid-template-columns: 1.25fr 1fr; gap:16px; align-items:stretch;
+  }
+  @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+  .net-hero { padding: 30px 32px; display:flex; flex-direction:column; }
+  .net-status-row { display:flex; align-items:center; gap:10px; }
+  .net-big {
+    font-size: 72px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+    margin-top: 18px; font-optical-sizing: auto;
+  }
+  .net-big small { font-size: 18px; font-weight: 600; color: var(--muted); letter-spacing: -0.01em; }
+  .net-sub { font-size: 13.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .net-spark { margin-top: auto; padding-top: 22px; }
+  .net-foot { display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:10px; }
+  .net-foot b { color:var(--ink-2); font-weight:600; }
+
+  .net-side { display:flex; flex-direction:column; gap:10px; }
+  .tile-row { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .tile { background:var(--panel); border-radius:16px; box-shadow:var(--sh); padding:14px 16px; }
+  .tile .k { font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+  .tile .v { font-size:21px; font-weight:700; letter-spacing:-0.02em; line-height:1.1; margin-top:4px; font-optical-sizing:auto; }
+  .tile .s { font-size:11px; color:var(--muted); margin-top:2px; }
+  .v.good { color: var(--green-ink); }
+  .v.bad { color: var(--red-ink); }
+  .session-card { background:var(--panel); border-radius:16px; box-shadow:var(--sh); padding:14px 16px; flex:1; }
+  .session-card .head { display:flex; align-items:center; gap:8px; }
+
+  /* ================= transactions — incidents sidebar + stage timeline ================= */
+  .inc-layout { display:grid; grid-template-columns: 240px minmax(0,1fr); gap:18px; align-items:start; }
+  @media (max-width: 900px) { .inc-layout { grid-template-columns: 1fr; } .inc-side { position:static; } }
+  .inc-side { display:flex; flex-direction:column; gap:8px; position:sticky; top:16px; }
+  .inc-side-label { font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); padding: 2px 4px; }
+  .inc-item {
+    display:flex; flex-direction:column; gap:3px; width:100%;
+    background:var(--panel); border:0; cursor:pointer; font-family:inherit; text-align:left;
+    border-radius:14px; box-shadow:var(--sh); padding:13px 15px;
+    transition: transform 140ms var(--spring), box-shadow 200ms ease, background 160ms ease;
+  }
+  .inc-item:hover { box-shadow:0 2px 10px rgba(0,0,0,.07); }
+  .inc-item:active { transform: scale(0.985); }
+  .inc-item.sel { background: var(--ink); }
+  .inc-item.sel .inc-id, .inc-item.sel .inc-title, .inc-item.sel .inc-meta { color:#fff; }
+  .inc-item.sel .inc-chip { background:rgba(255,255,255,.16); color:#fff; }
+  .inc-top { display:flex; align-items:center; gap:7px; }
+  .inc-id { font-size:12px; font-weight:800; }
+  .inc-chip { font-size:9.5px; font-weight:700; border-radius:9px; padding:2px 7px; margin-left:auto; }
+  .inc-chip.ok { color:var(--green-ink); background:var(--green-soft); }
+  .inc-chip.pen { color:var(--amber-ink); background:var(--amber-soft); }
+  .inc-chip.ref { color:var(--blue); background:var(--blue-soft); }
+  .inc-item.sel .inc-chip.ok, .inc-item.sel .inc-chip.pen, .inc-item.sel .inc-chip.ref { background:rgba(255,255,255,.16); color:#fff; }
+  .inc-title { font-size:12.5px; font-weight:600; color:var(--ink-2); }
+  .inc-meta { font-size:10.5px; color:var(--muted); }
+  .incident-flow { display:none; }
+  .incident-flow.on { display:block; }
+
+  .deal-flow { position: relative; padding-left: 20px; }
+  .stage { position: relative; margin-bottom: 14px; }
+  .stage:last-child { margin-bottom: 0; }
+  .stage:not(:last-child)::before {
+    content:""; position:absolute; left:-1px; top:30px; bottom:-30px; width:2px;
+    background: rgba(52,199,89,.35); border-radius:2px;
+  }
+  .stage-dot {
+    position:absolute; left:-12px; top:18px; width:24px; height:24px; border-radius:50%;
+    background:var(--green-soft); color:var(--green-ink);
+    font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center;
+    border:2px solid #fff; box-shadow:0 0 0 1.5px rgba(52,199,89,.35);
+    z-index:1;
+  }
+  .stage-card { background:var(--panel); border-radius:18px; box-shadow:var(--sh); overflow:hidden; }
+  .stage-head {
+    display:flex; align-items:center; gap:13px; width:100%;
+    padding: 16px 20px; border:0; background:transparent; cursor:pointer;
+    font-family:inherit; text-align:left; transition: background 160ms var(--spring);
+  }
+  .stage-head:hover { background: rgba(0,0,0,.02); }
+  .stage-head:active { background: rgba(0,113,227,.05); }
+  .stage-kicker { font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
+  .stage-name { font-size:15px; font-weight:700; letter-spacing:-0.01em; margin-top:1px; }
+  .stage-digest { font-size:11px; color:var(--muted); margin-top:2px; }
+  .stage-amt { margin-left:auto; text-align:right; flex:none; }
+  .stage-amt .a { font-size:14.5px; font-weight:700; letter-spacing:-0.015em; }
+  .stage-amt .s { font-size:10.5px; color:var(--muted); margin-top:1px; }
+  .stage-caret { color:var(--faint); font-size:12px; flex:none; transition: transform 300ms var(--spring); }
+  .stage.open .stage-caret { transform: rotate(90deg); }
+  .stage-body { display:none; border-top:1px solid var(--line); }
+  .stage.open .stage-body { display:block; animation: materialIn 340ms var(--spring); }
+
+  .chain-rows { padding: 12px 20px 4px; }
+  .kv { display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .kv:last-child { border-bottom:0; }
+  .kv .k { color:var(--muted); }
+  .kv .v { font-weight:600; text-align:right; }
+
+  .steps { padding: 6px 10px 14px; }
+  /* ----- SLA performance report ----- */
+  .sla-report { padding: 16px 20px 6px; }
+  .sla-report-title { font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); margin-bottom:10px; }
+  .sla-stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; }
+  @media (max-width: 700px) { .sla-stats { grid-template-columns: repeat(2, 1fr); } }
+  .sla-stat { background:var(--bg); border-radius:11px; padding:9px 12px; }
+  .sla-stat .k { font-size:9.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+  .sla-stat .v { font-size:15px; font-weight:700; letter-spacing:-0.015em; margin-top:2px; font-optical-sizing:auto; }
+  .sla-stat .v.good { color:var(--green-ink); }
+  .sla-chart { margin-top:12px; background:var(--bg); border-radius:12px; padding:12px 12px 6px; }
+  .sla-samples { margin-top:12px; display:grid; grid-template-columns: repeat(6, 1fr); gap:5px; }
+  .s-sample {
+    background:var(--green-soft); color:var(--green-ink);
+    border-radius:8px; padding:6px 4px; text-align:center;
+    font-size:10.5px; font-weight:700;
+  }
+  .s-sample .s-t { display:block; font-size:8.5px; font-weight:600; color:var(--muted); margin-top:1px; }
+  .s-sample.warn { background:var(--amber-soft); color:var(--amber-ink); }
+  .sla-verdict {
+    display:flex; align-items:center; gap:12px; margin-top:12px;
+    background:var(--green-soft); border-radius:12px; padding:12px 15px;
+  }
+  .sla-verdict.pen { background:var(--amber-soft); }
+  .sla-verdict.ref { background:var(--blue-soft); }
+  .sla-verdict .big { font-size:14.5px; font-weight:800; letter-spacing:-0.015em; }
+  .sla-verdict .sub { font-size:11px; color:var(--muted); margin-top:1px; }
+  .sla-verdict .pill { margin-left:auto; font-size:11px; font-weight:700; border-radius:16px; padding:4px 11px; background:#fff; color:var(--green-ink); flex:none; }
+  .sla-verdict.pen .pill { color:var(--amber-ink); }
+  .modal .sla-report { padding:0; }
+  .modal .sla-stats { grid-template-columns: repeat(4,1fr); }
+  .modal .sla-samples { grid-template-columns: repeat(6,1fr); }
+  .modal .log-table { font-size:11.5px; }
+  .modal .lt-head, .modal .lt-row { padding:9px 14px; }
+  .sla-teaser {
+    display:flex; align-items:center; gap:14px;
+    background:var(--bg); border-radius:12px; padding:13px 16px;
+    margin:12px 20px 2px;
+  }
+  /* ----- settlement receipt ----- */
+  .receipt {
+    margin:16px 20px 18px;
+    background:var(--bg); border-radius:12px;
+    padding:18px 18px 14px;
+    font-family:"SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+    font-size:11.5px; color:var(--ink-2);
+  }
+  .receipt .r-head { text-align:center; font-weight:800; letter-spacing:.12em; font-size:10.5px; color:var(--ink); }
+  .receipt .r-sub { text-align:center; color:var(--muted); font-size:10px; margin-top:2px; }
+  .receipt .r-dash { border-top:1.5px dashed rgba(0,0,0,.16); margin:10px 0; }
+  .receipt .r-line { display:flex; justify-content:space-between; gap:12px; padding:2.5px 0; }
+  .receipt .r-line.total { font-weight:800; color:var(--ink); font-size:12.5px; }
+  .receipt .r-stamp {
+    margin:14px auto 0; width:max-content;
+    border:1.5px solid var(--green-ink); color:var(--green-ink);
+    border-radius:8px; padding:4px 11px;
+    font-size:10px; font-weight:800; letter-spacing:.14em;
+    transform:rotate(-3deg);
+    background:rgba(52,199,89,.06);
+  }
+  .receipt .r-stamp.amber { border-color:var(--amber-ink); color:var(--amber-ink); background:rgba(245,166,35,.07); }
+  .receipt .r-stamp.blue { border-color:var(--blue); color:var(--blue); background:rgba(0,113,227,.06); }
+  .receipt .r-foot { text-align:center; color:var(--faint); font-size:9.5px; margin-top:11px; line-height:1.6; font-family:-apple-system, BlinkMacSystemFont, sans-serif; }
+  /* ----- split visual (provider / platform) ----- */
+  .split-visual { margin:14px 20px 18px; }
+  .split-bar {
+    display:flex; height:14px; border-radius:8px; overflow:hidden;
+    background:var(--bg);
+  }
+  .split-bar .prov { background:var(--blue); }
+  .split-bar .plat { background:#c9e2f8; }
+  .split-labels { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:8px; }
+  .split-labels b { color:var(--ink); font-weight:700; }
+  /* ----- proof-of-delivery modal: log history + walrus scan ----- */
+  .modal .modal-sec { margin-top: 16px; }
+  .log-table { background:var(--bg); border-radius:12px; overflow:hidden; font-size:11px; }
+  .lt-head, .lt-row { display:grid; grid-template-columns: 1fr 1.2fr 1fr 1fr 1.1fr; gap:8px; padding:7px 12px; align-items:center; }
+  .lt-head { font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line); }
+  .lt-row { border-bottom:1px solid var(--line); font-weight:600; color:var(--ink-2); }
+  .lt-row:last-child { border-bottom:0; }
+  .lt-row .lt-res { justify-self:end; font-size:9.5px; font-weight:800; border-radius:8px; padding:1px 8px; }
+  .lt-row .lt-res.pass { color:var(--green-ink); background:var(--green-soft); }
+  .lt-row .lt-res.pen { color:var(--amber-ink); background:var(--amber-soft); }
+  .modal .sla-verdict { margin-top:12px; }
+  .sla-verdict.ref .pill { color:var(--blue); }
+  .steps { padding: 6px 10px 14px; }
+  .steps-label { font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); padding: 10px 10px 6px; }
+  .step { border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: 0; }
+  .step-row {
+    display:flex; align-items:flex-start; gap:11px; width:100%;
+    padding: 11px 10px; border:0; background:transparent; cursor:pointer;
+    font-family:inherit; text-align:left; border-radius: 10px;
+    transition: background 160ms var(--spring), transform 120ms var(--spring);
+  }
+  .step-row:hover { background: rgba(0,0,0,.025); }
+  .step-row:active { transform: scale(0.995); }
+  .act-av {
+    width:21px; height:21px; border-radius:7px; flex:none; margin-top:1px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9.5px; font-weight:800; color:#fff;
+  }
+  .step-body { min-width:0; flex:1; }
+  .step-line1 { display:flex; align-items:baseline; gap:7px; }
+  .step-who { font-size:12.5px; font-weight:650; }
+  .step-verb { font-size:11px; color:var(--muted); }
+  .step-t { margin-left:auto; font-size:10px; color:var(--faint); flex:none; }
+  .step-text { font-size:12.5px; color:var(--ink-2); line-height:1.45; margin-top:1px; }
+  .step-caret { color:var(--faint); font-size:11px; flex:none; transition: transform 280ms var(--spring); align-self:center; }
+  .step.open .step-caret { transform: rotate(90deg); }
+  .reason {
+    display:none; margin: 4px 0 10px 32px;
+    font-size:12px; color:var(--ink-2); line-height:1.6;
+    border-left: 2px solid var(--blue-soft); padding-left: 12px;
+  }
+  .step.open .reason { display:block; animation: materialIn 300ms var(--spring); }
+  .reason .r-tag { font-size:9.5px; font-weight:800; letter-spacing:.08em; color:var(--blue); text-transform:uppercase; display:block; margin-bottom:3px; }
+  .step-ref { margin-left:auto; flex:none; display:flex; gap:5px; align-items:center; }
+  .txd-check { width:24px; height:24px; border-radius:50%; background:var(--green-soft); color:var(--green-ink); font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none; }
+  .txd-status { font-size:11px; font-weight:700; color:var(--green-ink); background:var(--green-soft); border-radius:14px; padding:3px 10px; flex:none; }
+
+  /* ---------- evidence page ---------- */
+  .grid2 { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; margin-top:16px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .wal-status { display:flex; align-items:center; gap:11px; }
+  .icn { width:36px; height:36px; border-radius:10px; background:var(--bg); display:flex; align-items:center; justify-content:center; flex:none; }
+  .icn svg { width:17px; height:17px; stroke:var(--ink-2); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .wal-num { font-size:15px; font-weight:800; letter-spacing:-0.015em; }
+  .wal-sub { font-size:11px; color:var(--muted); margin-top:1px; }
+  .wal-blob { margin-top:11px; font-size:10.5px; color:var(--muted); background:var(--bg); border-radius:9px; padding:8px 11px; word-break:break-all; line-height:1.6; }
+  .proof-band { display:none; margin-top:11px; font-size:11.5px; line-height:1.55; color:var(--green-ink); background:var(--green-soft); border-radius:11px; padding:10px 13px; }
+  .proof-band.show { display:block; animation: materialIn 340ms var(--spring); }
+  .vstep { display:flex; gap:9px; align-items:center; font-size:12.5px; color:var(--muted); padding:7px 0; }
+  .vstep .vs-dot { width:18px; height:18px; border-radius:50%; background:var(--bg); color:var(--faint); font-size:10px; display:flex; align-items:center; justify-content:center; flex:none; overflow:hidden; transition: all 200ms var(--spring); }
+  .vstep .vs-text { flex:1; line-height:1.45; }
+  .vstep.done { color:var(--ink-2); }
+  .vstep.done .vs-dot { background:var(--green-soft); color:var(--green-ink); }
+  .txd-link { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .link-btn {
+    display:inline-block; border:0; cursor:pointer; font-family:inherit; text-decoration:none;
+    font-size:12px; font-weight:700; color:#fff; background:var(--blue);
+    border-radius: 980px; padding: 8px 20px;
+    transition: filter .15s ease, transform 100ms ease-out;
+  }
+  .link-btn:hover { filter: brightness(1.07); }
+  .link-btn:active { transform: scale(0.96); }
+  .link-btn.ghost { background:rgba(0,0,0,.07); color:var(--ink-2); }
+
+  /* ---------- profile ---------- */
+  .prof-grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:16px; }
+  @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } }
+  .pcard { background:var(--panel); border-radius:18px; box-shadow:var(--sh); padding:18px 20px; }
+  .pcard.span2 { grid-column: 1 / -1; }
+  .pcard-title { font-size:13px; font-weight:700; margin-bottom: 4px; }
+  .pcard-sub { font-size:11px; color:var(--muted); }
+  .id-row { display:flex; align-items:center; gap:13px; }
+  .avatar { width:46px; height:46px; border-radius:50%; flex:none; background:var(--bg); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; color:var(--ink-2); }
+  .id-name { font-size:15.5px; font-weight:700; letter-spacing:-0.015em; }
+  .id-mail { font-size:12px; color:var(--muted); margin-top:1px; }
+  .id-chips { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; }
+  .act-ref { display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:var(--blue); background:var(--blue-soft); border-radius:7px; padding:2px 8px; }
+  .act-ref.green { color:var(--green-ink); background:var(--green-soft); }
+  .act-ref.amber { color:var(--amber-ink); background:var(--amber-soft); }
+  .addr-row { display:flex; align-items:center; gap:8px; margin-top:12px; background:var(--bg); border-radius:10px; padding:9px 12px; }
+  .addr-row .mono { font-size:11px; color:var(--ink-2); word-break:break-all; flex:1; }
+  .addr-row .copy { border:0; cursor:pointer; background:rgba(0,0,0,.05); color:var(--muted); font-size:10px; font-weight:700; border-radius:6px; padding:3px 8px; font-family:inherit; flex:none; transition: transform 100ms ease-out; }
+  .addr-row .copy:active { transform: scale(0.94); }
+  .kv-p { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .kv-p:last-child { border-bottom:0; }
+  .kv-p .k { color:var(--muted); }
+  .kv-p .v { font-weight:600; text-align:right; }
+  .kv-p .v.money { font-size:14px; }
+  .switch { width:40px; height:24px; border-radius:9999px; background:rgba(0,0,0,.16); position:relative; cursor:pointer; border:0; flex:none; transition: background 220ms var(--spring); }
+  .switch::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition: transform 260ms var(--spring); }
+  .switch.on { background:var(--green); }
+  .switch.on::after { transform: translateX(16px); }
+  .switch:active::after { transform: scale(0.9); }
+  .switch.on:active::after { transform: translateX(16px) scale(0.9); }
+  .rec-row { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); }
+  .rec-row:last-child { border-bottom:0; }
+  .rec-id { font-weight:700; font-size:12.5px; }
+  .rec-sub { font-size:11px; color:var(--muted); margin-top:1px; }
+  .txd-check { width:24px; height:24px; border-radius:50%; background:var(--green-soft); color:var(--green-ink); font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none; }
+  .txd-status { font-size:11px; font-weight:700; color:var(--green-ink); background:var(--green-soft); border-radius:14px; padding:3px 10px; flex:none; }
+  .pay-amount { font-size:34px; font-weight:800; letter-spacing:-0.022em; line-height:1.05; font-optical-sizing:auto; }
+  .pay-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+  .caption { font-size:12.5px; color:var(--muted); margin-top:16px; line-height:1.6; }
+
+  /* ---------- modal ---------- */
+  .scrim {
+    position:fixed; inset:0; z-index:60;
+    background:rgba(18,20,24,.35);
+    display:flex; align-items:center; justify-content:center; padding:16px;
+    opacity:0; pointer-events:none;
+    transition: opacity 240ms var(--spring);
+  }
+  .scrim.open { opacity:1; pointer-events:auto; }
+  .modal {
+    width:min(780px, 94vw); max-height:min(88vh, 960px); overflow-y:auto;
+    background:var(--panel); border-radius:22px; padding:24px 28px 26px;
+    box-shadow:0 24px 80px rgba(0,0,0,.28);
+    transform: translateY(12px) scale(0.96); opacity:0;
+    transition: transform 340ms var(--spring), opacity 240ms var(--spring);
+  }
+  .scrim.open .modal { transform:none; opacity:1; }
+  .modal-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .modal-title { font-size:17px; font-weight:800; letter-spacing:-0.015em; }
+  .modal-x {
+    margin-left:auto; border:0; cursor:pointer; font-family:inherit;
+    width:30px; height:30px; border-radius:50%;
+    background:rgba(0,0,0,.05); color:var(--muted); font-size:13px;
+    transition: background 150ms ease, transform 100ms ease-out;
+  }
+  .modal-x:hover { background:rgba(0,0,0,.09); }
+  .modal-x:active { transform: scale(0.9); }
+  .modal-body { font-size: 13px; }
+  .txd-digest { margin-top:12px; background:var(--bg); border-radius:10px; padding:9px 12px; font-size:11px; color:var(--ink-2); word-break:break-all; line-height:1.5; display:flex; align-items:center; gap:8px; }
+  .txd-digest .copy { margin-left:auto; border:0; cursor:pointer; background:rgba(0,0,0,.05); color:var(--muted); font-size:10px; font-weight:700; border-radius:6px; padding:3px 8px; font-family:inherit; flex:none; transition: transform 100ms ease-out; }
+  .txd-rows { margin-top:12px; }
+  .vote-card { background:var(--bg); border-radius:12px; padding:11px 13px; margin-bottom:8px; animation: materialIn 340ms var(--spring); }
+  .vote-head { display:flex; align-items:baseline; gap:7px; }
+  .vote-name { font-size:12.5px; font-weight:700; }
+  .vote-role { font-size:10.5px; color:var(--muted); }
+  .vote-pick { margin-left:auto; font-size:10px; font-weight:700; color:var(--green-ink); background:var(--green-soft); padding:2px 8px; border-radius:9px; flex:none; }
+  .vote-why { font-size:12px; color:var(--ink-2); line-height:1.5; margin-top:5px; }
+  .sub-label { font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin:14px 0 8px; }
+  .verdict-band { display:flex; align-items:center; gap:10px; background:var(--green-soft); border-radius:12px; padding:12px 14px; }
+  .verdict-band .big { font-size:16px; font-weight:800; letter-spacing:-0.015em; }
+  .verdict-band .sub { font-size:11px; color:var(--muted); margin-top:1px; }
+  .verdict-pill { margin-left:auto; font-size:11px; font-weight:700; color:var(--green-ink); background:#fff; border-radius:16px; padding:4px 11px; flex:none; }
+  .fchip-row { display:flex; gap:6px; margin:14px 0 4px; flex-wrap:wrap; }
+  .fchip { border:0; cursor:pointer; font-family:inherit; font-size:11.5px; font-weight:600; color:var(--muted); background:rgba(0,0,0,.05); border-radius:16px; padding:5px 13px; transition: all 160ms var(--spring); }
+  .fchip.on { background:var(--ink); color:#fff; }
+  .fchip:active { transform: scale(0.95); }
+
+  /* ---- accessibility ---- */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .dock { background: #f5f5f7; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="content">
+
+  <!-- ============ VIEW: NETWORK (OVERVIEW) ============ -->
+  <section class="view on" id="view-overview">
+    <div class="page-head" style="display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap;">
+      <div>
+        <h2>Your network, right now</h2>
+        <p>Live strength of the line you are paying for — protected by autonomous agents.</p>
+      </div>
+      <span class="chip live"><span class="dot"></span>MONITORING · 1s interval</span>
+    </div>
+
+    <div class="hero">
+      <div class="card net-hero fade-in">
+        <div class="net-status-row">
+          <span class="chip good"><span class="dot"></span>Recovered · Backup active</span>
+          <span class="chip neutral" style="margin-left:auto;">Escrow settled</span>
+        </div>
+        <div class="net-big">500<small> Mbps</small></div>
+        <div class="net-sub">
+          Primary fiber suppressed — you are running on a <b style="color:var(--ink-2);">KilatLink FWA backup slice</b>,
+          bought and attached by your agent in 8.2s.
+        </div>
+        <div class="net-spark">
+          <svg width="100%" height="64" viewBox="0 0 280 54" preserveAspectRatio="none">
+            <line x1="0" x2="280" y1="10" y2="10" stroke="#e5e5ea" stroke-dasharray="4 3"/>
+            <polyline fill="none" stroke="#0071e3" stroke-width="2" stroke-linejoin="round"
+              points="0,46 18,44 36,20 54,17 90,16 130,16 170,15 210,16 250,15 280,16"/>
+            <g fill="#34c759">
+              <circle cx="54" cy="17" r="2.6"/><circle cx="120" cy="16" r="2.6"/><circle cx="190" cy="16" r="2.6"/><circle cx="280" cy="16" r="2.6"/>
+            </g>
+            <text x="2" y="7" font-size="8" fill="#aeaeb2">backup attached →</text>
+          </svg>
+          <div class="net-foot">
+            <span>last 60s · <b>0</b> samples below 95%</span>
+            <span>next check <b>1s</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="net-side fade-in">
+        <div class="tile-row">
+          <div class="tile"><div class="k">Primary</div><div class="v bad">0 Mbps</div><div class="s">suppressed</div></div>
+          <div class="tile"><div class="k">Backup</div><div class="v good">+500</div><div class="s">KilatLink FWA</div></div>
+          <div class="tile"><div class="k">Latency</div><div class="v">19 ms</div><div class="s">was 142 ms</div></div>
+          <div class="tile"><div class="k">Loss</div><div class="v good">0.0%</div><div class="s">was 4.2%</div></div>
+        </div>
+        <div class="session-card">
+          <div class="head">
+            <div>
+              <div class="panel-title" style="font-size:13px;font-weight:700;">Backup session</div>
+              <div class="wal-sub">KilatLink FWA · 500 Mbps · 30 min</div>
+            </div>
+            <span class="chip good" style="margin-left:auto;"><span class="dot"></span>SLA OK</span>
+          </div>
+          <div class="kv" style="margin-top:10px;"><span class="k">Expires in</span><span class="v mono" style="font-size:13px;">28:14</span></div>
+          <div class="kv"><span class="k">Paid by agent</span><span class="v">RM 12.60</span></div>
+          <div class="kv"><span class="k">Deal details</span><span class="v"><button class="link-btn ghost" style="padding:5px 13px;font-size:11px;" data-view="tx">Open transaction ↓</button></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+    <!-- ============ VIEW: TRANSACTIONS = INCIDENTS + STAGES ============ -->
+    <section class="view" id="view-tx">
+      <div class="page-head">
+        <h2>Incidents</h2>
+        <p>Pick an incident to see its deal — escrow → verify → settle.<br>Open the full report for details.</p>
+      </div>
+
+      <div class="inc-layout">
+
+        <div class="inc-side" id="incSide">
+          <div class="inc-side-label">Incidents</div>
+          <button class="inc-item sel" data-inc="nc2041">
+            <span class="inc-top"><span class="inc-id">NC-2041</span><span class="inc-chip ok">SETTLED</span></span>
+            <span class="inc-title">Primary down · boosted +500 Mbps</span>
+            <span class="inc-meta">KilatLink FWA · 30 min · RM 12.60 · today 09:14</span>
+          </button>
+          <button class="inc-item" data-inc="nc2040">
+            <span class="inc-top"><span class="inc-id">NC-2040</span><span class="inc-chip pen">PENALTY</span></span>
+            <span class="inc-title">Weak signal · under-delivered</span>
+            <span class="inc-meta">KilatLink FWA · 410/500 Mbps · RM 10.45 · yesterday</span>
+          </button>
+          <button class="inc-item" data-inc="nc2039">
+            <span class="inc-top"><span class="inc-id">NC-2039</span><span class="inc-chip ref">REFUNDED</span></span>
+            <span class="inc-title">Activation failed · auto refund</span>
+            <span class="inc-meta">OrbitSat GO · RM 12.60 returned · 2 days ago</span>
+          </button>
+        </div>
+
+        <div class="inc-main">
+
+          <!-- ======== INCIDENT: NC-2041 (settled) ======== -->
+          <div class="incident-flow on" id="inc-nc2041">
+            <div class="deal-flow">
+
+              <div class="stage open" id="st-commit">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 1 · Escrow</div>
+                      <div class="stage-name">Escrow Commit</div>
+                      <div class="stage-digest mono">tx 0x25A8…3F60</div>
+                    </div>
+                    <div class="stage-amt"><div class="a">RM 12.60</div><div class="s">locked in escrow</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="split-visual">
+                      <div class="split-bar"><span class="prov" style="width:95%"></span><span class="plat" style="width:5%"></span></div>
+                      <div class="split-labels"><span>Provider <b>RM 11.97</b></span><span>Platform <b>RM 0.63</b></span></div>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">detected outage</span><span class="step-t">T+0.4s</span></div>
+                            <div class="step-text">Uplink 0 Mbps · 500 Mbps shortfall · P1 services at risk</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why it acted</span>Continuous probing saw RTT jump 18→142 ms and loss hit 4.2%. Protection rule P1 fired: restore within 15 s or escalate.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">A2A broadcast</span><span class="step-t">T+7.2s</span></div>
+                            <div class="step-text">Queried 3 provider agents — 500 Mbps · 30 min · ≤ RM 14</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why this way</span>Parallel A2A query — 3 independent quotes in under 3 s gives the voting agents real market prices to reason over.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#64748b;">N</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">NusaNet 5G</span><span class="step-verb">offer received</span><span class="step-t">T+8.4s</span></div>
+                            <div class="step-text">500 Mbps · 25 ms · RM 18.52 · activation 45 s</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why it was rejected</span>Activation 45 s breaks the 15 s recovery budget, and the cell reports 82% utilisation — congestion risk on a P1 service.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#10b981;">K</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">KilatLink FWA</span><span class="step-verb">offer received — selected</span><span class="step-t">T+11.1s</span></div>
+                            <div class="step-text">500 Mbps · 18 ms · RM 12.60 · activation 8 s · 0% loss route</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Countersigned</span>Agreement nonce NC-2041:PROV-B:001 — provider signature verified before any payment moved.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#8b5cf6;">◆</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">3 voting agents</span><span class="step-verb">voted on the deal</span><span class="step-t">T+12.9s</span></div>
+                            <div class="step-text">Unanimous 3/3 — KilatLink FWA</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason">
+                          <span class="r-tag">Each agent's reasoning</span>
+                          <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+                            <div style="background:var(--bg); border-radius:10px; padding:9px 12px; font-size:12px;"><b>DeepSeek-V3</b> <span style="color:var(--muted);font-size:10.5px;">pricing · 0.96</span><br>"Lowest latency — 18 ms at RM 12.60. The others are congested or 3.4× the price."</div>
+                            <div style="background:var(--bg); border-radius:10px; padding:9px 12px; font-size:12px;"><b>Kimi-k1.5</b> <span style="color:var(--muted);font-size:10.5px;">SLA · 0.95</span><br>"Instant 8 s activation, guaranteed 0% loss route."</div>
+                            <div style="background:var(--bg); border-radius:10px; padding:9px 12px; font-size:12px;"><b>MiniMax</b> <span style="color:var(--muted);font-size:10.5px;">budget · 0.98</span><br>"RM 12.60 is inside the RM 14.00 cap you approved."</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">signed &amp; paid</span><span class="step-t">T+20.2s</span></div>
+                            <div class="step-text">Built the PTB, signed with its own keypair, locked RM 12.60 — no human approval</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why it could pay alone</span>You pre-authorised spending up to RM 14.00 per incident. The agent's ed25519 signature is verified inside the Move contract — the chain enforces the authority.</div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage" id="st-verify">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 2 · Verify</div>
+                      <div class="stage-name">SLA Verification</div>
+                      <div class="stage-digest mono">tx 0x9C41…7B22</div>
+                    </div>
+                    <div class="stage-amt"><div class="a" style="color:var(--green-ink);">OK</div><div class="s">500 / 500 Mbps</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="sla-teaser">
+                      <div style="flex:1;">
+                        <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);">Boost performance · 30 min</div>
+                        <div style="font-size:13.5px;font-weight:700;margin-top:2px;">500 / 500 Mbps avg · 0 of 6 samples below floor</div>
+                      </div>
+                      <button class="link-btn" onclick="openSlaReport('ok')">Full report</button>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#10b981;">K</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">KilatLink FWA</span><span class="step-verb">capacity live</span><span class="step-t">T+24.5s</span></div>
+                            <div class="step-text">QoD session established — +500 Mbps online in 8 s</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">What happened</span>CAMARA QoD programmable slice attached to the CPE; traffic steering confirmed by the first probe at 498 Mbps.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#8b5cf6;">◆</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">Voting agents</span><span class="step-verb">voted on the service</span><span class="step-t">T+30.3s</span></div>
+                            <div class="step-text">5 probes · delivered 500/500 Mbps — provider kept its promise</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason">
+                          <span class="r-tag">SLA vote reasoning</span>
+                          <div style="background:var(--bg); border-radius:10px; padding:9px 12px; font-size:12px; margin-top:6px;">
+                            "Five independent samples: 498, 501, 499, 502, 500 Mbps. Zero samples under the 95% floor. <b>Verdict: service correct — pay in full.</b>"
+                          </div>
+                        </div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage" id="st-settle">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 3 · Settle</div>
+                      <div class="stage-name">Split Settlement</div>
+                      <div class="stage-digest mono">tx 0x6E9F…01CD</div>
+                    </div>
+                    <div class="stage-amt"><div class="a">RM 11.97 <span style="color:var(--muted);font-weight:600;font-size:12px;">+ 0.63</span></div><div class="s">provider · platform</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="receipt">
+                      <div class="r-head">SETTLEMENT RECEIPT</div>
+                      <div class="r-sub">released automatically by contract</div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>Provider share</span><span>RM 11.97</span></div>
+                      <div class="r-line"><span>Platform fee</span><span>RM 0.63</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line total"><span>Released from escrow</span><span>RM 12.60</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>tx</span><span>0x6E9F…01CD</span></div>
+                      <div class="r-stamp">AUTO-RELEASED ✓</div>
+                      <div class="r-foot">Nobody clicked "pay" — the contract released funds<br>the moment the SLA verdict was on-chain.</div>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">settled</span><span class="step-t">T+34.3s</span></div>
+                            <div class="step-text">Released escrow — provider paid, platform fee taken, atomically</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why now</span>Settlement only fires after the SLA verdict exists on-chain. A penalty verdict would have cut the provider's share automatically.</div>
+                      </div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#8b5cf6;">W</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">Walrus</span><span class="step-verb">evidence archived</span><span class="step-t">T+37.7s</span></div>
+                            <div class="step-text">Network-strength proof stored — 5 copies · retrievable 1 year</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why it matters</span>The proof of delivered strength outlives the session — it is attached to the Full report.</div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div><!-- /incident nc2041 -->
+
+          <!-- ======== INCIDENT: NC-2040 (penalty) ======== -->
+          <div class="incident-flow" id="inc-nc2040">
+            <div class="deal-flow">
+
+              <div class="stage" id="st2-commit">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 1 · Escrow</div>
+                      <div class="stage-name">Escrow Commit</div>
+                      <div class="stage-digest mono">tx 0xB701…22D4</div>
+                    </div>
+                    <div class="stage-amt"><div class="a">RM 12.60</div><div class="s">locked in escrow</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="split-visual">
+                      <div class="split-bar"><span class="prov" style="width:95%"></span><span class="plat" style="width:5%"></span></div>
+                      <div class="split-labels"><span>Provider <b>RM 11.97</b></span><span>Platform <b>RM 0.63</b></span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage open" id="st2-verify">
+                <div class="stage-dot">!</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 2 · Verify</div>
+                      <div class="stage-name">SLA Verification — Penalty</div>
+                      <div class="stage-digest mono">tx 0xB7D2…44AE</div>
+                    </div>
+                    <div class="stage-amt"><div class="a" style="color:var(--amber-ink);">82%</div><div class="s">410 / 500 Mbps</div></div>
+                    <span class="txd-status" style="color:var(--amber-ink);background:var(--amber-soft);">PENALTY</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="sla-teaser">
+                      <div style="flex:1;">
+                        <div style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);">Boost performance · 30 min</div>
+                        <div style="font-size:13.5px;font-weight:700;margin-top:2px;color:var(--amber-ink);">411 / 500 Mbps avg · 6 of 6 samples below floor</div>
+                      </div>
+                      <button class="link-btn" onclick="openSlaReport('pen')">Full report</button>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#8b5cf6;">◆</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">Voting agents</span><span class="step-verb">voted on the service</span><span class="step-t">T+30.1s</span></div>
+                            <div class="step-text">6 probes · delivered 411/500 Mbps — below the 95% floor throughout</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason">
+                          <span class="r-tag">SLA vote reasoning</span>
+                          <div style="background:var(--bg); border-radius:10px; padding:9px 12px; font-size:12px; margin-top:6px;">
+                            "Every sample sits between 405–418 Mbps: 82% of promised, never crossing the floor. The provider's slice was oversubscribed. <b>Verdict: penalty 18% — buyer compensated RM 2.15.</b>"
+                          </div>
+                        </div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage" id="st2-settle">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 3 · Settle</div>
+                      <div class="stage-name">Settlement (Penalty Applied)</div>
+                      <div class="stage-digest mono">tx 0x5C08…9E11</div>
+                    </div>
+                    <div class="stage-amt"><div class="a">RM 9.82 <span style="color:var(--muted);font-weight:600;font-size:12px;">+ 0.63</span></div><div class="s">provider · platform</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="receipt">
+                      <div class="r-head">SETTLEMENT RECEIPT</div>
+                      <div class="r-sub">released automatically by contract</div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>SLA verdict</span><span>82% delivered · penalty 18%</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>Provider share (net)</span><span>RM 9.82</span></div>
+                      <div class="r-line"><span>Penalty → buyer</span><span>+ RM 2.15</span></div>
+                      <div class="r-line"><span>Platform fee</span><span>RM 0.63</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line total"><span>Released from escrow</span><span>RM 12.60</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>tx</span><span>0x5C08…9E11</span></div>
+                      <div class="r-stamp amber">PENALTY APPLIED</div>
+                      <div class="r-foot">Computed from the anchored samples — terms the provider<br>agreed to when countersigning the offer.</div>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">settled with penalty</span><span class="step-t">T+34.3s</span></div>
+                            <div class="step-text">Verdict applied on-chain — no dispute process, no human needed</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why it matters</span>The penalty wasn't negotiated — it was computed from the anchored samples by the contract. The provider agreed to these terms when countersigning.</div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div><!-- /incident nc2040 -->
+
+          <!-- ======== INCIDENT: NC-2039 (refunded) ======== -->
+          <div class="incident-flow" id="inc-nc2039">
+            <div class="deal-flow">
+
+              <div class="stage" id="st3-commit">
+                <div class="stage-dot">✓</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 1 · Escrow</div>
+                      <div class="stage-name">Escrow Commit</div>
+                      <div class="stage-digest mono">tx 0x81FA…2C60</div>
+                    </div>
+                    <div class="stage-amt"><div class="a">RM 12.60</div><div class="s">locked in escrow</div></div>
+                    <span class="txd-status">Finalized</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="split-visual">
+                      <div class="split-bar"><span class="prov" style="width:95%"></span><span class="plat" style="width:5%"></span></div>
+                      <div class="split-labels"><span>Provider <b>OrbitSat GO</b></span><span>Platform <b>RM 0.63</b></span></div>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#0ea5e9;">R</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">RescueAgent</span><span class="step-verb">A2A broadcast</span><span class="step-t">T+7.0s</span></div>
+                            <div class="step-text">No FWA agent available — satellite fallback selected, budget ≤ RM 14</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">Why OrbitSat</span>Only reachable provider that night. Agents proceeded — escrow protects the buyer even if activation fails.</div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+              <div class="stage open" id="st3-refund">
+                <div class="stage-dot">↩</div>
+                <div class="stage-card">
+                  <button class="stage-head" onclick="toggleStage(this)">
+                    <div>
+                      <div class="stage-kicker">Stage 2 · Refund</div>
+                      <div class="stage-name">Escrow Refund</div>
+                      <div class="stage-digest mono">tx 0xE44B…77C9</div>
+                    </div>
+                    <div class="stage-amt"><div class="a" style="color:var(--blue);">RM 12.60</div><div class="s">returned to buyer</div></div>
+                    <span class="txd-status" style="color:var(--blue);background:var(--blue-soft);">REFUNDED</span>
+                    <span class="stage-caret">›</span>
+                  </button>
+                  <div class="stage-body">
+                    <div class="receipt">
+                      <div class="r-head">REFUND RECEIPT</div>
+                      <div class="r-sub">released automatically by contract</div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>Provider share</span><span>RM 0.00</span></div>
+                      <div class="r-line"><span>Platform fee</span><span>RM 0.00</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line total"><span>Returned to buyer</span><span>RM 12.60</span></div>
+                      <div class="r-dash"></div>
+                      <div class="r-line"><span>Reason</span><span>activation failed ×2</span></div>
+                      <div class="r-line"><span>tx</span><span>0xE44B…77C9</span></div>
+                      <div class="r-stamp blue">REFUNDED · NO SERVICE CHARGED</div>
+                      <div class="r-foot">No ticket, no dispute, no waiting —<br>the escrow terms decided automatically.</div>
+                    </div>
+<div class="steps">
+                      <div class="steps-label">Agent activity behind this stage</div>
+                      <div class="step">
+                        <button class="step-row" onclick="toggleStep(this)">
+                          <span class="act-av" style="background:#b45309;">O</span>
+                          <div class="step-body">
+                            <div class="step-line1"><span class="step-who">OrbitSat GO</span><span class="step-verb">activation failed</span><span class="step-t">T+26.0s</span></div>
+                            <div class="step-text">Two activation attempts failed — beam handover unreachable</div>
+                          </div>
+                          <span class="step-caret">›</span>
+                        </button>
+                        <div class="reason"><span class="r-tag">What the agents did</span>Retried once, then escalated to the refund path. No negotiation, no ticket — the escrow terms decided automatically.</div>
+                      </div>
+                    </div><!-- /steps -->
+                  
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div><!-- /incident nc2039 -->
+
+        </div><!-- /inc-main -->
+      </div><!-- /inc-layout -->
+    </section>
+
+    <!-- ============ VIEW: PROFILE ============ -->
+  <section class="view" id="view-profile">
+    <div class="page-head">
+      <h2>Profile</h2>
+      <p>Your identity, wallet and the authority you granted the agents.</p>
+    </div>
+    <div class="prof-grid">
+
+      <div class="pcard fade-in">
+        <div class="id-row">
+          <div class="avatar">CG</div>
+          <div>
+            <div class="id-name">Chhin Chung Gan</div>
+            <div class="id-mail">chinchunggan@gmail.com</div>
+          </div>
+        </div>
+        <div class="id-chips">
+          <span class="act-ref green">✓ Google zkLogin</span>
+          <span class="act-ref">Pixel 9 Pro · eSIM</span>
+        </div>
+        <div class="addr-row">
+          <span class="mono">0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C</span>
+          <button class="copy" onclick="navigator.clipboard&&navigator.clipboard.writeText('0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C');this.textContent='Copied'">Copy</button>
+        </div>
+      </div>
+
+      <div class="pcard fade-in">
+        <div class="pcard-title">Wallet</div>
+        <div class="pcard-sub">Spending balance for autonomous recovery</div>
+        <div style="font-size:30px;font-weight:800;letter-spacing:-0.02em;line-height:1.05;margin-top:10px;">RM 65.00</div>
+        <div class="kv-p" style="margin-top:8px;"><span class="k">This month</span><span class="v">RM 12.60</span></div>
+        <div class="kv-p"><span class="k">Monthly limit</span><span class="v">RM 100.00</span></div>
+        <div class="txd-link" style="justify-content:flex-start;margin-top:12px;">
+          <button class="link-btn" data-m="topup">Add funds</button>
+        </div>
+      </div>
+
+      <div class="pcard fade-in">
+        <div class="pcard-title">Agent authority</div>
+        <div class="pcard-sub">What your agent may do without asking</div>
+        <div class="addr-row" style="margin-top:12px;">
+          <span class="mono">keypair&nbsp; rescue.ed25519</span>
+          <span class="act-ref green" style="margin-left:auto;">active</span>
+        </div>
+        <div class="kv-p"><span class="k">Auto-pay cap</span><span class="v">RM 14.00 / incident</span></div>
+        <div class="kv-p"><span class="k">Gas</span><span class="v">sponsored by platform</span></div>
+        <div class="kv-p">
+          <span class="k">Intent approval required</span>
+          <button class="switch on" aria-label="Require intent approval"></button>
+        </div>
+        <div class="txd-link" style="justify-content:flex-start;margin-top:12px;">
+          <button class="link-btn ghost" onclick="openModal('Revoke authority','<p style=&quot;color:var(--muted);font-size:12.5px;line-height:1.6;&quot;>The agent will keep protecting your network but will ask before every payment. You can restore full autonomy anytime.</p><div class=&quot;txd-link&quot;><button class=&quot;link-btn ghost&quot; onclick=&quot;closeModal()&quot;>Keep authority</button> <button class=&quot;link-btn&quot; onclick=&quot;closeModal()&quot;>Revoke</button></div>')">Revoke authority</button>
+        </div>
+      </div>
+
+      <div class="pcard fade-in">
+        <div class="pcard-title">Protection</div>
+        <div class="pcard-sub">When the agents are allowed to act</div>
+        <div class="kv-p" style="margin-top:6px;">
+          <span class="k">Auto-recovery on outage</span>
+          <button class="switch on" aria-label="Auto recovery"></button>
+        </div>
+        <div class="kv-p"><span class="k">Act below signal</span><span class="v">14 Mbps</span></div>
+        <div class="kv-p"><span class="k">Max duration</span><span class="v">60 min</span></div>
+      </div>
+
+      <div class="pcard span2 fade-in">
+        <div class="pcard-title">Recent recoveries</div>
+        <div class="pcard-sub">Last autonomous incidents on this line</div>
+        <div style="margin-top:8px;">
+          <div class="rec-row">
+            <span class="txd-check">✓</span>
+            <div>
+              <div class="rec-id">NC-2041 · Primary down</div>
+              <div class="rec-sub">KilatLink FWA · 500 Mbps · 30 min · settled in 8.2s</div>
+            </div>
+            <div style="margin-left:auto;text-align:right;">
+              <div style="font-weight:700;font-size:13.5px;">RM 12.60</div>
+              <div class="rec-sub" style="color:var(--green-ink);font-weight:600;">OK ✓</div>
+            </div>
+          </div>
+          <div class="rec-row">
+            <span class="txd-check" style="background:var(--amber-soft);color:var(--amber-ink);">!</span>
+            <div>
+              <div class="rec-id">NC-2040 · Under-delivery</div>
+              <div class="rec-sub">KilatLink FWA · 410/500 Mbps · penalty enforced on-chain</div>
+            </div>
+            <div style="margin-left:auto;text-align:right;">
+              <div style="font-weight:700;font-size:13.5px;">RM 10.45</div>
+              <div class="rec-sub" style="color:var(--amber-ink);font-weight:600;">PENALTY</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<!-- ================= FLOATING DOCK NAVBAR (BOTTOM) ================= -->
+<div class="dock">
+  <div class="brand-mark">N</div>
+  <nav class="nav-links">
+    <button class="nav-item on" data-view="overview" title="Network" aria-label="Network">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/></svg>
+    </button>
+    <button class="nav-item" data-view="tx" title="Transactions" aria-label="Transactions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10M17 7l-3-3M17 7l-3 3"/><path d="M17 17H7M7 17l3 3M7 17l3-3"/></svg>
+      <span class="n-badge">3</span>
+    </button>
+    <button class="nav-item" data-view="profile" title="Profile" aria-label="Profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20c.9-3.4 3.8-5.2 7.2-5.2s6.3 1.8 7.2 5.2"/></svg>
+    </button>
+  </nav>
+  <div class="dock-sep"></div>
+  <div class="nav-right">
+    <div class="scen-row">
+      <button class="scen on">Down</button>
+      <button class="scen">Under</button>
+      <button class="scen">Fail</button>
+    </div>
+    <button class="run-btn run-primary" id="runDemo">▶ Run</button>
+  </div>
+</div>
+
+<!-- ================= MODAL ================= -->
+<div class="scrim" id="scrim">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <div class="modal-title" id="modalTitle">Title</div>
+      <button class="modal-x" onclick="closeModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- view routing ---------- */
+  const viewTitles = { overview: "Your network", tx: "Incident NC-2041", profile: "Profile" };
+  document.querySelectorAll("[data-view]").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b === btn));
+      document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "view-" + btn.dataset.view));
+      window.scrollTo({ top: 0 });
+    };
+  });
+
+  /* ---------- accordions ---------- */
+  function toggleStage(head) { head.closest(".stage").classList.toggle("open"); }
+  function toggleStep(row) { row.parentElement.classList.toggle("open"); }
+
+  /* ---------- modal system ---------- */
+  const scrim = document.getElementById("scrim");
+  function openModal(title, html) {
+    document.getElementById("modalTitle").textContent = title;
+    document.getElementById("modalBody").innerHTML = html;
+    scrim.classList.add("open");
+  }
+  function closeModal() { scrim.classList.remove("open"); }
+  scrim.addEventListener("click", e => { if (e.target === scrim) closeModal(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+  function chartSvg(ok, samples) {
+    // 700×280 viewBox at natural scale — no preserveAspectRatio distortion
+    const W = 700, H = 280, padL = 64, padR = 20, padT = 34, padB = 44;
+    const yMax = 560, yMin = ok ? 460 : 360;
+    const yOf = v => padT + (yMax - v) / (yMax - yMin) * (H - padT - padB);
+    const xOf = i => padL + i * (W - padL - padR) / (samples.length - 1);
+    const lineColor = ok ? "#0071e3" : "#f5a623";
+    const dotColor = ok ? "#34c759" : "#f5a623";
+    const gid = "g" + (ok ? "ok" : "pen");
+    const baseY = H - padB; // area fills down to the x-axis, not to the top
+
+    const vals = samples.map(s => +s[0]);
+    const linePts = vals.map((v, i) => xOf(i).toFixed(1) + "," + yOf(v).toFixed(1)).join(" ");
+    const areaPts = linePts + ` ${xOf(vals.length - 1).toFixed(1)},${baseY} ${padL},${baseY}`;
+    const yTicks = [500, 475, 450, 425, 400].filter(v => v >= yMin && v <= yMax);
+
+    return `
+      <div class="sla-chart" style="padding:16px 14px 8px;">
+        <div style="display:flex; gap:14px; font-size:11.5px; color:#6e6e73; padding:0 6px 10px; align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:18px;height:0;border-top:2px dashed #1d1d1f;opacity:.5;display:inline-block;"></span>promised 500</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:18px;height:0;border-top:2px dashed ${ok ? "#34c759" : "#f5a623"};opacity:.7;display:inline-block;"></span>SLA floor 475</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:18px;height:3px;background:${lineColor};border-radius:2px;display:inline-block;"></span>delivered</span>
+        </div>
+        <svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+          <defs>
+            <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${lineColor}" stop-opacity="${ok ? "0.20" : "0.18"}"/>
+              <stop offset="100%" stop-color="${lineColor}" stop-opacity="0.01"/>
+            </linearGradient>
+          </defs>
+          ${yTicks.map(v => `
+            <line x1="${padL}" x2="${W - padR}" y1="${yOf(v)}" y2="${yOf(v)}" stroke="#ececf1" stroke-width="1"/>
+            <text x="${padL - 10}" y="${yOf(v) + 4}" font-size="12" fill="#86868b" text-anchor="end">${v}</text>`).join("")}
+          <line x1="${padL}" x2="${W - padR}" y1="${yOf(475)}" y2="${yOf(475)}" stroke="${ok ? "#34c759" : "#f5a623"}" stroke-width="1.6" stroke-dasharray="3 4" opacity="0.6"/>
+          <polygon points="${areaPts}" fill="url(#${gid})"/>
+          <polyline points="${linePts}" fill="none" stroke="${lineColor}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+          ${vals.map((v, i) => `
+            <circle cx="${xOf(i)}" cy="${yOf(v)}" r="5" fill="#fff" stroke="${dotColor}" stroke-width="2.5"/>
+            <text x="${xOf(i)}" y="${yOf(v) - 14}" font-size="12.5" font-weight="700" fill="${ok ? "#1d8a44" : "#a05a00"}" text-anchor="middle">${v}</text>
+            <text x="${xOf(i)}" y="${H - 14}" font-size="12" fill="#86868b" text-anchor="middle">${samples[i][1]}</text>`).join("")}
+        </svg>
+      </div>`;
+  }
+
+  function openSlaReport(kind) {
+    const ok = kind === "ok";
+    const inc = ok ? "NC-2041" : "NC-2040";
+    const samples = ok
+      ? [["498","min 5"],["501","min 10"],["499","min 15"],["502","min 20"],["500","min 25"],["500","min 30"]]
+      : [["411","min 5"],["405","min 10"],["418","min 15"],["409","min 20"],["412","min 25"],["410","min 30"]];
+    const cl = ok ? "" : " warn";
+    const poly = ok
+      ? "0,18 40,17 80,19 120,17 160,18 200,17 240,18 280,17"
+      : "0,22 40,24 80,23 120,25 160,22 200,24 240,23 280,22";
+    const lineColor = ok ? "#0071e3" : "#f5a623";
+    const dotColor = ok ? "#34c759" : "#f5a623";
+    const rtt = ok ? ["19","18","19","18","19","18"] : ["47","52","44","58","49","51"];
+    const loss = ok ? ["0.0","0.0","0.0","0.0","0.0","0.0"] : ["0.4","0.9","0.6","1.2","0.8","1.1"];
+    const jitter = ok ? ["1.8","2.1","1.9","2.0","2.2","1.9"] : ["7.2","8.4","6.8","9.1","7.8","8.2"];
+    openModal(ok ? "Proof of Delivery — Full Evidence" : "Proof of Delivery — Full Evidence (Penalty)", `
+      <div class="tx-detail-card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <span class="chip ${ok ? "good" : "neutral"}"><span class="dot"></span>Incident ${inc} · KilatLink FWA</span>
+          <span class="chip neutral" style="margin-left:auto;">500 Mbps × 30 min</span>
+        </div>
+
+        <div class="modal-sec">
+          <div class="sla-report-title">Session metrics</div>
+          <div class="sla-stats">
+            <div class="sla-stat"><div class="k">Promised</div><div class="v">500 Mbps</div></div>
+            <div class="sla-stat"><div class="k">Delivered avg</div><div class="v" style="${ok ? "color:var(--green-ink);" : "color:var(--amber-ink);"}">${ok ? "500" : "411"} Mbps</div></div>
+            <div class="sla-stat"><div class="k">${ok ? "Lowest sample" : "Worst sample"}</div><div class="v" style="${ok ? "" : "color:var(--amber-ink);"}">${ok ? "498" : "405"} Mbps</div></div>
+            <div class="sla-stat"><div class="k">Samples below 95%</div><div class="v" style="${ok ? "color:var(--green-ink);" : "color:var(--amber-ink);"}">${ok ? "0 / 6" : "6 / 6"}</div></div>
+          </div>
+          ${chartSvg(ok, samples)}
+        </div>
+
+        <div class="modal-sec">
+          <div class="sla-report-title">Probe log history — every sample taken</div>
+          <div class="log-table">
+            <div class="lt-head"><span>Time</span><span>Throughput</span><span>RTT</span><span>Loss</span><span style="justify-self:end;">Result</span></div>
+            ${samples.map(function (s, i) {
+              const pass = ok || false;
+              return '<div class="lt-row"><span class="mono">+' + (i * 5) + ' min</span><span>' + s[0] + ' Mbps</span><span>' + rtt[i] + ' ms</span><span>' + loss[i] + ' %</span><span class="lt-res ' + (ok ? "pass" : "pen") + '">' + (ok ? "≥95%" : "below") + "</span></div>";
+            }).join("")}
+            <div class="lt-row" style="color:var(--muted);"><span class="mono">avg</span><span>${ok ? "500" : "411"} Mbps</span><span>${ok ? "19" : "50"} ms</span><span>${ok ? "0.0" : "0.8"} %</span><span class="lt-res ${ok ? "pass" : "pen"}">${ok ? "100%" : "82%"}</span></div>
+          </div>
+        </div>
+
+        <div class="sla-verdict ${ok ? "" : "pen"}">
+          <div>
+            <div class="big">${ok ? "Delivered 100% of promised · full payment released" : "Delivered 82% of promised · penalty 18%"}</div>
+            <div class="sub">Verdict computed from these samples · penalty ${ok ? "RM 0.00" : "RM 2.15 → buyer"}</div>
+          </div>
+          <span class="pill">${ok ? "SERVICE CORRECT ✓" : "PENALTY ENFORCED"}</span>
+        </div>
+
+        <div class="modal-sec">
+          <div class="sla-report-title">On-chain anchors — this report is verifiable by anyone</div>
+          <div class="log-table" style="font-size:10.5px;">
+            <div class="lt-row"><span>SLA verdict tx</span><span class="mono" style="grid-column:span 3;">0x${ok ? "9C41D02E77B2C4A98F10E3B55D6A02C871F4B9E6603D18A2C057D93F17B22" : "B7D24A90C15E8F36D2A74B08F19C53E287D60A41B9C38F27E50D14A98C36B708"}</span><span class="lt-res pass">Finalized</span></div>
+            <div class="lt-row"><span>connectionLogHash</span><span class="mono" style="grid-column:span 3;">sha256 ${ok ? "5c616065…d42ba504" : "8e22b41a…97af3c05"}</span><span class="lt-res pass">anchored</span></div>
+          </div>
+        </div>
+
+        <div class="modal-sec">
+          <div class="sla-report-title">Walrus — cache blockchain scan</div>
+          <div class="wal-blob mono" style="margin-top:0;">blob&nbsp;&nbsp;9e8a861d-3271-b78b-b24a-a5c7c3b793a1<br>copies&nbsp;&nbsp;5 storage nodes · quorum 3-of-5 · 5 epochs (~1 yr)</div>
+          <div id="walScanArea">
+            <div class="vstep" id="ws1"><span class="vs-dot">1</span><span class="vs-text">Fetch blob from cache blockchain (Walrus testnet)…</span></div>
+            <div class="vstep" id="ws2"><span class="vs-dot">2</span><span class="vs-text">Reassemble erasure-coded shards (3-of-5 quorum)…</span></div>
+            <div class="vstep" id="ws3"><span class="vs-dot">3</span><span class="vs-text">Recompute SHA-256 · compare with connectionLogHash…</span></div>
+            <div class="proof-band" id="wsProof">✓ sha256(blob) == on-chain connectionLogHash — the evidence is intact. Anyone can repeat this scan; it does not depend on NetChain.</div>
+          </div>
+          <div class="txd-link" style="justify-content:flex-start;">
+            <button class="link-btn" id="walScanBtn" onclick="runWalScan()">Scan evidence from cache blockchain</button>
+            <a class="link-btn ghost" href="https://walruscan.com/testnet" target="_blank" rel="noopener noreferrer">walruscan ↗</a>
+          </div>
+        </div>
+      </div>`);
+    if (reducedMotion) {
+      ["ws1", "ws2", "ws3"].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) { el.classList.add("done"); el.querySelector(".vs-dot").textContent = "✓"; }
+      });
+      const p = document.getElementById("wsProof"); if (p) p.classList.add("show");
+    }
+  }
+
+  function runWalScan() {
+    const btn = document.getElementById("walScanBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Scanning…"; }
+    const mark = function (id, label) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.add("done");
+      el.querySelector(".vs-dot").textContent = "✓";
+      if (label) el.querySelector(".vs-text").textContent = label;
+    };
+    setTimeout(function () { mark("ws1", "Blob fetched — 8.2 KB from 5 storage nodes"); }, 700);
+    setTimeout(function () { mark("ws2", "Shards reassembled — quorum met"); }, 1500);
+    setTimeout(function () {
+      mark("ws3");
+      const p = document.getElementById("wsProof"); if (p) p.classList.add("show");
+      if (btn) { btn.textContent = "✓ Evidence verified"; btn.classList.add("btn-green"); }
+    }, 2300);
+  }
+
+  function openIntentModal() {
+    openModal("Approve recovery", `
+      <div class="pay-amount" style="font-size:28px;">RM 12.60 <span style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:0;">cap</span></div>
+      <div class="pay-meta">KilatLink FWA · +500 Mbps · 30 minutes</div>
+      <div class="txd-rows" style="margin-top:12px;">
+        <div class="txd-row kv"><span class="k">Trigger</span><span class="v">Primary link suppressed</span></div>
+        <div class="txd-row kv"><span class="k">Agent will</span><span class="v">negotiate · sign · settle</span></div>
+        <div class="txd-row kv"><span class="k">Without your approval</span><span class="v" style="color:var(--green-ink);">after this ✓</span></div>
+      </div>
+      <div class="txd-link">
+        <button class="link-btn" onclick="closeModal()">Approve &amp; dispatch</button>
+        <button class="link-btn ghost" onclick="closeModal()">Not now</button>
+      </div>
+      <p style="font-size:11px;color:var(--faint);text-align:center;margin-top:10px;line-height:1.5;">
+        Spending is capped at RM 14.00 for this incident. Everything after approval is autonomous.
+      </p>`);
+  }
+
+  let topupAmt = 50;
+  function openTopupModal() {
+    openModal("Add funds", `
+      <p style="font-size:12.5px;color:var(--muted);line-height:1.6;">Top up the balance your agent spends from. Funds are held in your Sui wallet, not on a server.</p>
+      <div class="fchip-row" style="margin:14px 0 4px;" id="amtRow">
+        <button class="fchip" data-a="20">RM 20</button>
+        <button class="fchip on" data-a="50">RM 50</button>
+        <button class="fchip" data-a="100">RM 100</button>
+      </div>
+      <div class="txd-link" style="justify-content:flex-start;">
+        <button class="link-btn" id="amtConfirm">Add RM 50 to wallet</button>
+        <button class="link-btn ghost" onclick="closeModal()">Cancel</button>
+      </div>`);
+    document.querySelectorAll("#amtRow .fchip").forEach(c => c.onclick = () => {
+      document.querySelectorAll("#amtRow .fchip").forEach(x => x.classList.remove("on"));
+      c.classList.add("on");
+      topupAmt = c.dataset.a;
+      const btn = document.getElementById("amtConfirm");
+      if (btn) btn.textContent = "Add RM " + topupAmt + " to wallet";
+    });
+    const btn = document.getElementById("amtConfirm");
+    if (btn) btn.onclick = closeModal;
+  }
+
+  /* ---------- data-m dispatch ---------- */
+  document.querySelectorAll("[data-m]").forEach(el => {
+    el.addEventListener("click", () => {
+      const m = el.dataset.m;
+      if (m === "topup") openTopupModal();
+    });
+  });
+
+  /* ---------- incident switching ---------- */
+  document.querySelectorAll(".inc-item").forEach(it => {
+    it.onclick = () => {
+      document.querySelectorAll(".inc-item").forEach(x => x.classList.toggle("sel", x === it));
+      document.querySelectorAll(".incident-flow").forEach(f => f.classList.toggle("on", f.id === "inc-" + it.dataset.inc));
+      window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+    };
+  });
+
+  /* ---------- switches / scenario ---------- */
+  document.querySelectorAll(".switch").forEach(s => s.onclick = () => s.classList.toggle("on"));
+  document.querySelectorAll(".scen").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".scen").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+  });
+  document.getElementById("runDemo").onclick = openIntentModal;
+
+  /* ---------- open stage 1 by default ---------- */
+  document.getElementById("st-commit").classList.add("open");
+</script>
+</body>
+</html>
