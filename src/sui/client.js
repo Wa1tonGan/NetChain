@@ -11,13 +11,13 @@ import { Transaction } from "@mysten/sui/transactions";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import { getFaucetHost, requestSuiFromFaucetV2 } from "@mysten/sui/faucet";
 import { keypairFromPem } from "./keys.js";
-import { stablecoinConfig, toBaseUnits } from "./stablecoin.js";
+import { TESTNET_USDC, stablecoinConfig, toBaseUnits } from "./stablecoin.js";
 
 const LOCALNET_GRPC = process.env.SUI_LOCALNET_URL ?? "http://127.0.0.1:9000";
 const SUI_CLOCK_ID = "0x6";
 
 export function network() {
-  return process.env.SUI_NETWORK ?? "localnet";
+  return process.env.SUI_NETWORK ?? "testnet";
 }
 
 export function configPath(net = network()) {
@@ -29,10 +29,10 @@ export function makeClient(net = network()) {
   return new SuiGrpcClient({ baseUrl, network: net });
 }
 
-/** The escrow's asset type: localnet demo MYRC, or the configured real stablecoin. */
-export function coinType(config) {
-  const cfg = stablecoinConfig(config.network);
-  return cfg.type ?? `${config.packageId}::myrc::MYRC`;
+/** The escrow's asset type: Circle NATIVE USDC. */
+export function coinType(config = {}) {
+  const cfg = stablecoinConfig(config?.network);
+  return cfg.type ?? TESTNET_USDC;
 }
 
 // v2 executes return a tagged union ({ $kind: "Transaction", Transaction }).
@@ -255,20 +255,23 @@ export async function commitVoucher(client, keypair, config, voucher) {
 
 /** escrow::commit_as_buyer — zkLogin buyer-direct path (no AuthorityCap;
     the buyer hands in their own payment Coin inside the same PTB).
-    `paymentCoinId` = the buyer's own Coin<MYRC> object id (splitting the gas
-    coin would produce Coin<SUI> — a type mismatch against Coin<MYRC>). */
+    `paymentCoinId` = one of the buyer's own stablecoin coin objects. The
+    buyer's coin may hold MORE than the voucher amount (any top-up size), so
+    the PTB splits exactly `amount` out of it — the remainder stays in their
+    wallet. (The Move side asserts coin::value(payment) == amount, so a
+    pre-exact coin is neither required nor assumed.) */
 export function buildCommitAsBuyerTx(config, voucher, paymentCoinId) {
-  const myrc = coinType(config);
+  const coinT = coinType(config);
   if (!paymentCoinId) {
     throw new Error(
       "paymentCoinId required — the buyer wallet has no stablecoin coin object; fund it via POST /v1/fund first"
     );
   }
   const tx = new Transaction();
-  const payment = tx.object(paymentCoinId);
+  const payment = tx.splitCoins(tx.object(paymentCoinId), [tx.pure.u64(voucher.amount)])[0];
   tx.moveCall({
     target: `${config.packageId}::escrow::commit_as_buyer`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [
       tx.object(config.escrowId),
       tx.object(SUI_CLOCK_ID),
@@ -293,11 +296,11 @@ export function buildCommitAsBuyerTx(config, voucher, paymentCoinId) {
 }
 
 export function buildCommitVoucherTx(config, voucher) {
-  const myrc = coinType(config);
+  const coinT = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::commit`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [
       tx.object(config.escrowId),
       tx.object(config.authorityId),
@@ -322,11 +325,11 @@ export function buildCommitVoucherTx(config, voucher) {
 }
 
 export async function settleVoucher(client, keypair, config, voucher) {
-  const myrc = coinType(config);
+  const coinT = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::settle`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [
       tx.object(config.escrowId),
       tx.object(config.authorityId),
@@ -337,11 +340,11 @@ export async function settleVoucher(client, keypair, config, voucher) {
 }
 
 export async function refundVoucher(client, keypair, config, voucher) {
-  const myrc = coinType(config);
+  const coinT = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::refund`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [
       tx.object(config.escrowId),
       tx.object(config.authorityId),
@@ -353,11 +356,11 @@ export async function refundVoucher(client, keypair, config, voucher) {
 
 /** escrow::verify — record the deterministic delivery verdict on-chain. */
 export async function verifyDeliveryOnChain(client, keypair, config, { nonce, logDigest, penalty }) {
-  const myrc = coinType(config);
+  const coinT = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::verify`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [
       tx.object(config.escrowId),
       tx.object(config.authorityId),
@@ -370,11 +373,11 @@ export async function verifyDeliveryOnChain(client, keypair, config, { nonce, lo
 }
 
 export async function reclaimVoucher(client, keypair, config, nonce) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  const coinT = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::reclaim`,
-    typeArguments: [myrc],
+    typeArguments: [coinT],
     arguments: [tx.object(config.escrowId), utf8Vector(tx, nonce)]
   });
   return signAndRun(client, keypair, tx);

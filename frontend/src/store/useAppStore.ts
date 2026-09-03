@@ -23,6 +23,7 @@ import {
   reportActivation,
   scenarioShortage,
   submitIntent,
+  walletCommitSelected,
   zkCommitSelected,
   type ChainRow,
   type GatewayEvent,
@@ -56,6 +57,7 @@ function startChainFeed() {
   connect();
 }
 import { daysAgo, fmtClock } from "../services/format";
+import { isWalletAvailable } from "../services/walletSign";
 import { startConnectivity, setMockDownlink, setMockFailure, type NetworkSample } from "../services/connectivity";
 import type { ZkLoginSession } from "../services/zklogin";
 import type {
@@ -1046,9 +1048,10 @@ async function adoptSelectedOffer(incidentId: string) {
   });
 
   try {
-    // zkLogin buyer-direct path: the USER signs the commit_as_buyer PTB in
-    // their browser (no server key touches the payment). Custodial fallback:
-    // server cap path (localnet demo / prover outage).
+    // Signing-mode selection, most-real first:
+    //   1. zkLogin zk proof   → buyer = zk address (browser zk-signs).
+    //   2. Wallet extension   → buyer = user's OWN wallet (browser wallet-signs).
+    //   3. Custodial fallback → server-cap path (labeled; NOT the zk demo).
     const zk = st.zkLogin;
     if (zk?.proof && zk.signingMode === "zk") {
       sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…");
@@ -1057,8 +1060,15 @@ async function adoptSelectedOffer(incidentId: string) {
       live.committed = true;
       sysBubble(`✓ On-chain commitment ${zkRes.txDigest ? `tx ${zkRes.txDigest.slice(0, 10)}… ` : ""}recorded`);
       live.closers.push(openChainStream(onChainRow));
+    } else if (zk && (zk.iss === "sui-extension" || zk.iss === "sui-standard") && isWalletAvailable()) {
+      sysBubble("🔑 Signing the escrow commitment with your connected Sui wallet (your key, your funds)…");
+      const wRes = await walletCommitSelected(offer, zk.address);
+      if (!live || live.finished) return;
+      live.committed = true;
+      sysBubble(`✓ On-chain commitment ${wRes.txDigest ? `tx ${wRes.txDigest.slice(0, 10)}… ` : ""}recorded — ${zk.address.slice(0, 10)}… paid`);
+      live.closers.push(openChainStream(onChainRow));
     } else {
-      sysBubble("ℹ️ Demo signing mode (no zk proof) — server-cap commit path");
+      sysBubble("ℹ️ Demo signing mode (no zk proof / no wallet) — server-cap commit path");
       const res = await commitSelected(offer);
       if (!live || live.finished) return;
       live.committed = true;
@@ -1070,13 +1080,18 @@ async function adoptSelectedOffer(incidentId: string) {
     reportActivationWhenCommitted();
   } catch (error) {
     if (!live || live.finished) return;
-    live.chainOffline = true;
-    sysBubble(`⚠️ Sui trust service unreachable — proceeding without escrow (${String((error as Error).message).slice(0, 60)})`);
-    // Delivery may already be reported — don't hang waiting for a commit
-    // that will never land.
-    if (useAppStore.getState().incident?.status === "verifying") {
-      setTimeout(() => finishLive("ok", undefined, "Settled (chain offline)"), 1200);
+    // NO fake continuation: a failed commit means NO escrow was locked, so
+    // the recovery FAILS for real — the provider is never activated, nothing
+    // settles, and the user sees exactly why. Silent success here would be a
+    // fake demo.
+    const message = (error as Error).message ?? String(error);
+    sysBubble(`✗ Escrow commitment FAILED — recovery aborted (${message.slice(0, 120)})`);
+    if (live.committed) {
+      sysBubble("No further funds were locked.");
+    } else {
+      sysBubble("No funds were locked. Fix the wallet issue above, then run the recovery again.");
     }
+    finishLive("failed", undefined, `Escrow commit failed: ${message.slice(0, 80)}`);
   }
 }
 

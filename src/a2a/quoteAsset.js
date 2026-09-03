@@ -4,10 +4,8 @@
 // downstream: the quoted price IS the escrowed price. The scale hook remains
 // for tiny escrow pools: set SUI_TESTNET_PRICE_SCALE < 1 to shrink quotes at
 // quote time (same env contract as the fixture generator).
-export function quoteAsset(policyCurrency, env = process.env) {
-  if ((env.SUI_NETWORK ?? "localnet") !== "testnet") {
-    return { currency: policyCurrency, scale: 1 };
-  }
+// Money the A2A market quotes in. Always quotes in USD (Circle USDC).
+export function quoteAsset(policyCurrency = "USD", env = process.env) {
   return {
     currency: env.SUI_TESTNET_CURRENCY ?? "USD",
     scale: Number(env.SUI_TESTNET_PRICE_SCALE ?? 1)

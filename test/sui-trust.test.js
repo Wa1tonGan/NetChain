@@ -68,8 +68,8 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
     assert.equal(voucher.incidentId, "INC-S2");
     assert.equal(voucher.nonce, "INC-S2:PROVIDER-B:001");
     assert.equal(voucher.planAmount, 1.8); // buyer-signed plan price (human units; base-unit fields follow)
-    assert.equal(voucher.providerAmount, 180); // §1.2 full quote, base units (2dp sen)
-    assert.equal(voucher.amount, 189); // escrow locks plan + fee, base units
+    assert.equal(voucher.providerAmount, 1_800_000); // §1.2 full quote, base units (6dp USDC)
+    assert.equal(voucher.amount, 1_890_000); // escrow locks plan + fee, base units
     assert.equal(voucher.buyerPk.length, 32);
     assert.equal(voucher.providerPk.length, 32);
     assert.equal(voucher.buyerSig.length, 64);
@@ -91,17 +91,16 @@ describe("sui/voucher — Selected Offer → Move commit args", () => {
     assert.throws(() => buildVoucher(selected, PATHS, { nowMs: Date.parse(selected.agreement.expiry) + 1 }),
       (err) => err instanceof VoucherError && err.code === "VOUCHER_EXPIRED");
   });
-
-  it("rejects amounts beyond MYRC's 2-decimal precision (sen)", () => {
+  it("rejects amounts beyond the coin's decimal precision", () => {
     const selected = load("s2-selected-offer.json");
     // keep the schema's fee-split cross-checks happy (fee 0 @ 0%), then hit
     // the coin rule on the buyer-signed plan price
-    selected.selectedProvider.price = 60.505;
-    selected.agreement.planPrice = 60.505;
+    selected.selectedProvider.price = 60.5050005;
+    selected.agreement.planPrice = 60.5050005;
     selected.agreement.platformFeePercent = 0;
     selected.agreement.platformFee = 0;
-    selected.agreement.providerAmount = 60.505;
-    selected.agreement.amount = 60.505;
+    selected.agreement.providerAmount = 60.5050005;
+    selected.agreement.amount = 60.5050005;
     assert.throws(() => buildVoucher(selected, PATHS, { nowMs: Date.parse(selected.agreement.expiry) - 1000 }),
       (err) => err instanceof VoucherError && err.code === "NON_INTEGRAL_AMOUNT");
   });
@@ -138,9 +137,9 @@ describe("sui/voucher — platform fee split (blueprint §1.3/§3.3)", () => {
       const selected = load("s2-selected-offer.json");
       const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
       assert.equal(voucher.planAmount, 1.8); // buyer-signed plan price
-      assert.equal(voucher.platformFee, 9); // signed platformFee (5% of 1.8), base units
-      assert.equal(voucher.amount, 189); // TOTAL locked on-chain
-      assert.equal(voucher.providerAmount, 180); // §1.2: full quote stays with provider (base units)
+      assert.equal(voucher.platformFee, 90_000); // signed platformFee (5% of 1.8), base units
+      assert.equal(voucher.amount, 1_890_000); // TOTAL locked on-chain
+      assert.equal(voucher.providerAmount, 1_800_000); // §1.2: full quote stays with provider (base units)
       assert.equal(voucher.platformAddress, PLATFORM_WALLET);
     });
   });
@@ -152,8 +151,8 @@ describe("sui/voucher — platform fee split (blueprint §1.3/§3.3)", () => {
     withEnv({ PLATFORM_ADDRESS: PLATFORM_WALLET, PLATFORM_FEE_PERCENT: "9" }, () => {
       const selected = load("s2-selected-offer.json");
       const voucher = buildVoucher(selected, PATHS, { nowMs: expiryIn(selected) });
-      assert.equal(voucher.platformFee, 9); // signed, not recomputed at 9%
-      assert.equal(voucher.amount, 189);
+      assert.equal(voucher.platformFee, 90_000); // signed, not recomputed at 9%
+      assert.equal(voucher.amount, 1_890_000);
     });
   });
 
@@ -215,13 +214,13 @@ describe("sui/service — COMMITTED row carries the split (offline, stubbed chai
       delete process.env.PLATFORM_FEE_PERCENT;
     }
     assert.equal(result.status, "COMMITTED");
-    assert.equal(result.voucher.platformFee, 9);
-    assert.equal(result.voucher.amount, 189);
+    assert.equal(result.voucher.platformFee, 90_000);
+    assert.equal(result.voucher.amount, 1_890_000);
 
     const row = ledger.lookup(nonce);
-    assert.equal(row.amount, 189);
-    assert.equal(row.providerAmount, 180);
-    assert.equal(row.platformFee, 9);
+    assert.equal(row.amount, 1_890_000);
+    assert.equal(row.providerAmount, 1_800_000);
+    assert.equal(row.platformFee, 90_000);
     assert.equal(row.platformAddress, PLATFORM_WALLET);
     assert.match(row.voucherDigest, /^[0-9a-f]{64}$/);
   });

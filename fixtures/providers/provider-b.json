@@ -20,7 +20,7 @@
     "maxCapacityMbps": 300,
     "baseFee": 0.6,
     "pricePer100MbpsPerHour": 0.4,
-    "currency": "MYR"
+    "currency": "USD"
   },
   "performance": {
     "latencyMs": 35,

@@ -11,6 +11,7 @@ import ActivityDetailPage from "./pages/ActivityDetailPage";
 import ProfilePage from "./pages/ProfilePage";
 import LoginPage from "./pages/LoginPage";
 import TruthAgentPage from "./pages/TruthAgentPage";
+import DebugLogsPage from "./pages/DebugLogsPage";
 
 export default function App() {
   const incident = useAppStore((s) => s.incident);
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
           <Route path="/truth" element={<TruthAgentPage />} />
+          <Route path="/logs" element={<DebugLogsPage />} />
           <Route path="/wallet" element={<Navigate to="/profile" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/home" replace />} />

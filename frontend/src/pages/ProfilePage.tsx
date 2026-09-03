@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
+import { clearEphemeralBundle } from "../services/zklogin";
 import { useChainBalance } from "../hooks/useChainBalance";
 import ProtectionModal from "../components/ProtectionModal";
 import WalletConnectModal from "../components/WalletConnectModal";
@@ -21,6 +22,9 @@ export default function ProfilePage() {
   const chain = useChainBalance();
 
   function handleLogOut() {
+    // Clear the session AND the ephemeral signing key (both storages) so a
+    // stale key can never survive into the next login.
+    clearEphemeralBundle();
     s.setZkLogin(null);
     navigate("/login");
   }

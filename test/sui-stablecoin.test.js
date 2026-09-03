@@ -40,12 +40,12 @@ describe("sui/stablecoin — network asset config (Track 01)", () => {
     }
   });
 
-  it("localnet keeps the MYRC demo coin (2 decimals = sen, MYR, type composed from package)", () => {
+  it("all networks resolve to the USDC asset (always-USD quoting; localnet included)", () => {
     const cfg = stablecoinConfig("localnet");
-    assert.equal(cfg.type, null); // composed with packageId by the caller
-    assert.equal(cfg.decimals, 2); // base unit = 1 sen (fractional fees representable)
-    assert.equal(cfg.currency, "MYR");
-    assert.equal(cfg.name, "MYRC");
+    assert.equal(cfg.type, TESTNET_USDC); // no per-network demo coin anymore
+    assert.equal(cfg.decimals, 6);
+    assert.equal(cfg.currency, "USD");
+    assert.equal(cfg.name, "USDC");
   });
 });
 

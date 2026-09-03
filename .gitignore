@@ -13,3 +13,4 @@ fixtures/sui/
 frontend/dist/
 fixtures/providers/dynamic.json
 fixtures/keys/*.private.pem
+/.playwright-mcp

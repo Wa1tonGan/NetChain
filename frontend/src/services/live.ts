@@ -167,7 +167,13 @@ async function postJson(url: string, body: unknown): Promise<unknown> {
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? `${url} → ${res.status}`);
+  // The trust server puts the REAL reason in { error: "…" } or
+  // { message: "…" } (e.g. "paymentCoinId required — …") — surface that,
+  // never a bare status code.
+  if (!res.ok) {
+    const j = json as { error?: string; message?: string };
+    throw new Error(j.error ?? j.message ?? `${url} → ${res.status}`);
+  }
   return json;
 }
 
@@ -209,23 +215,115 @@ export async function zkCommitSelected(
   selected: SelectedOffer,
   session: import("./zklogin").ZkLoginSession
 ): Promise<{ status: string; txDigest?: string }> {
-  // The buyer pays from their OWN stablecoin coin object (Coin<MYRC>) —
-  // required by escrow::commit_as_buyer's `payment: Coin<T>` argument.
+  const { addWorkflowLog } = await import("./logger");
+
+  addWorkflowLog("RECOVERY_COMMIT_START", {
+    incidentId: selected.incidentId,
+    buyerAddress: session.address,
+    amount: selected.agreement?.amount,
+    providerId: selected.selectedProvider?.providerId,
+    nonce: selected.agreement?.nonce,
+  });
+
   const { fetchPaymentCoinId } = await import("./wallet");
-  const payment = await fetchPaymentCoinId(session.address);
+  const payment = await fetchPaymentCoinId(session.address, selected.agreement?.amount ?? 0);
+  if (!payment) {
+    addWorkflowLog("PAYMENT_COIN_MISSING", {
+      buyerAddress: session.address,
+      requiredAmount: selected.agreement?.amount,
+    }, "error");
+    throw Object.assign(
+      new Error("your zkLogin wallet holds no USDC coin — top it up (faucet or Add Funds), then run the recovery again"),
+      { code: "BUYER_NOT_FUNDED" }
+    );
+  }
+
+  addWorkflowLog("PAYMENT_COIN_RESOLVED", {
+    coinId: payment.coinId,
+    coinType: payment.coinType,
+    required: selected.agreement?.amount,
+  });
+
+  try {
+    const build = (await postJson(`${TRUST_URL}/v1/commit`, {
+      ...selected,
+      submit: false,
+      paymentCoinId: payment.coinId,
+      buyerAddress: session.address,
+    })) as { status: string; duplicate?: boolean; txBytes?: string; txDigest?: string };
+
+    addWorkflowLog("COMMIT_PTB_BUILT", {
+      status: build.status,
+      duplicate: build.duplicate,
+      hasTxBytes: Boolean(build.txBytes),
+      txBytesLength: build.txBytes?.length,
+    });
+
+    if (build.duplicate || !build.txBytes) {
+      return { status: build.status ?? "DUPLICATE", txDigest: build.txDigest };
+    }
+
+    const { zkSignAndSubmit } = await import("./zklogin");
+    const { digest } = await zkSignAndSubmit(session, build.txBytes);
+
+    addWorkflowLog("COMMIT_CONFIRMING", { digest });
+
+    const confirmed = (await postJson(`${TRUST_URL}/v1/commit/confirm`, {
+      incidentId: selected.incidentId,
+      nonce: selected.agreement.nonce,
+      txDigest: digest,
+      voucher: null,
+    })) as { status: string };
+
+    addWorkflowLog("COMMIT_CONFIRMED", { status: confirmed.status, txDigest: digest }, "success");
+
+    return { status: confirmed.status, txDigest: digest };
+  } catch (err: any) {
+    addWorkflowLog("COMMIT_FAILED", {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    }, "error");
+    throw err;
+  }
+}
+
+export async function reportActivation(incidentId: string, status: "AVAILABLE" | "FAILED"): Promise<unknown> {
+  return postJson(`${TRUST_URL}/v1/activation`, { incidentId, status });
+}
+
+/** Wallet-extension buyer-direct commit (the working real-buyer path while
+    Mysten's testnet zk provers are circuit-drifted):
+    1. build-only voucher validation + unsigned commit_as_buyer PTB with the
+       WALLET address as sender (buyerAddress),
+    2. the USER'S OWN wallet signs it in-browser (real key, real deduction
+       from their wallet, no platform key anywhere),
+    3. confirm the on-chain digest into the ledger. */
+export async function walletCommitSelected(
+  selected: SelectedOffer,
+  walletAddress: string
+): Promise<{ status: string; txDigest?: string }> {
+  const { fetchPaymentCoinId } = await import("./wallet");
+  const payment = await fetchPaymentCoinId(walletAddress, selected.agreement?.amount ?? 0);
+  if (!payment) {
+    throw Object.assign(
+      new Error("this wallet holds no USDC coin — fund it, then run the recovery again"),
+      { code: "BUYER_NOT_FUNDED" }
+    );
+  }
 
   const build = (await postJson(`${TRUST_URL}/v1/commit`, {
     ...selected,
     submit: false,
-    paymentCoinId: payment?.coinId ?? null,
+    paymentCoinId: payment.coinId,
+    buyerAddress: walletAddress,
   })) as { status: string; duplicate?: boolean; txBytes?: string; txDigest?: string };
 
   if (build.duplicate || !build.txBytes) {
     return { status: build.status ?? "DUPLICATE", txDigest: build.txDigest };
   }
 
-  const { zkSignAndSubmit } = await import("./zklogin");
-  const { digest } = await zkSignAndSubmit(session, build.txBytes);
+  const { walletSignAndSubmit } = await import("./walletSign");
+  const { digest } = await walletSignAndSubmit(build.txBytes, walletAddress);
 
   const confirmed = (await postJson(`${TRUST_URL}/v1/commit/confirm`, {
     incidentId: selected.incidentId,
@@ -235,10 +333,6 @@ export async function zkCommitSelected(
   })) as { status: string };
 
   return { status: confirmed.status, txDigest: digest };
-}
-
-export async function reportActivation(incidentId: string, status: "AVAILABLE" | "FAILED"): Promise<unknown> {
-  return postJson(`${TRUST_URL}/v1/activation`, { incidentId, status });
 }
 
 export function openIncidentStream(incidentId: string, onEvent: (ev: GatewayEvent) => void): () => void {

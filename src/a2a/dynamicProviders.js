@@ -193,7 +193,7 @@ export function rollDynamicProviders(baseProfiles, { seed } = {}) {
         maxCapacityMbps: capacityMbps,
         baseFee: round2(between(rng, tier.baseFee)),
         pricePer100MbpsPerHour: round2(between(rng, tier.pricePer100MbpsPerHour)),
-        currency: base.policy.currency
+        currency: "USD"
       },
       performance: {
         latencyMs: Math.round(between(rng, tier.latencyMs)),

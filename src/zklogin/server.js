@@ -30,6 +30,7 @@ const ALLOWED_ORIGIN = process.env.ZKL_ALLOWED_ORIGIN ?? "http://localhost:5173"
 const DEFAULT_SALT_SEED = "6e6574636861696e2d7a6b6c6f67696e"; // "netchain-zklogin"
 
 const exchangedCodes = new Map();
+const workflowLogs = [];
 
 function decodeJwtPayload(token) {
   const part = token.split(".")[1];
@@ -252,6 +253,61 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/zklogin/epoch") {
+    try {
+      const res = await fetch("https://sui-testnet-rpc.publicnode.com", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "suix_getLatestSuiSystemState", params: [] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      const data = await res.json();
+      const epoch = Number(data?.result?.epoch ?? 0);
+      sendJson(response, 200, { epoch: epoch || 1211 });
+    } catch (err) {
+      sendJson(response, 200, { epoch: 1211 });
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/zklogin/logs") {
+    if (request.method === "DELETE") {
+      workflowLogs.length = 0;
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+    sendJson(response, 200, { logs: workflowLogs });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/zklogin/log") {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      try {
+        const item = JSON.parse(body || "{}");
+        workflowLogs.unshift(item);
+        if (workflowLogs.length > 200) workflowLogs.pop();
+        const color =
+          item.level === "error"
+            ? "\x1b[31m"
+            : item.level === "warn"
+            ? "\x1b[33m"
+            : item.level === "success"
+            ? "\x1b[32m"
+            : "\x1b[36m";
+        console.log(
+          `[wf-log] ${color}[${item.level?.toUpperCase() || "INFO"}]\x1b[0m \x1b[1m${item.step}\x1b[0m:`,
+          item.data
+        );
+        sendJson(response, 200, { ok: true });
+      } catch (err) {
+        sendJson(response, 400, { error: String(err) });
+      }
+    });
+    return;
+  }
+
   // zk proof proxy: forwards the short-lived idToken to the Sui prover
   // service and returns the groth16 proof for local signing. The bridge
   // stores nothing — the proof goes straight back to the browser.
@@ -263,7 +319,11 @@ const server = createServer(async (request, response) => {
         const { jwt, salt, extendedEphemeralPublicKey, maxEpoch, jwtRandomness, keyClaimName } =
           JSON.parse(raw || "{}");
         if (!jwt) throw new Error("jwt required");
-        const proverUrl = process.env.ZK_PROVER_URL ?? "https://prover-dev.mystenlabs.com/v1";
+        // v2 testnet prover: testnet verifies zkLogin proofs with the v2
+        // circuit (MystenLabs/sui#27115), so v1 proofs from prover-dev fail
+        // on-chain with "Groth16 proof verify failed". prover.mystenlabs.com
+        // (mainnet) additionally requires allowlisted client IDs (Enoki).
+        const proverUrl = process.env.ZK_PROVER_URL ?? "https://prover-dev-v2.mystenlabs.com/v1";
         const proverRes = await fetch(proverUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -280,7 +340,18 @@ const server = createServer(async (request, response) => {
           signal: AbortSignal.timeout(60_000),
         });
         const payload = await proverRes.json();
-        sendJson(response, proverRes.ok ? 200 : 502, payload);
+        // Pass the prover's real reason through (it uses {name, message}) and
+        // log it — a bare 502 hides whether it's a circuit, parse, or
+        // availability problem. Successes pass through untouched.
+        if (!proverRes.ok) {
+          console.error("[zklogin] prover error:", proverRes.status, JSON.stringify(payload).slice(0, 300));
+          sendJson(response, 502, {
+            ...(payload ?? {}),
+            error: payload?.message ?? payload?.error ?? `prover returned ${proverRes.status}`,
+          });
+          return;
+        }
+        sendJson(response, 200, payload);
       } catch (error) {
         sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) });
       }

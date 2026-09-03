@@ -9,7 +9,7 @@
   "expectedActivationTimeMs": 500,
   "activationLane": "P0_FAST",
   "price": 1.35,
-  "currency": "MYR",
+  "currency": "USD",
   "reliabilityScore": 0.98,
   "latencyMs": 120,
   "packetLossPercent": 1.2,
@@ -17,6 +17,6 @@
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-c-demo",
-    "value": "+B5/Zu7/jvSHQAsdDP6K2EGhR2ry15k+Er+8khZcHHCa00heKOXvvUNfafhtDUmH9uFGPIIoVFDKE0h/egE5DQ=="
+    "value": "QS9XuDa3Y+SI1h4EYTLcagG++Pjbc/OejvxNnrdpgmb3Q1vobWPZg6KS3sAVZur7nFmT3SyZ5pSnTZ/ix8ePBw=="
   }
 }

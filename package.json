@@ -7,6 +7,7 @@
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1",
     "provision": "node scripts/provision-demo-identity.mjs",
     "generate:fixtures": "node scripts/generate-fixtures.mjs",
+    "market": "node --env-file-if-exists=.env scripts/start-all.mjs",
     "sui:setup": "node --env-file-if-exists=.env scripts/sui-setup.mjs",
     "sui:fixtures": "node --env-file-if-exists=.env scripts/sui-fixtures.mjs",
     "trust": "node --env-file-if-exists=.env scripts/trust.mjs",

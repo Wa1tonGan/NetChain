@@ -9,7 +9,7 @@
   "expectedActivationTimeMs": 1500,
   "activationLane": "STANDARD",
   "price": 1.8,
-  "currency": "MYR",
+  "currency": "USD",
   "reliabilityScore": 0.999,
   "latencyMs": 35,
   "packetLossPercent": 0.5,
@@ -17,6 +17,6 @@
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-b-demo",
-    "value": "W2D/ZL/GXYePiI6fuQLWd/6m1U65IIhTCY+EGQXUh2smQY5CM5QfkrUKNhUBJI+Ue53oAIwEp2zxrsKQAZmFAg=="
+    "value": "KY3o+iSD7PN4VjJdh74G2GwdoRORSQSK2Ycg/Y/EY+b+W9M/DLM27Sby+EDeAKdf+CMIcCPRzdRNbdbzYVbRDg=="
   }
 }

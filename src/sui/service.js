@@ -95,11 +95,31 @@ export class TrustService {
    * validation, then return the UNSIGNED commit_as_buyer PTB bytes for the
    * buyer to zk-sign in their browser. No key material leaves the user's
    * session; the service never sees a buyer signature over the tx.
+   *
+   * `buyerAddress` (the zkLogin user's Sui address, sent by the frontend)
+   * is required: the PTB's sender must be the buyer so the SDK can resolve
+   * gas from THEIR SUI coins and Move can record tx_context::sender as the
+   * on-chain buyer. Never defaults to a platform/buyer fixture key.
    */
   async buildCommitForZkLogin(selectedOffer) {
     // Strip transport-only fields before schema validation (strict schema
-    // rejects unknown keys): submit flag + the buyer's payment coin object.
-    const { submit, paymentCoinId, ...offer } = selectedOffer ?? {};
+    // rejects unknown keys): submit flag, the buyer's payment coin object,
+    // and the buyer's zkLogin address.
+    const { submit, paymentCoinId, buyerAddress, ...offer } = selectedOffer ?? {};
+    if (!buyerAddress || !/^0x[0-9a-fA-F]{40,64}$/.test(buyerAddress)) {
+      throw Object.assign(
+        new Error("buyerAddress required — connect the zkLogin wallet first (the buyer must be the zk user, never a platform key)"),
+        { code: "BUYER_ADDRESS_REQUIRED" }
+      );
+    }
+    if (!paymentCoinId) {
+      throw Object.assign(
+        new Error(
+          "paymentCoinId required — the zkLogin wallet has no USDC coin object. Fund it first (faucet transfer or POST /v1/fund), then retry the recovery"
+        ),
+        { code: "BUYER_NOT_FUNDED" }
+      );
+    }
     const existing = this.ledger.lookup(offer.agreement?.nonce);
     if (existing) {
       return { status: existing.status, duplicate: true, commitment: existing };
@@ -131,10 +151,12 @@ export class TrustService {
     });
 
     const tx = buildCommitAsBuyerTx(this.config, voucher, selectedOffer.paymentCoinId);
+    tx.setSender(buyerAddress);
     const txBytes = await tx.build({ client: this.client });
     return {
       status: "BUILD_OK",
       voucher,
+      buyerAddress,
       txBytes: Buffer.from(txBytes).toString("base64")
     };
   }

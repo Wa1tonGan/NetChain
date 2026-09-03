@@ -18,6 +18,9 @@ import { providerProfileSchema } from "../src/a2a/schemas/providerProfile.js";
 import { readFileSync } from "node:fs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+try {
+  process.loadEnvFile(path.join(projectRoot, ".env"));
+} catch {}
 const forwardArgs = process.argv.slice(2);
 
 // Roll the market once, before any child process starts, so the provider

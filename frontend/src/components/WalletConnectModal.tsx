@@ -43,16 +43,11 @@ export default function WalletConnectModal({ onClose }: { onClose: () => void })
         return;
       }
     }
-    const demoExtensionAddr = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    s.setZkLogin({
-      address: demoExtensionAddr,
-      name: "Sui Wallet (Standard)",
-      email: null,
-      sub: demoExtensionAddr,
-      iss: "sui-standard",
-      aud: "sui-extension",
-    });
-    onClose();
+    // NO fake fallback address: an invented wallet can't sign anything real,
+    // so "connecting" it would fake the demo. Tell the user to install one.
+    setError(
+      "No Sui wallet extension detected. Install Sui Wallet or Slush, then click Connect again."
+    );
   }
 
   function handleSaveCustomAddr(e: React.FormEvent) {

@@ -30,6 +30,10 @@ export default function ZkLoginCallbackPage() {
           const proof = await requestZkProof(session);
           setZkLogin({ ...session, proof, signingMode: "zk" });
         } catch (reason) {
+          const { addWorkflowLog } = await import("../services/logger");
+          addWorkflowLog("ZK_PROVER_FALLBACK", {
+            reason: reason instanceof Error ? reason.message : String(reason),
+          }, "warn");
           console.warn("[zklogin] prover unavailable — custodial fallback:", reason);
           setZkLogin(await createFallbackSession(session));
         }

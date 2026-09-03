@@ -11,7 +11,7 @@
     "expectedActivationTimeMs": 1500,
     "activationLane": "P0_FAST",
     "price": 4.8,
-    "currency": "MYR",
+    "currency": "USD",
     "reliabilityScore": 0.9995,
     "latencyMs": 30,
     "packetLossPercent": 0.3
@@ -23,7 +23,7 @@
     "amount": 5.04,
     "platformFeePercent": 5,
     "platformAddress": "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4",
-    "currency": "MYR",
+    "currency": "USD",
     "durationMinutes": 120,
     "nonce": "INC-S7:PROVIDER-A:001",
     "expiry": "2026-08-29T12:01:00.000Z"
@@ -32,12 +32,12 @@
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-a-demo",
-      "value": "Zb1QA0U2PBvOHS8hHlY3RSxOINM6XDTXlT8Qp7WvEItmfX5QjAWqdqSvyjwlK6hbO91C5TopMhWWIpy+JuKLDA=="
+      "value": "9EghGRDbNlIZddo1/Wi/MtXYKH10OSXaM8U3mGEZj/pcV/v08bWkan8+a9dQKrMZAv72IHQPezHqH/f9z0Z1Cw=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",
       "keyId": "buyer-demo",
-      "value": "KF9cJTR0i/T42h+N3053XKTg0MpwXt0gopNblK3lCPycXsDij5eudlHlwp7+YuEEoecXeyWtejPPZtlgxxZvBA=="
+      "value": "8T95FLyb0iH0qxnMuOPmd3B4ELdq35jQoS49TLCwBuBly0Z1MMvaeuNN/tq3vXGy0fpSLh1RfgKghbsSEoSmDQ=="
     }
   },
   "rejectedOffers": [

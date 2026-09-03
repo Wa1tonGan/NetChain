@@ -8,6 +8,7 @@ const NAV_DESKTOP = [
   { to: "/services", label: "Enterprise QoS" },
   { to: "/truth", label: "Truth Agent" },
   { to: "/activity", label: "Activity Log" },
+  { to: "/logs", label: "Logs" },
 ] as const;
 
 const NAV_MOBILE = [

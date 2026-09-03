@@ -33,7 +33,12 @@ const config = { ...(loadConfig() ?? {}), network: network() };
 const client = makeClient();
 const keypair = buyerKeypair();
 
-console.log(`[setup] network=${config.network} buyer=${keypair.toSuiAddress()}`);
+// "buyer" here is the legacy config key; semantically this wallet is the
+// PLATFORM OPERATOR: it publishes the package, owns the escrow pool +
+// AuthorityCap, and signs settle/refund/verify. The real BUYER in the product
+// path is the zkLogin user — recorded on-chain per-commit as
+// tx_context::sender (escrow::commit_as_buyer), never this key.
+console.log(`[setup] network=${config.network} operator=${keypair.toSuiAddress()} (pool owner; the zkLogin user is the buyer)`);
 await ensureGas(client, keypair);
 
 if (!config.packageId || config.network !== network()) {
@@ -53,7 +58,7 @@ if (!config.packageId || config.network !== network()) {
 }
 
 if (!config.escrowId || !config.authorityId) {
-  console.log("[setup] minting MYRC + funding escrow + creating AuthorityCap…");
+  console.log("[setup] funding USDC escrow + creating AuthorityCap…");
   await runSetup(client, keypair, config);
   saveConfig(config);
   console.log(`[setup] escrow=${config.escrowId} authority=${config.authorityId}`);

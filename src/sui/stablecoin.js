@@ -11,15 +11,10 @@ export const TESTNET_USDC =
   "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC";
 
 /**
- * Asset config per network. `type === null` means the caller composes the
- * localnet demo-coin type from the deployed package id.
+ * Asset config: Circle NATIVE USDC (6 decimals, USD), which is on Sui's
+ * gasless-transfer allowlist and standard across NetChain testnet deployments.
  */
-export function stablecoinConfig(network = process.env.SUI_NETWORK ?? "localnet") {
-  if (network === "localnet") {
-    // MYRC demo coin: 2 decimals (base unit = 1 sen — real-MYR semantics, so
-    // fractional platform fees like 5% of 105 = 5.25 are representable).
-    return { type: null, decimals: 2, currency: "MYR", name: "MYRC" };
-  }
+export function stablecoinConfig(network = process.env.SUI_NETWORK ?? "testnet") {
   return {
     type: process.env.STABLECOIN_TYPE ?? TESTNET_USDC,
     decimals: Number(process.env.STABLECOIN_DECIMALS ?? 6),
@@ -28,11 +23,12 @@ export function stablecoinConfig(network = process.env.SUI_NETWORK ?? "localnet"
   };
 }
 
-/** Human amount → integer base units. Throws on precision loss or garbage. */
+/** Human amount → integer base units. Throws on precision loss or garbage.
+    Zero is valid (e.g. a 0-fee split when PLATFORM_ADDRESS is unset). */
 export function toBaseUnits(human, decimals) {
   const n = Number(human);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error(`amount must be a finite positive number, got ${human}`);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`amount must be a finite non-negative number, got ${human}`);
   }
   const scaled = n * 10 ** decimals;
   const base = Math.round(scaled);
