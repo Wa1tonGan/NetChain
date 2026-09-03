@@ -448,6 +448,39 @@ module netchain::escrow {
         });
     }
 
+    /// zkLogin buyer-direct refund: the commit_as_buyer path locks the BUYER's
+    /// own Coin (never the shared pool), so a FAILED activation must transfer
+    /// the locked funds back to the recorded buyer address — joining the pool
+    /// here would strand user funds. Gated by the AuthorityCap like `refund`.
+    public fun refund_to_buyer<T>(
+        escrow: &mut Escrow<T>,
+        _authority: &AuthorityCap,
+        nonce: vector<u8>,
+        ctx: &mut TxContext,
+    ) {
+        assert!(table::contains(&escrow.commitments, nonce), E_UNKNOWN_COMMITMENT);
+        {
+            let c = table::borrow(&escrow.commitments, nonce);
+            assert!(c.status == STATUS_COMMITTED, E_ALREADY_FINALIZED);
+        };
+        assert!(table::contains(&escrow.locked, nonce), E_UNKNOWN_COMMITMENT);
+        let locked = table::remove(&mut escrow.locked, nonce);
+        let returned = coin::from_balance(locked, ctx);
+        let (buyer, amount, incident_id) = {
+            let c = table::borrow_mut(&mut escrow.commitments, nonce);
+            c.status = STATUS_REFUNDED;
+            (c.buyer, c.amount, c.incident_id)
+        };
+        transfer::public_transfer(returned, buyer);
+        event::emit(Refunded {
+            escrow_id: object::id(escrow),
+            incident_id,
+            nonce,
+            amount,
+            buyer,
+        });
+    }
+
     /// Permissionless post-expiry reclaim: anyone may return the locked funds
     /// to the buyer once the voucher expired un-settled. Liveness guarantee —
     /// nothing is stuck if the buyer key is offline.

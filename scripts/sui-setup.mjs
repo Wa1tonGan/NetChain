@@ -53,7 +53,7 @@ if (!config.packageId || config.network !== network()) {
 }
 
 if (!config.escrowId || !config.authorityId) {
-  console.log("[setup] minting MYRC + funding escrow + creating AuthorityCap…");
+  console.log("[setup] funding escrow with the network stablecoin (testnet: real USDC) + creating AuthorityCap…");
   await runSetup(client, keypair, config);
   saveConfig(config);
   console.log(`[setup] escrow=${config.escrowId} authority=${config.authorityId}`);

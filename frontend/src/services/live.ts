@@ -167,7 +167,14 @@ async function postJson(url: string, body: unknown): Promise<unknown> {
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? `${url} → ${res.status}`);
+  // The trust server reports failures as { code, message } (not `error`) —
+  // read both so a 500 never surfaces as a bare "→ 500" again.
+  if (!res.ok) {
+    const detail = (json as { error?: string; message?: string }).error
+      ?? (json as { message?: string }).message
+      ?? `${url} → ${res.status}`;
+    throw new Error(detail);
+  }
   return json;
 }
 
@@ -202,26 +209,30 @@ export async function commitSelected(selected: SelectedOffer): Promise<{
 }
 
 /** zkLogin buyer-direct commit:
-    1. build-only voucher validation + unsigned commit_as_buyer PTB,
-    2. the BROWSER zk-signs it (ephemeral key + proof — no server key),
-    3. confirm the on-chain digest into the ledger. */
+    1. ensure the buyer wallet holds a stablecoin coin covering the amount
+       (cold-start fund via the trust server's platform key when not),
+    2. build-only voucher validation + unsigned commit_as_buyer PTB,
+    3. the BROWSER zk-signs it (ephemeral key + proof — no server key),
+    4. confirm the on-chain digest into the ledger. */
 export async function zkCommitSelected(
   selected: SelectedOffer,
   session: import("./zklogin").ZkLoginSession
-): Promise<{ status: string; txDigest?: string }> {
-  // The buyer pays from their OWN stablecoin coin object (Coin<MYRC>) —
-  // required by escrow::commit_as_buyer's `payment: Coin<T>` argument.
-  const { fetchPaymentCoinId } = await import("./wallet");
-  const payment = await fetchPaymentCoinId(session.address);
+): Promise<{ status: string; txDigest?: string; voucher?: unknown }> {
+  const { fetchStableDecimals } = await import("./wallet");
+  const decimals = await fetchStableDecimals(session.address);
+  const payment = await ensureBuyerFunding(session.address, selected.agreement.amount, decimals);
 
   const build = (await postJson(`${TRUST_URL}/v1/commit`, {
     ...selected,
     submit: false,
-    paymentCoinId: payment?.coinId ?? null,
-  })) as { status: string; duplicate?: boolean; txBytes?: string; txDigest?: string };
+    paymentCoinId: payment.coinId,
+    // The server builds the unsigned PTB bytes — it needs the buyer's zkLogin
+    // address as the tx sender (on-chain buyer = tx_context::sender).
+    buyerAddress: session.address,
+  })) as { status: string; duplicate?: boolean; txBytes?: string; txDigest?: string; voucher?: unknown };
 
   if (build.duplicate || !build.txBytes) {
-    return { status: build.status ?? "DUPLICATE", txDigest: build.txDigest };
+    return { status: build.status ?? "DUPLICATE", txDigest: build.txDigest, voucher: build.voucher };
   }
 
   const { zkSignAndSubmit } = await import("./zklogin");
@@ -231,10 +242,51 @@ export async function zkCommitSelected(
     incidentId: selected.incidentId,
     nonce: selected.agreement.nonce,
     txDigest: digest,
-    voucher: null,
+    voucher: build.voucher ?? null,
   })) as { status: string };
 
-  return { status: confirmed.status, txDigest: digest };
+  return { status: confirmed.status, txDigest: digest, voucher: build.voucher };
+}
+
+/** Cold-start funding: the buyer wallet must own a stablecoin coin object for
+    the commit_as_buyer PTB. Reuse an existing coin with balance >= amount;
+    otherwise ask the platform (trust server /v1/fund, PLATFORM_SECRET-gated)
+    to send exactly the amount + a small gas top-up, then poll until the coin
+    object is queryable. amountHuman is in the stablecoin's own decimals. */
+async function ensureBuyerFunding(address: string, amountHuman: number, decimals: number): Promise<{ coinId: string; coinType: string }> {
+  const { fetchPaymentCoinId } = await import("./wallet");
+  let payment = await fetchPaymentCoinId(address);
+  if (payment && payment.balance >= amountHuman) return payment;
+  const stableBase = Math.round(amountHuman * 10 ** decimals);
+  const suiMist = Number(import.meta.env.VITE_ZK_FUND_SUI_MIST ?? 50_000_000); // 0.05 SUI gas
+  await postJson(`${TRUST_URL}/v1/fund`, { address, stableBase, suiMist });
+
+  // Fresh coin objects lag the indexer briefly — poll before the PTB build.
+  for (let i = 0; i < 20; i++) {
+    payment = await fetchPaymentCoinId(address);
+    if (payment && payment.balance >= amountHuman) return payment;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(
+    `funded but no spendable stablecoin coin appeared at ${address.slice(0, 10)}… — request testnet USDC at faucet.circle.com`
+  );
+}
+
+/** Verification Agent intake (blueprint §4.3): the trust server runs the
+    deterministic tolerance check and commits the connection-log hash +
+    penalty on-chain BEFORE settlement. Delivered capacity comes from the
+    gateway's live session read; when it carries no number the promise is
+    treated as delivered (penalty 0). */
+export async function reportDelivery(
+  incidentId: string,
+  promisedCapacityMbps: number,
+  deliveredCapacityMbps: number
+): Promise<unknown> {
+  return postJson(`${TRUST_URL}/v1/verify`, {
+    incidentId,
+    promisedCapacity: promisedCapacityMbps,
+    deliveredSamples: [deliveredCapacityMbps],
+  });
 }
 
 export async function reportActivation(incidentId: string, status: "AVAILABLE" | "FAILED"): Promise<unknown> {

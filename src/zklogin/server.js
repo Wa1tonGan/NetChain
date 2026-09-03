@@ -264,6 +264,19 @@ const server = createServer(async (request, response) => {
           JSON.parse(raw || "{}");
         if (!jwt) throw new Error("jwt required");
         const proverUrl = process.env.ZK_PROVER_URL ?? "https://prover-dev.mystenlabs.com/v1";
+        // Debug the exact outbound bundle MINUS secrets (no JWT/salt): a
+        // nonce mismatch means the prover hashed different inputs than the
+        // authorize step used — this shows what actually left the bridge,
+        // including JS types (a numeric-vs-string maxEpoch is a classic).
+        console.debug(
+          "[zklogin] prove outbound:",
+          JSON.stringify({
+            extPK: typeof extendedEphemeralPublicKey === "string" ? `${extendedEphemeralPublicKey.slice(0, 8)}…len${extendedEphemeralPublicKey.length}` : typeof extendedEphemeralPublicKey,
+            maxEpoch, maxEpochType: typeof maxEpoch,
+            jwtRandomness: typeof jwtRandomness === "string" ? `…${String(jwtRandomness).slice(-6)} len${String(jwtRandomness).length}` : typeof jwtRandomness,
+            keyClaimName, hasJwt: Boolean(jwt), hasSalt: Boolean(salt),
+          })
+        );
         const proverRes = await fetch(proverUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -280,6 +293,16 @@ const server = createServer(async (request, response) => {
           signal: AbortSignal.timeout(60_000),
         });
         const payload = await proverRes.json();
+        if (!proverRes.ok) {
+          // Log the rejection server-side (status + message only — never the
+          // JWT/salt) so a failed login is diagnosable from the bridge
+          // terminal, not just the browser console.
+          console.error(
+            "[zklogin] prover rejected proof request:",
+            proverRes.status,
+            typeof payload?.message === "string" ? payload.message.slice(0, 300) : JSON.stringify(payload ?? {}).slice(0, 300)
+          );
+        }
         sendJson(response, proverRes.ok ? 200 : 502, payload);
       } catch (error) {
         sendJson(response, 502, { error: error instanceof Error ? error.message : String(error) });
@@ -329,4 +352,5 @@ const server = createServer(async (request, response) => {
 
 server.listen(PORT, () => {
   console.log(`[zklogin-server] listening on http://127.0.0.1:${PORT}`);
+  console.log(`[zklogin-server] prover: ${process.env.ZK_PROVER_URL ?? "https://prover-dev.mystenlabs.com/v1 (default v1!)"}`);
 });

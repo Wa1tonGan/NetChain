@@ -1,10 +1,26 @@
 import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { GATEWAY_URL, SCENARIOS, TRUST_URL } from "../services/live";
+import { beginZkLogin } from "../services/zklogin";
 
 function LiveBackendCard({ running }: { running: boolean }) {
   const startLiveRecovery = useAppStore((s) => s.startLiveRecovery);
+  const zkLogin = useAppStore((s) => s.zkLogin);
   const [scenario, setScenario] = useState("s2");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const zkReady = Boolean(zkLogin?.proof && zkLogin.signingMode === "zk");
+
+  async function handleZkSignIn() {
+    setLoginError(null);
+    setLoginBusy(true);
+    try {
+      await beginZkLogin("/dev");
+    } catch (error) {
+      setLoginBusy(false);
+      setLoginError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return (
     <div className="card highlight">
@@ -44,6 +60,35 @@ function LiveBackendCard({ running }: { running: boolean }) {
           <br />
           Start it with <span className="mono">node scripts/start-all.mjs</span> +{" "}
           <span className="mono">npm run trust:server</span>
+          <br />
+          {zkReady ? (
+            <span>
+              <span className="chip green">zkLogin: {zkLogin?.email ?? zkLogin?.address.slice(0, 10) + "…"}</span>{" "}
+              live purchases will be signed by YOUR wallet.
+            </span>
+          ) : (
+            <span>
+              <span className="chip amber">zkLogin: not signed in</span> live purchases must be
+              signed by YOUR wallet —{" "}
+              <button
+                className="btn sm primary"
+                onClick={handleZkSignIn}
+                disabled={loginBusy || running}
+                style={{ width: "auto", display: "inline-block", padding: "2px 12px" }}
+              >
+                {loginBusy ? "Redirecting to Google…" : "Sign in with Google"}
+              </button>
+              {loginError && (
+                <span style={{ color: "var(--bad)" }}> — {loginError}</span>
+              )}
+              {zkLogin && !zkReady && (
+                <span>
+                  {" "}(session is in '{zkLogin.signingMode ?? "unknown"}' mode with no zk proof —
+                  sign in again; if it stays custodial, the zk prover is unreachable.)
+                </span>
+              )}
+            </span>
+          )}
         </div>
       </div>
     </div>

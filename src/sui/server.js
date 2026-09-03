@@ -105,6 +105,10 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
       }
       return json(res, 404, { error: "not found" });
     } catch (err) {
+      // Log server-side (method + path + code + message, no key material) so
+      // a failed commit/verify/activation is diagnosable from this terminal,
+      // not just the browser's truncated bubble.
+      console.error(`[trust-server] ${req.method} ${url.pathname} → ${err.code ?? "INTERNAL"}: ${err.message}`);
       return json(res, err.code ? 422 : 500, { code: err.code ?? "INTERNAL", message: err.message });
     }
   });

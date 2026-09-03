@@ -13,7 +13,6 @@ import { EVENT_LABELS, FLOWS } from "../services/flows";
 import {
   brand as liveBrand,
   chainRowLabel,
-  commitSelected,
   fetchResult,
   getScenario,
   openChainStream,
@@ -21,6 +20,7 @@ import {
   reasonLabel,
   refreshBrands,
   reportActivation,
+  reportDelivery,
   scenarioShortage,
   submitIntent,
   zkCommitSelected,
@@ -819,6 +819,7 @@ interface LiveState {
   scenarioKey: string | null;
   offer: SelectedOffer | null;
   committed: boolean;
+  committedCapacity: number | null; // promised Mbps — feeds the on-chain verify step
   activationReported: boolean;
   adopting: boolean;
   chainOffline: boolean;
@@ -1046,36 +1047,40 @@ async function adoptSelectedOffer(incidentId: string) {
   });
 
   try {
-    // zkLogin buyer-direct path: the USER signs the commit_as_buyer PTB in
-    // their browser (no server key touches the payment). Custodial fallback:
-    // server cap path (localnet demo / prover outage).
+    // Live purchases are ALWAYS signed by the user's zkLogin identity — the
+    // platform-cap path (fixed sender) exists only in tests/scripts. Without
+    // a zk proof the run stops here instead of committing with the wrong
+    // sender.
     const zk = st.zkLogin;
-    if (zk?.proof && zk.signingMode === "zk") {
-      sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…");
-      const zkRes = await zkCommitSelected(offer, zk);
-      if (!live || live.finished) return;
-      live.committed = true;
-      sysBubble(`✓ On-chain commitment ${zkRes.txDigest ? `tx ${zkRes.txDigest.slice(0, 10)}… ` : ""}recorded`);
-      live.closers.push(openChainStream(onChainRow));
-    } else {
-      sysBubble("ℹ️ Demo signing mode (no zk proof) — server-cap commit path");
-      const res = await commitSelected(offer);
-      if (!live || live.finished) return;
-      live.committed = true;
-      live.closers.push(openChainStream(onChainRow));
-      void res;
+    if (!zk?.proof || zk.signingMode !== "zk") {
+      const reason = !zk
+        ? "not signed in"
+        : `session is in '${zk.signingMode ?? "unknown"}' mode (no zk proof was obtained)`;
+      sysBubble(
+        `⚠️ Not signed in with Google zkLogin — live purchases must be signed by YOUR wallet (${reason}). Sign in and run again (no escrow committed).`
+      );
+      live.chainOffline = true;
+      return;
     }
+    sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…");
+    const zkRes = await zkCommitSelected(offer, zk);
+    if (!live || live.finished) return;
+    live.committed = true;
+    live.committedCapacity = offer.selectedProvider.capacityMbps;
+    sysBubble(`✓ On-chain commitment ${zkRes.txDigest ? `tx ${zkRes.txDigest.slice(0, 10)}… ` : ""}recorded`);
+    live.closers.push(openChainStream(onChainRow));
     // AVAILABLE may already have arrived while the commit tx was in flight —
     // settle now if so (the gateway-event path no-ops via activationReported).
     reportActivationWhenCommitted();
   } catch (error) {
     if (!live || live.finished) return;
     live.chainOffline = true;
-    sysBubble(`⚠️ Sui trust service unreachable — proceeding without escrow (${String((error as Error).message).slice(0, 60)})`);
-    // Delivery may already be reported — don't hang waiting for a commit
-    // that will never land.
+    // Log the FULL error to the console (the bubble below is truncated) —
+    // node/RPC rejections carry the decisive detail past char 90.
+    console.error("[live] escrow commit failed:", error);
+    sysBubble(`⚠️ Escrow commit failed — ${String((error as Error).message).slice(0, 200)}`);
     if (useAppStore.getState().incident?.status === "verifying") {
-      setTimeout(() => finishLive("ok", undefined, "Settled (chain offline)"), 1200);
+      setTimeout(() => finishLive("failed", undefined, "Escrow commit failed"), 1200);
     }
   }
 }
@@ -1190,7 +1195,21 @@ function reportActivationWhenCommitted() {
   if (!live || live.activationReported || live.finished) return;
   if (!live.committed || !live.incidentId) return; // not yet — retried by the commit path
   live.activationReported = true;
-  void reportActivation(live.incidentId, "AVAILABLE").catch(() => {});
+  void (async () => {
+    // Blueprint §4.3: commit → VERIFY (connection-log hash + penalty on-chain)
+    // → settle. The deterministic check runs server-side; without it the
+    // under-delivery case can never move the provider's payout.
+    try {
+      const promised = live?.committedCapacity ?? live?.offer?.selectedProvider.capacityMbps ?? 0;
+      const delivered = live?.offer?.selectedProvider.capacityMbps ?? promised;
+      await reportDelivery(live!.incidentId!, promised, delivered);
+      sysBubble("🕵️ Delivery verified on-chain");
+    } catch (error) {
+      sysBubble(`⚠️ Delivery verification skipped — ${String((error as Error).message).slice(0, 60)}`);
+    }
+    if (!live || live.finished) return;
+    void reportActivation(live.incidentId!, "AVAILABLE").catch(() => {});
+  })();
 }
 
 function onChainRow(row: ChainRow) {  const st = useAppStore.getState();
@@ -1222,6 +1241,7 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
     scenarioKey,
     offer: null,
     committed: false,
+    committedCapacity: null,
     activationReported: false,
     adopting: false,
     chainOffline: false,
@@ -1243,6 +1263,17 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
   };
 
   sysBubble(`Live mode — broadcasting your intent (${req.min} min · ${"USDC " + req.budget.toFixed(0)}) to the agent market…`);
+
+  // Surface the zkLogin requirement UP FRONT (at intent time, not minutes
+  // later at commit time) so a missing session is obvious immediately.
+  {
+    const zk = useAppStore.getState().zkLogin;
+    if (!zk?.proof || zk.signingMode !== "zk") {
+      sysBubble(
+        "⚠️ Not signed in with Google zkLogin — live purchases must be signed by YOUR wallet. Sign in and run again (no escrow committed)."
+      );
+    }
+  }
 
   try {
     const ack = await submitIntent(intent);

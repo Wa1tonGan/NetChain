@@ -24,6 +24,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/suirpc/, ""),
       },
+      // Sui testnet gRPC (Connect protocol — plain POST, proxy-safe): the
+      // JSON-RPC and gRPC routes enforce DIFFERENT zkLogin verifiers on
+      // testnet, so zk-signed commits submit here (see zkSignAndSubmit).
+      "/suigrpc": {
+        target: "https://fullnode.testnet.sui.io",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/suigrpc/, ""),
+      },
     },
   },
 });

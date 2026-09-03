@@ -33,7 +33,10 @@ export default function ZkLoginCallbackPage() {
           console.warn("[zklogin] prover unavailable — custodial fallback:", reason);
           setZkLogin(await createFallbackSession(session));
         }
-        window.location.replace("/#/home");
+        // Return to wherever the login started (beginZkLogin's redirect:
+        // "/dev", "/profile", …) — the bridge echoes it back as `redirect`.
+        const redirect = (session as { redirect?: string }).redirect ?? "/home";
+        window.location.replace(`/#${redirect.startsWith("/") ? redirect : `/${redirect}`}`);
       })
       .catch((reason) => {
         setError(reason instanceof Error ? reason.message : String(reason));

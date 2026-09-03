@@ -13,6 +13,7 @@
     "zklogin:server": "node --env-file-if-exists=.env src/zklogin/server.js",
     "harness:sui": "node --env-file-if-exists=.env scripts/sui-harness.mjs",
     "demo:sui": "node --env-file-if-exists=.env scripts/sui-demo.mjs",
+    "demo:zk": "node --env-file-if-exists=.env scripts/zk-buyer-demo.mjs",
     "trust:server": "node --env-file-if-exists=.env src/sui/server.js",
     "claim:server": "node --env-file-if-exists=.env src/a2a/claimAgent.js",
     "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs",

@@ -26,6 +26,21 @@ const STABLE_COINS: { match: RegExp; label: string; decimals: number }[] = [
 ];
 const SUI_DECIMALS = 9;
 
+/** Decimals for the FIRST stablecoin type the wallet actually holds — mirrors
+    the backend's stablecoin.js scale (MYRC 2 localnet, Circle USDC 6 testnet).
+    Used to convert the escrow amount to base units for /v1/fund. */
+export async function fetchStableDecimals(address: string): Promise<number> {
+  try {
+    const balances = (await rpc("suix_getAllBalances", [address])) as BalanceEntry[];
+    const hit = balances.find(
+      (entry) => Number(entry.totalBalance) > 0 && STABLE_COINS.some((c) => c.match.test(entry.coinType))
+    );
+    return STABLE_COINS.find((c) => hit && c.match.test(hit.coinType))?.decimals ?? 6;
+  } catch {
+    return 6;
+  }
+}
+
 async function rpc(method: string, params: unknown[]): Promise<unknown> {
   const res = await fetch(RPC, {
     method: "POST",
@@ -87,27 +102,30 @@ export async function fetchChainBalance(address: string): Promise<ChainBalance> 
   return out;
 }
 
-/** The buyer's first spendable stablecoin object for escrow::commit_as_buyer's
-    `payment: Coin<T>` argument; null when the wallet holds none. Discovers
-    the coin type from getAllBalances, then fetches coin objects with a
-    coin-type-scoped getCoins (the untyped form times out on publicnode). */
-export async function fetchPaymentCoinId(address: string): Promise<{ coinId: string; coinType: string } | null> {
+/** The buyer's LARGEST spendable stablecoin object for escrow::commit_as_buyer's
+    `payment: Coin<T>` argument (the PTB splits the exact amount out of it);
+    null when the wallet holds none. Discovers the coin type from
+    getAllBalances, then fetches coin objects with a coin-type-scoped getCoins
+    (the untyped form times out on publicnode). */
+export async function fetchPaymentCoinId(address: string): Promise<{ coinId: string; coinType: string; balance: number } | null> {
   try {
     const balances = (await rpc("suix_getAllBalances", [address])) as BalanceEntry[];
-    const stable = balances.find(
-      (entry) => Number(entry.totalBalance) > 0 && STABLE_COINS.some((c) => c.match.test(entry.coinType))
-    );
+    const stable = balances
+      .filter((entry) => Number(entry.totalBalance) > 0 && STABLE_COINS.some((c) => c.match.test(entry.coinType)))
+      .sort((a, b) => Number(b.totalBalance) - Number(a.totalBalance))[0];
     if (!stable) return null;
 
     const coins = (await rpc("suix_getCoins", [address, stable.coinType, null, 50])) as {
       data: { coinObjectId: string; balance: string }[];
     };
+    let best: { coinId: string; coinType: string; balance: number } | null = null;
     for (const coin of coins.data ?? []) {
-      if (Number(coin.balance) > 0) {
-        return { coinId: coin.coinObjectId, coinType: stable.coinType };
+      const balance = Number(coin.balance);
+      if (balance > 0 && (!best || balance > best.balance)) {
+        best = { coinId: coin.coinObjectId, coinType: stable.coinType, balance };
       }
     }
-    return null;
+    return best;
   } catch {
     return null;
   }

@@ -57,6 +57,7 @@ export class EventLedger {
       state.platformFee = event.data?.platformFee ?? null;
       state.platformAddress = event.data?.platformAddress ?? null;
       state.voucherDigest = event.data?.voucherDigest ?? null;
+      state.zkBuyer = Boolean(event.data?.zkBuyer);
     }
     if (event.type === "SETTLED") {
       state.status = "SETTLED";

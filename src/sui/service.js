@@ -5,7 +5,7 @@
 // restart) short-circuits duplicates; the chain aborts same-nonce/different-
 // bytes replays and no-ops byte-identical ones (defense in depth).
 import { EventLedger } from "./events.js";
-import { loadConfig, makeClient, buyerKeypair, platformKeypair, commitVoucher, settleVoucher, refundVoucher, reclaimVoucher, verifyDeliveryOnChain, buildCommitAsBuyerTx } from "./client.js";
+import { loadConfig, makeClient, buyerKeypair, platformKeypair, commitVoucher, settleVoucher, refundVoucher, refundToBuyerVoucher, reclaimVoucher, verifyDeliveryOnChain, buildCommitAsBuyerTx } from "./client.js";
 import { sendCoin } from "./gasless.js";
 import { buildVoucher, VoucherError } from "./voucher.js";
 import { checkDelivery, connectionLog, connectionLogDigest } from "./verify.js";
@@ -98,8 +98,9 @@ export class TrustService {
    */
   async buildCommitForZkLogin(selectedOffer) {
     // Strip transport-only fields before schema validation (strict schema
-    // rejects unknown keys): submit flag + the buyer's payment coin object.
-    const { submit, paymentCoinId, ...offer } = selectedOffer ?? {};
+    // rejects unknown keys): submit flag + the buyer's payment coin object +
+    // the buyer's zkLogin address (the PTB sender — only the browser knows it).
+    const { submit, paymentCoinId, buyerAddress, ...offer } = selectedOffer ?? {};
     const existing = this.ledger.lookup(offer.agreement?.nonce);
     if (existing) {
       return { status: existing.status, duplicate: true, commitment: existing };
@@ -131,6 +132,18 @@ export class TrustService {
     });
 
     const tx = buildCommitAsBuyerTx(this.config, voucher, selectedOffer.paymentCoinId);
+    // The PTB sender MUST be the zkLogin buyer: tx.build() resolves inputs
+    // (object versions, gas) against the sender, and commit_as_buyer records
+    // tx_context::sender as the on-chain buyer. The server never holds the
+    // user's key — it only needs the address to construct the bytes.
+    const sender = selectedOffer.buyerAddress;
+    if (!sender) {
+      throw Object.assign(
+        new Error("buyerAddress required — the browser must send its zkLogin address so the commit PTB is built with the buyer as sender"),
+        { code: "SENDER_REQUIRED" }
+      );
+    }
+    tx.setSender(sender);
     const txBytes = await tx.build({ client: this.client });
     return {
       status: "BUILD_OK",
@@ -181,6 +194,7 @@ export class TrustService {
       txDigest,
       data: {
         idempotent,
+        zkBuyer: true, // commit_as_buyer — refund must transfer to the buyer
         amount: voucher?.amount,
         providerAmount: voucher?.providerAmount,
         platformFee: voucher?.platformFee,
@@ -321,7 +335,11 @@ export class TrustService {
       return { status: "SETTLED", txDigest: result.digest, penaltyAmount };
     }
     if (status === "FAILED") {
-      const result = await refundVoucher(this.client, this.keypair, this.config, voucherLike);
+      // zkLogin buyer-direct commits lock the BUYER's own coin (not pool
+      // funds) — refund_to_buyer transfers it back to them; the cap path
+      // joins the shared pool it originally came from.
+      const refundFn = commitment.data?.zkBuyer ? refundToBuyerVoucher : refundVoucher;
+      const result = await refundFn(this.client, this.keypair, this.config, voucherLike);
       this.ledger.emit("REFUNDED", {
         incidentId, nonce: commitment.nonce, txDigest: result.digest,
         data: { reason: "activation FAILED", confirmedAtMs }

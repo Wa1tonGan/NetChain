@@ -255,20 +255,25 @@ export async function commitVoucher(client, keypair, config, voucher) {
 
 /** escrow::commit_as_buyer — zkLogin buyer-direct path (no AuthorityCap;
     the buyer hands in their own payment Coin inside the same PTB).
-    `paymentCoinId` = the buyer's own Coin<MYRC> object id (splitting the gas
-    coin would produce Coin<SUI> — a type mismatch against Coin<MYRC>). */
+    The exact amount is SPLIT out of `paymentCoinId` in the PTB, so any coin
+    with balance >= amount works (the remainder stays with the buyer).
+    `paymentCoinId` = the buyer's stablecoin coin object id (splitting the gas
+    coin would produce Coin<SUI> — a type mismatch against Coin<T>). */
 export function buildCommitAsBuyerTx(config, voucher, paymentCoinId) {
-  const myrc = coinType(config);
+  const stable = coinType(config);
   if (!paymentCoinId) {
-    throw new Error(
-      "paymentCoinId required — the buyer wallet has no stablecoin coin object; fund it via POST /v1/fund first"
+    throw Object.assign(
+      new Error(
+        "paymentCoinId required — the buyer wallet has no stablecoin coin object; fund it via POST /v1/fund first"
+      ),
+      { code: "PAYMENT_COIN_MISSING" }
     );
   }
   const tx = new Transaction();
-  const payment = tx.object(paymentCoinId);
+  const payment = tx.splitCoins(tx.object(paymentCoinId), [tx.pure.u64(voucher.amount)]);
   tx.moveCall({
     target: `${config.packageId}::escrow::commit_as_buyer`,
-    typeArguments: [myrc],
+    typeArguments: [stable],
     arguments: [
       tx.object(config.escrowId),
       tx.object(SUI_CLOCK_ID),
@@ -336,12 +341,30 @@ export async function settleVoucher(client, keypair, config, voucher) {
   return signAndRun(client, keypair, tx);
 }
 
+/** escrow::refund — return locked funds to the shared pool (cap path). */
 export async function refundVoucher(client, keypair, config, voucher) {
   const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::refund`,
     typeArguments: [myrc],
+    arguments: [
+      tx.object(config.escrowId),
+      tx.object(config.authorityId),
+      utf8Vector(tx, voucher.nonce)
+    ]
+  });
+  return signAndRun(client, keypair, tx);
+}
+
+/** escrow::refund_to_buyer — zkLogin path: transfer the locked funds back to
+    the recorded buyer address instead of joining the shared pool. */
+export async function refundToBuyerVoucher(client, keypair, config, voucher) {
+  const stable = coinType(config);
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${config.packageId}::escrow::refund_to_buyer`,
+    typeArguments: [stable],
     arguments: [
       tx.object(config.escrowId),
       tx.object(config.authorityId),
