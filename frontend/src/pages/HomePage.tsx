@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
-import { StrengthBars } from "../components/RecoveryOverlay";
+import { ESCROW_DEPLOY } from "../services/live";
 import ProtectionModal from "../components/ProtectionModal";
-import type { Session } from "../services/types";
+import TopUpModal from "../components/TopUpModal";
 
-function useTicker(active: boolean, ms = 300) {
+function useTicker(active: boolean, ms = 1000) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!active) return;
@@ -14,110 +15,55 @@ function useTicker(active: boolean, ms = 300) {
   }, [active, ms]);
 }
 
-function SimulatedTelemetryCard({
-  isDegraded,
-  isRecovered,
-  extraMbps,
-}: {
-  isDegraded: boolean;
-  isRecovered: boolean;
-  extraMbps: number;
-}) {
-  useTicker(true, 1000);
-
-  const downlink = isDegraded ? "0 Mbps" : isRecovered ? `1,000 Mbps (+${extraMbps}M)` : "1,000 Mbps";
-  const latency = isDegraded ? "142 ms" : "18 ms";
-  const jitter = isDegraded ? "28.4 ms" : "2.1 ms";
-  const loss = isDegraded ? "4.2 %" : "0.0 %";
-
-  const cell = (k: string, v: string, warn?: boolean) => (
-    <div className="n">
-      <div className="nk">{k}</div>
-      <div className={`nv ${warn ? "bad" : ""}`} style={{ color: warn ? "var(--bad)" : undefined }}>
-        {v}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="card">
-      <div className="pad">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontWeight: 800, fontSize: 13.5 }}>Connection Telemetry (Simulated Link)</span>
-          <span className={`chip ${!isDegraded ? "green" : "red"}`}>
-            <span className="dot" /> {!isDegraded ? "Active · Stable" : "Degraded / Suppressed"}
-          </span>
-        </div>
-        <div className="sess-grid" style={{ marginTop: 10 }}>
-          {cell("Latency (RTT)", latency, isDegraded)}
-          {cell("Jitter", jitter, isDegraded)}
-          {cell("Packet Loss", loss, isDegraded)}
-          {cell("Downlink Bandwidth", downlink, isDegraded)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SessionCard({ session }: { session: Session }) {
+function SessionCard() {
+  const session = useAppStore((s) => s.session)!;
   useTicker(true);
-
-  if (session.ended) {
-    return (
-      <div className="card">
-        <div className="pad">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <StrengthBars filled={0} cls="strength-2" />
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 14 }}>Recovery session ended</div>
-              <div style={{ color: "var(--muted)", fontSize: 12.5 }}>{session.endNote ?? "Plan duration expired."}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const remainMin = session.min - (Date.now() - session.start) / 1000;
   const totSec = Math.max(0, remainMin * 60);
   const mm = Math.floor(totSec / 60);
   const ss = Math.floor(totSec % 60);
-  const tput = (session.mbps - 1.4 + Math.random() * 3.2).toFixed(1);
-  const lat = Math.round(18 + Math.random() * 4);
+  const below = session.log.filter((x) => !x.ok).length;
 
   return (
-    <div className="card" style={{ borderColor: "var(--accent)" }}>
-      <div className="pad">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Active Autonomous Recovery Session</div>
-            <div style={{ color: "var(--muted)", fontSize: 12.5 }}>
-              +{session.agreed} Mbps via KilatLink FWA · {session.min} min duration
-            </div>
-          </div>
-          <span className="chip sui">Sui Escrow Locked</span>
-        </div>
-
-        <div className="sess-grid" style={{ marginTop: 12 }}>
-          <div className="n">
-            <div className="nk">Delivered Throughput</div>
-            <div className="nv" style={{ color: "var(--ok)" }}>
-              {tput} Mbps
-            </div>
-          </div>
-          <div className="n">
-            <div className="nk">Latency</div>
-            <div className="nv">{lat} ms</div>
+    <div className="session-card">
+      <div className="head">
+        <div>
+          <div className="panel-title">Backup session</div>
+          <div className="wal-sub">
+            KilatLink FWA · {session.agreed} Mbps · {session.min} min
           </div>
         </div>
-
-        <div className="sess-foot">
-          <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>Time remaining:</span>
-          <span className="cd">
-            {mm}:{String(ss).padStart(2, "0")}
-          </span>
-          <span style={{ fontSize: 12.5, color: "var(--muted)", marginLeft: "auto" }}>{rm(session.cost)}</span>
-        </div>
+        <span className="chip good" style={{ marginLeft: "auto" }}>
+          <span className="dot" />
+          SLA OK
+        </span>
+      </div>
+      <div className="kv">
+        <span className="k">Expires in</span>
+        <span className="v mono" style={{ fontSize: 13 }}>
+          {mm}:{String(ss).padStart(2, "0")}
+        </span>
+      </div>
+      <div className="kv">
+        <span className="k">Paid by agent</span>
+        <span className="v">{rm(session.cost)}</span>
+      </div>
+      <div className="kv">
+        <span className="k">Deal details</span>
+        <span className="v">
+          <Link to="/activity" className="link-btn ghost" style={{ padding: "5px 13px", fontSize: 11 }}>
+            Open transaction ↓
+          </Link>
+        </span>
+      </div>
+      <div className="net-foot" style={{ marginTop: 8 }}>
+        <span>
+          last {session.min}m · <b>{below}</b> samples below 95%
+        </span>
+        <span>
+          next check <b>1s</b>
+        </span>
       </div>
     </div>
   );
@@ -129,32 +75,40 @@ export default function HomePage() {
   const isDegraded = state === "attention" || state === "recovering" || s.capacity.primaryDown;
   const isRecovered = s.capacity.extra > 0;
   const [modalOpen, setModalOpen] = useState(false);
-  // LIVE = real A2A agents + Sui escrow (falls back to simulation when the
-  // backend is down); SIM = scripted timers. Persists for the session.
-  const [liveMode, setLiveMode] = useState(true);
+  const [topUpOpen, setTopUpOpen] = useState(false);
 
-  // Suppress strength to 1 bar or 0 bars when degraded, otherwise 4/4
-  const signalFilled = isDegraded && !isRecovered ? 1 : 4;
-  const signalCls = isDegraded && !isRecovered ? "strength-bad" : "";
-  const signalLabel = isDegraded && !isRecovered ? "Suppressed / Weak" : "Excellent (1,000M Fiber)";
+  const walletConnected = Boolean(s.zkLogin);
 
-  const currentDisplayMbps = isDegraded && !isRecovered ? 0 : isRecovered ? s.capacity.current : 1000;
+  const currentMbps = isDegraded && !isRecovered ? 0 : isRecovered ? s.capacity.current : s.capacity.primary;
+  const latency = isDegraded && !isRecovered ? 142 : Math.round(s.netSample?.rttMs ?? 19);
+  const loss = isDegraded && !isRecovered ? 4.2 : s.netSample?.lossPct ?? 0.0;
 
-  const hero = {
-    protected: { cls: "green", text: "Connection Protected" },
-    recovering: { cls: "blue", text: "Acquiring Backup Capacity…" },
-    attention: { cls: "amber", text: "Line Degradation Detected (Suppressed)" },
-  }[state];
+  const heroChip =
+    isRecovered ? (
+      <span className="chip good">
+        <span className="dot" />
+        Recovered · Backup active
+      </span>
+    ) : isDegraded ? (
+      <span className="chip amber">
+        <span className="dot" />
+        Primary suppressed
+      </span>
+    ) : (
+      <span className="chip good">
+        <span className="dot" />
+        Connected · protected
+      </span>
+    );
 
   // Dynamic Discovery & Multi-Agent Interaction Log.
-  // Live mode with an active incident → the REAL SSE narration (thread
-  // bubbles); otherwise the scripted showcase entries.
+  // An active incident → the REAL SSE narration (thread bubbles); otherwise
+  // the scripted showcase entries.
   const incident = s.incident;
-  const liveLogs = liveMode && incident
+  const liveLogs = incident
     ? incident.thread.slice(-8).map((b, i) => ({
         time: "T+" + ((Date.now() - incident.startedAt) / 1000).toFixed(1) + "s",
-        title:
-          b.from === "user" ? "Subscriber Intent (SMS)" : b.from === "net" ? "Edge Watcher" : "Agent Market",
+        title: b.from === "user" ? "Subscriber Intent (SMS)" : b.from === "net" ? "Edge Watcher" : "Agent Market",
         type: b.from === "user" ? "sui" : b.text.startsWith("✗") || b.text.startsWith("⚠️") ? "warn" : "ok",
         desc: b.text,
         key: "live-" + i,
@@ -162,192 +116,246 @@ export default function HomePage() {
     : null;
   const interactionLogs = liveLogs ?? [
     {
-      time: "T+0.0s",
-      title: "Discovery Agent",
+      time: "T+0.4s",
+      title: "RescueAgent · detected outage",
       type: "warn",
-      desc: "Physical WAN degradation detected: latency surged to 142ms, packet loss reached 4.2%, 500 Mbps shortfall identified.",
-    },
-    {
-      time: "T+1.2s",
-      title: "A2A Broadcast Protocol",
-      type: "sui",
-      desc: "Broadcast parallel query to 3 nearby registered providers: NusaNet 5G, KilatLink FWA, and OrbitSat GO.",
-    },
-    {
-      time: "T+2.0s",
-      title: "Provider Quotes Received",
-      type: "ok",
-      desc: "KilatLink FWA (500M @ USDC 12.60, 18ms), NusaNet 5G (500M @ USDC 18.50, 25ms), OrbitSat GO (150M @ USDC 24.00, 65ms).",
-    },
-    {
-      time: "T+2.6s",
-      title: "SMS Reply Channel",
-      type: "sui",
-      desc: "Shortage prompt sent to subscriber. User approved: 30 min duration within USDC 14.00 budget.",
-    },
-    {
-      time: "T+4.5s",
-      title: "Gonka 3-Agent Consensus",
-      type: "ok",
-      desc: "DeepSeek-V3 + Kimi-k1.5 + MiniMax-ABAB6.5 reached 3/3 unanimous consensus selecting KilatLink FWA.",
-    },
-    {
-      time: "T+5.5s",
-      title: "Sui Escrow Dual-Sig Lock",
-      type: "sui",
-      desc: "Smart contract object locked on Sui Testnet: USDC 11.97 provider amount + USDC 0.63 platform fee.",
+      desc: "Uplink 0 Mbps · 500 Mbps shortfall · P1 services at risk. Protection rule P1 fired: restore within 15 s or escalate.",
     },
     {
       time: "T+7.2s",
-      title: "CAMARA QoD Path Active",
+      title: "RescueAgent · A2A broadcast",
+      type: "sui",
+      desc: "Queried 3 provider agents — 500 Mbps · 30 min · ≤ USDC 14.",
+    },
+    {
+      time: "T+11.1s",
+      title: "KilatLink FWA · offer selected",
       type: "ok",
-      desc: "Programmable high-speed slice established. Full 500 Mbps capacity verified and online.",
+      desc: "500 Mbps · 18 ms · USDC 12.60 · activation 8 s · 0% loss route.",
+    },
+    {
+      time: "T+12.9s",
+      title: "3 voting agents · deal approved",
+      type: "ok",
+      desc: "Unanimous 3/3 — pricing, SLA and budget agents countersigned.",
+    },
+    {
+      time: "T+20.2s",
+      title: "RescueAgent · signed & paid",
+      type: "sui",
+      desc: "Built the PTB, signed with its own keypair, locked USDC 12.60 — no human approval.",
     },
   ];
 
   return (
-    <div className="cols">
-      <div>
-        <div className="hero">
-          <div className={`status ${hero.cls}`}>
-            <span className={`dot ${state === "protected" ? "protected" : state}`} />
-            {hero.text}
-          </div>
-          <h1>
-            {currentDisplayMbps}
-            <span className="u">Mbps</span>
-          </h1>
-          <div className="sub">
-            {isRecovered
-              ? `Running on autonomous backup capacity (+${s.capacity.extra} Mbps).`
-              : isDegraded
-              ? "Primary line suppressed. Autonomous rescue engine is resolving shortfall."
-              : "Primary fiber link operating normally with autonomous SLA resilience."}
-          </div>
+    <div>
+      <div
+        className="page-head"
+        style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}
+      >
+        <div>
+          <h2>Your network, right now</h2>
+          <p>Live strength of the line you are paying for — protected by autonomous agents.</p>
         </div>
-
-        {/* Shortfall Alert */}
-        {state !== "protected" && (
-          <div className="card" style={{ borderLeft: "4px solid var(--warn)", background: "#fffdfa" }}>
-            <div className="pad">
-              <div style={{ fontWeight: 800, fontSize: 15 }}>Connectivity Shortfall Detected</div>
-              <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-                Primary link degraded to 0 Mbps. Interactive SMS recovery protocol active.
-              </p>
-              <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <button
-                  className="btn primary"
-                  onClick={() =>
-                    liveMode ? s.startLiveRecovery("s2") : s.startRecovery("main")
-                  }
-                >
-                  {liveMode
-                    ? "Acquire Replacement Capacity (Live A2A + Sui)"
-                    : "Acquire Replacement Capacity (Reply by SMS)"}
-                </button>
-                <button
-                  className={`btn sm ${liveMode ? "subtle" : "primary"}`}
-                  onClick={() => setLiveMode(!liveMode)}
-                  title="Toggle between the live backend and the scripted simulation"
-                >
-                  {liveMode ? "● LIVE backend" : "○ SIM mode"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {state === "protected" && s.session && <SessionCard session={s.session} />}
-
-        {/* Telemetry Card */}
-        <div className="card-title">Live Link Telemetry</div>
-        <SimulatedTelemetryCard
-          isDegraded={isDegraded && !isRecovered}
-          isRecovered={isRecovered}
-          extraMbps={s.capacity.extra}
-        />
-
-        {/* Live Discovery & Agent Interaction Log on Dashboard */}
-        <div className="card-title">
-          Discovery &amp; Multi-Agent Interaction Log
-          {liveLogs && <span className="chip green" style={{ marginLeft: 8, fontSize: 10 }}>live</span>}
-        </div>
-        <div className="interaction-feed">
-          {(incident ? interactionLogs : interactionLogs.slice(0, 3)).map((log, i) => (
-            <div key={(log as { key?: string }).key ?? i} className="feed-item">
-              <span className={`feed-dot ${log.type}`} />
-              <div className="feed-content">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span className="feed-title">{log.title}</span>
-                  <span className="feed-time">{log.time}</span>
-                </div>
-                <div className="feed-desc">{log.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <span className="chip live">
+          <span className="dot" />
+          MONITORING · 1s interval
+        </span>
       </div>
 
-      <div>
-        <div className="card-title" style={{ marginTop: 8 }}>Status Overview</div>
-        <div className="card">
-          <div className="row">
-            <span className="grow k">Primary Link</span>
-            <span className={`v ${!isDegraded || isRecovered ? "ok" : "bad"}`}>
-              {isDegraded && !isRecovered ? "Degraded / Suppressed" : "Connected (1,000 Mbps)"}
-            </span>
+      <div className="hero">
+        <div className="card net-hero">
+          <div className="net-status-row">
+            {heroChip}
+            {isRecovered && <span className="chip neutral" style={{ marginLeft: "auto" }}>Escrow settled</span>}
           </div>
-          <div className="row">
-            <span className="grow k">Autonomous Protection</span>
-            <span className="v ok">Active</span>
+          <div className="net-big">
+            {currentMbps}
+            <small> Mbps</small>
           </div>
-          <div className="row">
-            <span className="grow k">Signal Quality</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <StrengthBars filled={signalFilled} cls={signalCls} />
-              <span className={`v ${signalFilled >= 3 ? "ok" : "bad"}`}>{signalLabel}</span>
-            </span>
+          <div className="net-sub">
+            {isRecovered
+              ? `Primary fiber suppressed — you are running on a ${s.session?.agreed ?? s.capacity.extra} Mbps backup slice, bought and attached by your agent.`
+              : isDegraded
+              ? "Primary fiber suppressed — your RescueAgent is acquiring replacement capacity right now."
+              : "Primary fiber link healthy. Agents are standing by on a 1-second monitoring interval."}
           </div>
-          <div className="row">
-            <span className="grow k">Auto-Recovery</span>
-            <span className={`v ${s.auto ? "ok" : ""}`}>{s.auto ? "ON" : "OFF"}</span>
+          <div className="net-spark">
+            <svg width="100%" height="64" viewBox="0 0 280 54" preserveAspectRatio="none">
+              <line x1="0" x2="280" y1="10" y2="10" stroke="#e5e5ea" strokeDasharray="4 3" />
+              <polyline
+                fill="none"
+                stroke="#0071e3"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                points={
+                  isDegraded && !isRecovered
+                    ? "0,10 20,12 40,40 60,46 90,47 130,47 170,47 210,47 250,47 280,47"
+                    : "0,46 18,44 36,20 54,17 90,16 130,16 170,15 210,16 250,15 280,16"
+                }
+              />
+              <g fill="#34c759">
+                {isDegraded && !isRecovered ? (
+                  <circle cx="10" cy="10" r="2.6" />
+                ) : (
+                  <>
+                    <circle cx="54" cy="17" r="2.6" />
+                    <circle cx="120" cy="16" r="2.6" />
+                    <circle cx="190" cy="16" r="2.6" />
+                    <circle cx="280" cy="16" r="2.6" />
+                  </>
+                )}
+              </g>
+              <text x="2" y="7" fontSize="8" fill="#aeaeb2">
+                {isDegraded && !isRecovered ? "primary suppressed →" : "backup attached →"}
+              </text>
+            </svg>
+            <div className="net-foot">
+              <span>
+                last 60s · <b>{isDegraded && !isRecovered ? 0 : 100}</b>% of expected strength
+              </span>
+              <span>
+                next check <b>1s</b>
+              </span>
+            </div>
           </div>
-          {s.auto && (
-            <div className="row">
-              <span className="grow k">Monthly Spending Limit</span>
-              <span className="v">USDC {s.monthlyLimit} / mo</span>
+        </div>
+
+        <div className="net-side">
+          <div className="tile-row">
+            <div className="tile">
+              <div className="k">Primary</div>
+              <div className={`v ${isDegraded && !isRecovered ? "bad" : ""}`}>
+                {isDegraded && !isRecovered ? "0 Mbps" : `${s.capacity.primary} Mbps`}
+              </div>
+              <div className="s">{isDegraded && !isRecovered ? "suppressed" : "fiber · nominal"}</div>
+            </div>
+            <div className="tile">
+              <div className="k">Backup</div>
+              <div className={`v ${isRecovered ? "good" : ""}`}>{isRecovered ? `+${s.capacity.extra}` : "—"}</div>
+              <div className="s">{isRecovered ? "KilatLink FWA" : "standby"}</div>
+            </div>
+            <div className="tile">
+              <div className="k">Latency</div>
+              <div className={`v ${isDegraded && !isRecovered ? "bad" : ""}`}>{latency} ms</div>
+              <div className="s">{isDegraded && !isRecovered ? "was 18 ms" : "rtt · live probe"}</div>
+            </div>
+            <div className="tile">
+              <div className="k">Loss</div>
+              <div className={`v ${isDegraded && !isRecovered ? "bad" : "good"}`}>{loss.toFixed(1)}%</div>
+              <div className="s">last 5 probes</div>
+            </div>
+          </div>
+          {s.session && !s.session.ended ? (
+            <SessionCard />
+          ) : (
+            <div className="session-card">
+              <div className="head">
+                <div>
+                  <div className="panel-title">No active recovery</div>
+                  <div className="wal-sub">Escrow standby · agents watching</div>
+                </div>
+                <span className="chip neutral" style={{ marginLeft: "auto" }}>
+                  <span className="dot" />
+                  Idle
+                </span>
+              </div>
+              <div className="kv">
+                <span className="k">Monthly spending limit</span>
+                <span className="v">USDC {s.monthlyLimit.toFixed(2)}</span>
+              </div>
+              <div className="kv">
+                <span className="k">Auto-pay cap</span>
+                <span className="v">USDC {s.maxPerRecovery.toFixed(2)} / incident</span>
+              </div>
+              <div className="txd-link" style={{ justifyContent: "flex-start", marginTop: 10 }}>
+                <button
+                  className="link-btn ghost"
+                  style={{ padding: "5px 13px", fontSize: 11 }}
+                  onClick={() => setModalOpen(true)}
+                >
+                  Configure protection
+                </button>
+              </div>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Simulation Actions */}
-        <div className="card-title">Simulation Controls</div>
-        <div className="card">
-          <div className="pad" style={{ display: "grid", gap: 8 }}>
-            <button
-              className="btn primary"
-              onClick={() => s.startRecovery("main")}
-              disabled={s.running}
-            >
-              Suppress Link & Test Recovery (SMS Reply)
+      {/* Recovery controls */}
+      <div className="card-title">Recovery controls</div>
+      <div className="card">
+        <div className="pad" style={{ display: "grid", gap: 8 }}>
+          <button
+            className="btn primary"
+            onClick={() => s.startLiveRecovery("s2")}
+            disabled={s.running}
+            title="Broadcast your intent to the agent market and settle escrow on Sui"
+          >
+            Run recovery
+          </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <button className="btn subtle" onClick={s.resetSim} disabled={s.running}>
+              Reset to normal link
             </button>
             <button
               className="btn subtle"
-              onClick={() => setModalOpen(true)}
+              onClick={() => setTopUpOpen(true)}
+              disabled={!walletConnected}
+              title={walletConnected ? "Add USDC to the escrow pool" : "Connect a wallet first"}
             >
-              Configure Protection Settings
+              Top up pool
             </button>
-            <button
-              className="btn subtle"
-              onClick={s.resetSim}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 4, borderTop: "1px solid var(--line)" }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".07em" }}>
+              Escrow operator
+            </span>
+            <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>
+              {ESCROW_DEPLOY.platformOperator.slice(0, 10)}…{ESCROW_DEPLOY.platformOperator.slice(-8)}
+            </span>
+            <a
+              className="link-btn ghost"
+              style={{ padding: "2px 8px", fontSize: 10.5, textDecoration: "none" }}
+              href={`https://suiscan.xyz/testnet/account/${ESCROW_DEPLOY.platformOperator}`}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Reset to Normal Link (1,000 Mbps)
-            </button>
+              Suiscan ↗
+            </a>
           </div>
         </div>
       </div>
 
+      {/* Agent interaction feed */}
+      <div className="card-title">
+        Agent activity
+        {liveLogs && (
+          <span className="chip good" style={{ marginLeft: 8, fontSize: 10 }}>
+            <span className="dot" />
+            live
+          </span>
+        )}
+      </div>
+      <div className="interaction-feed">
+        {(incident ? interactionLogs : interactionLogs.slice(0, 4)).map((log, i) => (
+          <div key={(log as { key?: string }).key ?? i} className="feed-item">
+            <span className={`feed-dot ${log.type}`} />
+            <div className="feed-content">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="feed-title">{log.title}</span>
+                <span className="feed-time">{log.time}</span>
+              </div>
+              <div className="feed-desc">{log.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {modalOpen && <ProtectionModal onClose={() => setModalOpen(false)} />}
+      {topUpOpen && s.zkLogin && (
+        <TopUpModal session={s.zkLogin} onClose={() => setTopUpOpen(false)} />
+      )}
     </div>
   );
 }

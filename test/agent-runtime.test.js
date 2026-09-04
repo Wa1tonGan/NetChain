@@ -661,7 +661,15 @@ test("gonkaRanker: merges votes by Borda count with deterministic tie-break", as
     budgetMs: 500,
     fetchImpl: fakeFetch
   });
-  assert.deepEqual(merged, ["PROVIDER-B", "PROVIDER-A"]);
+  assert.deepEqual(merged.ranking, ["PROVIDER-B", "PROVIDER-A"]);
+  // Transparency UI: every vote carries its Gonka request id (header absent
+  // in the fake fetch -> null) and the raw per-model ranking.
+  assert.equal(merged.votes.length, 2);
+  assert.deepEqual(
+    merged.votes.map((v) => v.ranking),
+    [["PROVIDER-A", "PROVIDER-B"], ["PROVIDER-B", "PROVIDER-A"]]
+  );
+  assert.deepEqual(merged.votes.map((v) => v.model), ["m1", "m2"]);
 });
 
 test("fee engine: plan price + 5% platform fee, split fields handed to Person 3", async () => {

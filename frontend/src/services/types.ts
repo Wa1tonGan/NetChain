@@ -62,7 +62,7 @@ export interface Incident {
 export interface RecoveryRecord {
   id: string;
   time: number;
-  timeline: { time: string; label: string }[];
+  timeline: { time: string; label: string; at?: number }[];
   outcome: Outcome;
   provider: string;
   cap: number;
@@ -83,7 +83,10 @@ export interface RecoveryRecord {
   // live-mode additions
   nonce?: string;
   commitTx?: string;
-  comparison?: { name: string; state: string; sel: boolean }[];
+  comparison?: { name: string; state: string; sel: boolean; id?: string }[];
+  /** Gonka consensus audit trail — one vote per model, each with the
+   *  x-request-id needed to audit the inference against the gateway */
+  consensus?: { model: string; requestId: string | null; ranking: string[] }[];
 }
 
 export interface Payment {
@@ -96,6 +99,10 @@ export interface Payment {
   refund: number;
   refundNote: string;
   state: string;
+  /** real settle digest for LIVE runs — links the row to Suiscan */
+  txDigest?: string;
+  /** top-up rows are deposits (money IN), excluded from spend totals */
+  kind?: "recovery" | "topup";
 }
 
 export interface ActivityItem {

@@ -17,12 +17,19 @@
     "claim:server": "node --env-file-if-exists=.env src/a2a/claimAgent.js",
     "payments:sui": "node --env-file-if-exists=.env scripts/sui-payments.mjs",
     "integrate:sui": "node --env-file-if-exists=.env scripts/integrate-sui.mjs",
-    "walrus:proof": "node --env-file-if-exists=.env scripts/sui-walrus.mjs"
+    "walrus:proof": "node --env-file-if-exists=.env scripts/sui-walrus.mjs",
+    "agents": "node --env-file-if-exists=.env scripts/start-all.mjs",
+    "frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently --kill-others-on-fail --names \"agents,trust,zklogin,frontend\" --prefix-colors \"blue,magenta,yellow,green\" \"npm:agents\" \"npm:trust:server\" \"npm:zklogin:server\" \"npm:frontend\"",
+    "dev:agents": "concurrently --kill-others-on-fail --names \"agents,trust,zklogin\" --prefix-colors \"blue,magenta,yellow\" \"npm:agents\" \"npm:trust:server\" \"npm:zklogin:server\""
   },
   "dependencies": {
     "@mysten/sui": "2.27.1",
     "@mysten/walrus": "^1.2.21",
     "@noble/hashes": "^2.4.0",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }

@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
+import { fetchEscrowPoolBalance } from "../services/wallet";
+import { ESCROW_DEPLOY } from "../services/live";
 import { useChainBalance } from "../hooks/useChainBalance";
 import ProtectionModal from "../components/ProtectionModal";
 import WalletConnectModal from "../components/WalletConnectModal";
+import TopUpModal from "../components/TopUpModal";
+import TransactionHistory from "../components/TransactionHistory";
 
 export default function ProfilePage() {
   const s = useAppStore();
@@ -12,13 +16,51 @@ export default function ProfilePage() {
   const [protectionModalOpen, setProtectionModalOpen] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  // Which balance the card headline shows; "auto" prefers the escrow
-  // stablecoin, then SUI gas.
-  const [currency, setCurrency] = useState<"auto" | "sui" | "stable">("auto");
+  const [selectedCoinType, setSelectedCoinType] = useState<string | null>(null);
+  const [poolBalance, setPoolBalance] = useState<number | null>(null);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const isWalletConfigured = Boolean(s.zkLogin);
+
+  // Shared escrow pool: agent-mode commits draw from it. Shared (not per-user)
+  // in this deployment — with a single user it IS the user's prepaid balance.
+  // Visible only after login — the balance belongs to the connected wallet.
+  useEffect(() => {
+    if (!isWalletConfigured) {
+      setPoolBalance(null);
+      return;
+    }
+    let alive = true;
+    const tick = () => {
+      void fetchEscrowPoolBalance().then((v) => alive && setPoolBalance(v));
+    };
+    tick();
+    const timer = setInterval(tick, 10_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [isWalletConfigured, topUpOpen]);
 
   const walletAddress = s.zkLogin?.address ?? s.walletAddr;
-  const isWalletConfigured = Boolean(s.zkLogin);
   const chain = useChainBalance();
+
+  // Spending display currency: whatever the wallet holds, USDC/SUI first.
+  const selectableAssets = chain?.assets ?? [];
+  const selectedAsset =
+    selectableAssets.find((a) => a.coinType === selectedCoinType) ??
+    selectableAssets.find((a) => a.label === "USDC") ??
+    selectableAssets[0] ??
+    null;
+
+  // "This month" = real recovery SPEND from the payments ledger (this calendar
+  // month); top-up deposits are money-in and excluded.
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthNet = s.payments
+    .filter((p) => p.ts >= monthStart.getTime() && p.kind !== "topup")
+    .reduce((sum, p) => sum + (p.amount - (p.refund ?? 0)), 0);
+  const monthCount = s.payments.filter((p) => p.ts >= monthStart.getTime() && p.kind !== "topup").length;
 
   function handleLogOut() {
     s.setZkLogin(null);
@@ -31,363 +73,300 @@ export default function ProfilePage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const walletSourceLabel = s.zkLogin?.iss === "sui-extension" || s.zkLogin?.iss === "sui-standard"
-    ? "Sui Wallet Extension"
-    : s.zkLogin?.iss === "custom-key"
-    ? "Custom Sui Account"
-    : "Sui zkLogin (Google)";
+  const walletSourceLabel = s.zkLogin?.name
+    ? s.zkLogin.name
+    : s.zkLogin?.iss === "sui-extension" || s.zkLogin?.iss === "sui-standard" || s.zkLogin?.iss === "sui-wallet"
+      ? "Sui Wallet Extension"
+      : s.zkLogin?.iss === "custom-key"
+        ? "Custom Sui Account"
+        : "Sui zkLogin (Google)";
+
+  const balanceLine = chain?.online
+    ? selectedAsset
+      ? `${selectedAsset.total.toLocaleString(undefined, { maximumFractionDigits: selectedAsset.label === "SUI" ? 3 : 2 })} ${selectedAsset.label}`
+      : "0.00"
+    : "—";
+
+  const recoveries = s.activity.filter((a) => a.recordId).slice(0, 3);
 
   return (
     <div style={{ maxWidth: 940, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-.02em" }}>Profile & Settings</h1>
-      <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 4 }}>
-        Manage your authenticated identity, Sui escrow balance, and network protection settings.
-      </p>
-
-      <div className="cols" style={{ marginTop: 16 }}>
-        <div>
-          {/* Account Profile Card */}
-          <div className="card">
-            <div className="pad">
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: "var(--accent-soft)",
-                    color: "var(--accent-ink)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 16,
-                    fontWeight: 800,
-                  }}
-                >
-                  {s.zkLogin?.name ? (
-                    s.zkLogin.name.charAt(0).toUpperCase()
-                  ) : (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="8" r="4" />
-                      <path d="M5 20c0-3.87 3.13-7 7-7s7 3.13 7 7" />
-                    </svg>
-                  )}
-                </div>
-
-                <div className="grow">
-                  <div style={{ fontWeight: 800, fontSize: 16 }}>
-                    {s.zkLogin?.name ?? (isWalletConfigured ? "Connected Sui User" : "Unconnected Guest")}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                    {s.zkLogin?.email ?? (isWalletConfigured ? "Sui Testnet Identity" : "No Wallet Connected")}
-                  </div>
-                </div>
-
-                {isWalletConfigured ? (
-                  <button
-                    className="btn sm subtle"
-                    onClick={handleLogOut}
-                    title="Disconnect / Log Out"
-                    aria-label="Disconnect"
-                    style={{
-                      width: 34,
-                      height: 34,
-                      padding: 0,
-                      borderRadius: "50%",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16 17 21 12 16 7" />
-                      <line x1="21" y1="12" x2="9" y2="12" />
-                    </svg>
-                  </button>
-                ) : (
-                  <button className="btn sm primary" onClick={() => setWalletModalOpen(true)}>
-                    Connect
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="row">
-              <span className="grow k">Connected Device</span>
-              <span className="v">{s.deviceName}</span>
-            </div>
-            <div className="row">
-              <span className="grow k">Monitoring Agent</span>
-              <span className="v ok">Active & Watching</span>
-            </div>
-          </div>
-
-          {/* Preferences & Protection Trigger */}
-          <div className="card-title">Network Protection</div>
-          <div className="card">
-            <button className="row" onClick={() => setProtectionModalOpen(true)}>
-              <span className="grow">
-                <span className="t">Protection & Spending Limits</span>
-                <div className="s">
-                  Auto-recovery is {s.auto ? `ON · Capped at USDC ${s.monthlyLimit}/mo` : "OFF"}
-                </div>
-              </span>
-              <span style={{ color: "var(--faint)", fontSize: 18 }}>›</span>
-            </button>
-
-            <div className="row">
-              <span className="grow">
-                <span className="t">SMS Degradation Alerts</span>
-                <div className="s">Receive recovery prompts when line degrades</div>
-              </span>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={s.notif}
-                  onChange={(e) => s.setNotif(e.target.checked)}
-                  aria-label="Notifications"
-                />
-                <i />
-              </label>
-            </div>
-          </div>
-
-          {/* Demo Utilities */}
-          <div className="card-title">Simulation Tools</div>
-          <div className="card">
-            <button className="row" onClick={() => navigate("/dev")}>
-              <span className="grow">
-                <span className="t">Hackathon Scenario Matrix</span>
-                <div className="s">Launch S1–S6 recovery simulation tests</div>
-              </span>
-              <span className="chip sui">Open Matrix ›</span>
-            </button>
-          </div>
-        </div>
-
-        <div>
-          {/* Embedded Wallet & Escrow Section */}
-          <div className="card-title" style={{ marginTop: 0 }}>Sui Wallet & Trust Layer</div>
-
-          {!isWalletConfigured ? (
-            /* Unconfigured Wallet UI State */
-            <div className="card" style={{ border: "2px dashed var(--line)", background: "#fffdfa", textAlign: "center" }}>
-              <div className="pad" style={{ padding: "32px 24px" }}>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>Sui Wallet Not Configured</div>
-                <p style={{ fontSize: 13, color: "var(--muted)", maxWidth: "42ch", margin: "6px auto 20px" }}>
-                  Connect your Google account via zkLogin or connect a Sui wallet to lock zero-latency escrow during outages.
-                </p>
-                <button
-                  className="btn primary"
-                  style={{ maxWidth: 220, margin: "0 auto" }}
-                  onClick={() => setWalletModalOpen(true)}
-                >
-                  Connect Sui Wallet
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* Configured Wallet State */
-            <>
-              {/* Balance Card */}
-              <div className="card">
-                <div className="pad">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase" }}>
-                      {chain?.online ? "On-Chain Escrow Balance" : "Sui Wallet Balance"}
-                    </div>
-                    {chain?.online ? (
-                      <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                        <span className="dot" /> on-chain
-                      </span>
-                    ) : (
-                      <span className="chip amber" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                        <span className="dot" /> offline
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Currency selector — which balance the headline shows.
-                      Only rendered while the chain read succeeds. */}
-                  {chain?.online && (
-                    <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                      {([
-                        { key: "auto", label: "Auto" },
-                        { key: "sui", label: "SUI" },
-                        ...(chain.stable
-                          ? [{ key: "stable" as const, label: chain.stable.label }]
-                          : []),
-                      ] as { key: "auto" | "sui" | "stable"; label: string }[])
-                        .map((opt) => {
-                          const active = currency === opt.key;
-                          return (
-                            <button
-                              key={opt.key}
-                              onClick={() => setCurrency(opt.key)}
-                              aria-pressed={active}
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: 800,
-                                padding: "3px 10px",
-                                borderRadius: 999,
-                                cursor: "pointer",
-                                border: `1px solid ${active ? "var(--accent)" : "var(--line)"}`,
-                                background: active ? "var(--accent-soft)" : "transparent",
-                                color: active ? "var(--accent-ink)" : "var(--muted)",
-                              }}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  )}
-
-                  {(() => {
-                    if (!chain?.online) {
-                      return (
-                        <>
-                          <div className="big-num" style={{ marginTop: 4 }}>
-                            —
-                          </div>
-                          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                            Chain unreachable — balance unavailable
-                          </div>
-                        </>
-                      );
-                    }
-                    const resolved =
-                      currency === "auto" ? (chain.stable ? "stable" : "sui") : currency;
-                    if (resolved === "stable" && chain.stable) {
-                      return (
-                        <>
-                          <div className="big-num" style={{ marginTop: 4 }}>
-                            {chain.stable.total.toFixed(2)} {chain.stable.label}
-                          </div>
-                          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                            Live from Sui testnet · gas {chain.sui.total.toFixed(3)} SUI
-                          </div>
-                        </>
-                      );
-                    }
-                    return (
-                      <>
-                        <div className="big-num" style={{ marginTop: 4 }}>
-                          {chain.sui.total.toFixed(3)} SUI
-                        </div>
-                        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-                          Live from Sui testnet
-                          {chain.stable
-                            ? ` · ${chain.stable.total.toFixed(2)} ${chain.stable.label}`
-                            : ""}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Connected Sui Identity */}
-              <div className="card">
-                <div className="row">
-                  <div className="grow">
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="t">{walletSourceLabel}</span>
-                      {s.zkLogin?.signingMode === "zk" ? (
-                        <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                          <span className="dot" /> zk-signing (self-custody)
-                        </span>
-                      ) : s.zkLogin?.signingMode === "custodial-fallback" ? (
-                        <span className="chip amber" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                          <span className="dot" /> custodial fallback
-                        </span>
-                      ) : (
-                        <span className="chip green" style={{ fontSize: 10.5, padding: "2px 6px" }}>
-                          <span className="dot" /> Sui Testnet
-                        </span>
-                      )}
-                    </div>
-                    <div className="s mono" style={{ wordBreak: "break-all", fontSize: 12, marginTop: 3 }}>
-                      {walletAddress.slice(0, 14)}…{walletAddress.slice(-10)}
-                    </div>
-                  </div>
-                  <button
-                    className="btn subtle sm"
-                    style={{
-                      width: 30,
-                      height: 30,
-                      padding: 0,
-                      borderRadius: 6,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: copied ? "var(--ok)" : "var(--muted)",
-                    }}
-                    onClick={copyAddress}
-                    title={copied ? "Copied!" : "Copy address"}
-                  >
-                    {copied ? (
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <div className="stat-line">
-                  <span className="k">Escrow Lock State</span>
-                  <span className="v ok">{s.locked > 0 ? `Locked ${rm(s.locked)}` : "Standby (Ready)"}</span>
-                </div>
-                <div className="row" style={{ padding: "8px 18px", borderTop: "1px solid var(--line-soft)" }}>
-                  <button className="btn link sm" style={{ padding: 0 }} onClick={() => setWalletModalOpen(true)}>
-                    ⚙ Switch or Re-configure Wallet
-                  </button>
-                </div>
-              </div>
-
-              {/* Recent Settlements History */}
-              <div className="card-title">Settlement Receipts ({s.payments.length})</div>
-              {s.payments.length ? (
-                <div className="card" style={{ maxHeight: 220, overflowY: "auto" }}>
-                  {s.payments.map((p) => (
-                    <div key={p.id} className="row">
-                      <div className="grow">
-                        <div className="t">{p.label}</div>
-                        <div className="s">{p.provider} · {p.cap}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div className="v">{rm(p.amount)}</div>
-                        <div
-                          className="s"
-                          style={{ color: p.refund ? "var(--warn)" : "var(--ok)", fontWeight: 700 }}
-                        >
-                          {p.refund ? `Refunded ${rm(p.refund)}` : "Settled ✓"}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="card">
-                  <div className="row">
-                    <span className="s">No transactions yet. Payment is only charged after verified delivery.</span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      <div className="page-head">
+        <h2>Profile</h2>
+        <p>Your identity, wallet and the authority you granted the agents.</p>
       </div>
 
-      {/* Modals */}
+      <div className="prof-grid">
+        {/* Identity */}
+        <div className="pcard">
+          <div className="id-row">
+            <div className="avatar">
+              {s.zkLogin?.name ? s.zkLogin.name.charAt(0).toUpperCase() : "N"}
+            </div>
+            <div className="grow">
+              <div className="id-name">{s.zkLogin?.name ?? (isWalletConfigured ? "Connected Sui User" : "Guest")}</div>
+              <div className="id-mail">{s.zkLogin?.email ?? (isWalletConfigured ? "Sui Testnet Identity" : "No wallet connected")}</div>
+            </div>
+            {isWalletConfigured ? (
+              <button className="link-btn ghost" style={{ marginLeft: "auto" }} onClick={handleLogOut}>
+                Log out
+              </button>
+            ) : (
+              <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setWalletModalOpen(true)}>
+                Connect
+              </button>
+            )}
+          </div>
+          <div className="id-chips">
+            {s.zkLogin?.signingMode === "zk" ? (
+              <span className="act-ref green">✓ zkLogin self-custody</span>
+            ) : s.zkLogin?.signingMode === "custodial-fallback" ? (
+              <span className="act-ref amber">custodial fallback</span>
+            ) : isWalletConfigured ? (
+              <span className="act-ref green">✓ {walletSourceLabel}</span>
+            ) : (
+              <span className="act-ref">no wallet</span>
+            )}
+            <span className="act-ref">{s.deviceName} · eSIM</span>
+          </div>
+          <div className="addr-row">
+            <span className="mono">{walletAddress}</span>
+            <button className="copy" onClick={copyAddress}>
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+
+        {/* Wallet */}
+        <div className="pcard">
+          <div className="pcard-title">Wallet</div>
+          <div className="pcard-sub">Spending balance for autonomous recovery</div>
+          <div className="pay-amount" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+            <span>{isWalletConfigured ? balanceLine : "—"}</span>
+            {chain?.online && selectableAssets.length > 0 && (
+              <select
+                className="input"
+                style={{ width: "auto", padding: "2px 8px", fontSize: 12 }}
+                value={selectedAsset?.coinType ?? ""}
+                onChange={(e) => setSelectedCoinType(e.target.value)}
+                aria-label="Balance currency"
+              >
+                {selectableAssets.map((a) => (
+                  <option key={a.coinType} value={a.coinType}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="pay-meta">
+            {chain?.online ? "Live from Sui testnet" : isWalletConfigured ? "Chain unreachable" : "Connect a wallet to fund escrow"}
+          </div>
+          <div className="kv-p" style={{ marginTop: 8 }}>
+            <span className="k">This month</span>
+            <span className="v">
+              {monthCount > 0 ? `${rm(monthNet)} · ${monthCount} recovery${monthCount > 1 ? "s" : ""}` : "no recovery spend yet"}
+            </span>
+          </div>
+          <div className="kv-p">
+            <span className="k">Auto-pay cap</span>
+            <span className="v">{rm(s.maxPerRecovery)} / incident</span>
+          </div>
+          <div className="txd-link" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+            <button className="link-btn" onClick={() => setWalletModalOpen(true)}>
+              {isWalletConfigured ? "Switch wallet" : "Connect wallet"}
+            </button>
+          </div>
+        </div>
+
+        {/* Escrow pool — visible only after login (the balance belongs to
+            the connected wallet); guests see nothing here */}
+        {isWalletConfigured && (
+        <div className="pcard span2" style={{ border: "1px solid var(--blue-soft)", boxShadow: "0 1px 10px rgba(0,113,227,.08)" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  Escrow pool
+                </span>
+                <span className="chip green" style={{ fontSize: 9.5, padding: "1px 8px" }}>
+                  <span className="dot" /> on-chain
+                </span>
+                {poolBalance != null && poolBalance < 1 && (
+                  <span className="chip amber" style={{ fontSize: 9.5, padding: "1px 8px" }}>
+                    low
+                  </span>
+                )}
+              </div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 30,
+                  fontWeight: 800,
+                  letterSpacing: "-.02em",
+                  marginTop: 4,
+                  color: poolBalance != null && poolBalance < 1 ? "var(--amber-ink)" : "var(--ink)",
+                }}
+              >
+                {poolBalance == null ? "…" : `USDC ${poolBalance.toFixed(2)}`}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                Prepaid balance your RescueAgent spends autonomously — every commit draws from here under the on-chain
+                per-incident cap.
+              </div>
+              {poolBalance != null && poolBalance < 1 && (
+                <div style={{ fontSize: 11.5, color: "var(--amber-ink)", marginTop: 4 }}>
+                  Nearly empty — agent commits will fail until you top up.
+                </div>
+              )}
+            </div>
+            {isWalletConfigured && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                <button className="btn primary" style={{ padding: "9px 18px" }} onClick={() => setTopUpOpen(true)}>
+                  Top up
+                </button>
+                <span style={{ fontSize: 10.5, color: "var(--faint)" }}>one Slush signature</span>
+              </div>
+            )}
+          </div>
+        </div>
+        )}
+
+        {/* Agent authority */}
+        <div className="pcard">
+          <div className="pcard-title">Agent authority</div>
+          <div className="pcard-sub">What your agent may do without asking</div>
+          <div className="addr-row" style={{ marginTop: 12 }}>
+            <span className="mono">keypair&nbsp; rescue.ed25519</span>
+            <span className="act-ref green" style={{ marginLeft: "auto" }}>
+              active
+            </span>
+          </div>
+          <div className="kv-p">
+            <span className="k">Auto-pay cap</span>
+            <span className="v">{rm(s.maxPerRecovery)} / incident</span>
+          </div>
+          <div className="kv-p">
+            <span className="k">Gas</span>
+            <span className="v">sponsored by platform</span>
+          </div>
+          <div className="kv-p">
+            <span className="k">Auto-recovery</span>
+            <label className="switch">
+              <input type="checkbox" checked={s.auto} onChange={(e) => s.setAuto(e.target.checked)} aria-label="Auto recovery" />
+              <i />
+            </label>
+          </div>
+          <div className="txd-link" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+            <button className="link-btn ghost" onClick={() => setProtectionModalOpen(true)}>
+              Protection &amp; limits
+            </button>
+          </div>
+        </div>
+
+        {/* Protection */}
+        <div className="pcard">
+          <div className="pcard-title">Protection</div>
+          <div className="pcard-sub">When the agents are allowed to act</div>
+          <div className="kv-p" style={{ marginTop: 6 }}>
+            <span className="k">Act below signal</span>
+            <span className="v">{s.autoBelow} Mbps</span>
+          </div>
+          <div className="kv-p">
+            <span className="k">Max duration</span>
+            <span className="v">{s.maxDuration} min</span>
+          </div>
+          <div className="kv-p">
+            <span className="k">SMS degradation alerts</span>
+            <label className="switch">
+              <input type="checkbox" checked={s.notif} onChange={(e) => s.setNotif(e.target.checked)} aria-label="Notifications" />
+              <i />
+            </label>
+          </div>
+          <div className="txd-link" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+            <button className="link-btn ghost" onClick={() => navigate("/dev")}>
+              Scenario matrix (S1–S6)
+            </button>
+          </div>
+        </div>
+
+        {/* Recent recoveries */}
+        <div className="pcard span2">
+          <div className="pcard-title">Recent recoveries</div>
+          <div className="pcard-sub">Last autonomous incidents on this line</div>
+          <div style={{ marginTop: 8 }}>
+            {recoveries.length ? (
+              recoveries.map((a) => (
+                <button
+                  key={a.id}
+                  className="rec-row"
+                  style={{ width: "100%", border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
+                  onClick={() => a.recordId && navigate("/activity/" + a.recordId)}
+                >
+                  <span className={`txd-check${a.type === "failed" ? "" : ""}`} style={a.type === "failed" ? { background: "var(--amber-soft)", color: "var(--amber-ink)" } : undefined}>
+                    {a.type === "failed" ? "!" : "✓"}
+                  </span>
+                  <div className="grow">
+                    <div className="rec-id">
+                      {a.recordId ?? a.id} · {a.title}
+                    </div>
+                    <div className="rec-sub">{a.sub}</div>
+                  </div>
+                  <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{a.cost != null && a.cost > 0 ? rm(a.cost) : a.note}</div>
+                    <div className="rec-sub" style={{ color: a.type === "failed" ? "var(--amber-ink)" : "var(--green-ink)", fontWeight: 600 }}>
+                      {a.type === "failed" ? "REFUND" : "OK ✓"}
+                    </div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rec-row">
+                <span className="txd-check">✓</span>
+                <div>
+                  <div className="rec-id">No recoveries yet</div>
+                  <div className="rec-sub">Payment is only charged after verified delivery.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Transaction history — fetched LIVE from the Sui testnet for the
+            connected address; survives refreshes and browsers */}
+        {isWalletConfigured && (
+          <div className="pcard span2">
+            <div className="pcard-title">Transaction history</div>
+            <div className="pcard-sub">
+              Live on-chain history for your address — top-ups, commits, settlements and refunds, each linking to
+              Suiscan
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <TransactionHistory collapsible />
+            </div>
+          </div>
+        )}
+
+        {/* Purchased network offers — the agent-signed purchases, user-owned */}
+        {isWalletConfigured && (
+          <div className="pcard span2">
+            <div className="pcard-title">Purchased network offers</div>
+            <div className="pcard-sub">
+              Network capacity offers your agent bought for you — every purchase and settlement on-chain, one click
+              from Suiscan
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <TransactionHistory ownerAddress={ESCROW_DEPLOY.platformOperator} mode="purchase" collapsible />
+            </div>
+          </div>
+        )}
+      </div>
+
       {protectionModalOpen && <ProtectionModal onClose={() => setProtectionModalOpen(false)} />}
       {walletModalOpen && <WalletConnectModal onClose={() => setWalletModalOpen(false)} />}
+      {topUpOpen && s.zkLogin && (
+        <TopUpModal session={s.zkLogin} onClose={() => setTopUpOpen(false)} />
+      )}
     </div>
   );
 }

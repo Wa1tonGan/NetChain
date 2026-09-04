@@ -18,8 +18,8 @@
   },
   "policy": {
     "maxCapacityMbps": 300,
-    "baseFee": 0.6,
-    "pricePer100MbpsPerHour": 0.4,
+    "baseFee": 15,
+    "pricePer100MbpsPerHour": 15,
     "currency": "MYR"
   },
   "performance": {
@@ -40,6 +40,6 @@
   "publicKey": {
     "algorithm": "ed25519",
     "keyId": "provider-b-demo",
-    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAnfgk4Bs2N2xb+tRP3CXlo9o7+QImd8yQSoG2rGgkEBU=\n-----END PUBLIC KEY-----"
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAgE+YS8czFX5d7kaMDBgnILb8QL8x4X9z5BTwnTLAeK4=\n-----END PUBLIC KEY-----"
   }
 }

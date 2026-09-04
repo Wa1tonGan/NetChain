@@ -6,6 +6,13 @@ export interface ComparisonRow {
   name: string;
   state: string;
   sel: boolean;
+  id?: string;
+}
+
+export interface ConsensusVoteRow {
+  model: string;
+  requestId: string | null;
+  ranking: string[];
 }
 
 export default function DecisionCard({
@@ -14,16 +21,20 @@ export default function DecisionCard({
   budget,
   provider,
   comparison,
+  votes,
 }: {
   cap: number;
   cost: number;
   budget: number;
   provider?: string;
   comparison?: ComparisonRow[];
+  votes?: ConsensusVoteRow[];
 }) {
   const [showAgentLogs, setShowAgentLogs] = useState(true);
   const winner = provider ?? "KilatLink FWA";
   const isLive = Boolean(comparison);
+  // Real Gonka consensus audit trail (LIVE runs) vs the scripted demo logs.
+  const hasRealVotes = Boolean(votes?.length);
 
   // Live runs carry the REAL A2A race (winner, arrivals, rejection reasons
   // embedded in each row's state line) — no scripted price guesses.
@@ -38,29 +49,58 @@ export default function DecisionCard({
 
   const rows = comparison ?? COMPARISON;
 
-  const agentLogs = [
-    {
-      name: "DeepSeek-V3",
-      role: "Market Pricing & Latency Agent",
-      score: "0.96",
-      vote: "KilatLink FWA",
-      reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 18.50) and OrbitSat GO (satellite 65ms @ USDC 24.00).`,
-    },
-    {
-      name: "Kimi-k1.5",
-      role: "SLA & CAMARA QoD Verification Agent",
-      score: "0.95",
-      vote: "KilatLink FWA",
-      reasoning: `Verified target bandwidth requirement (${cap} Mbps). KilatLink FWA slice is instantly provisionable via CAMARA QoD programmable API with guaranteed zero packet loss routing.`,
-    },
-    {
-      name: "MiniMax-ABAB6.5",
-      role: "Budget & Sui Trust Layer Agent",
-      score: "0.98",
-      vote: "KilatLink FWA",
-      reasoning: `Checked user budget guardrails. Total committed cost ${rm(cost)} is strictly within the client's ${rm0(budget)} per-recovery spending limit and wallet balance.`,
-    },
-  ];
+  /** providerId → display name via the real race rows (winner row included) */
+  const providerName = (id: string): string =>
+    rows.find((r) => r.id === id)?.name.split(" (")[0] ??
+    rows.find((r) => r.name.includes(id))?.name.split(" (")[0] ??
+    id;
+
+  const agentLogs = hasRealVotes
+    ? votes!.map((v) => {
+        const named = v.ranking.map(providerName);
+        const winnerName = provider ?? winner;
+        const agree = named[0] === winnerName;
+        const picks = named.map((n, i) => `${i + 1}. ${n}`).join("  ");
+        const reasoning = agree
+          ? `I reviewed the live market offers and ranked ${named[0]} first — best balance of activation speed, price and reliability for this recovery.`
+          : `My ranking put ${named[0]} on top; the merged consensus went with ${winnerName}. ${picks}.`;
+        return {
+          name: v.model,
+          role: "Gonka inference — ranking vote",
+          requestId: v.requestId,
+          top: named[0],
+          ranking: named,
+          reasoning,
+          score: null as string | null,
+          vote: named[0],
+        };
+      })
+    : [
+        {
+          name: "DeepSeek-V3",
+          role: "Market Pricing & Latency Agent",
+          score: "0.96",
+          vote: "KilatLink FWA",
+          requestId: null,
+          reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 18.50) and OrbitSat GO (satellite 65ms @ USDC 24.00).`,
+        },
+        {
+          name: "Kimi-k1.5",
+          role: "SLA & CAMARA QoD Verification Agent",
+          score: "0.95",
+          vote: "KilatLink FWA",
+          requestId: null,
+          reasoning: `Verified target bandwidth requirement (${cap} Mbps). KilatLink FWA slice is instantly provisionable via CAMARA QoD programmable API with guaranteed zero packet loss routing.`,
+        },
+        {
+          name: "MiniMax-ABAB6.5",
+          role: "Budget & Sui Trust Layer Agent",
+          score: "0.98",
+          vote: "KilatLink FWA",
+          requestId: null,
+          reasoning: `Checked user budget guardrails. Total committed cost ${rm(cost)} is strictly within the client's ${rm0(budget)} per-recovery spending limit and wallet balance.`,
+        },
+      ];
 
   return (
     <div className="card" style={{ marginTop: 14 }}>
@@ -151,12 +191,18 @@ export default function DecisionCard({
                         {ag.name}
                       </div>
                       <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                        {ag.role}
+                        {ag.role} · vote: <b>{ag.vote}</b>
                       </div>
                     </div>
-                    <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px", flexShrink: 0 }}>
-                      Score {ag.score}
-                    </span>
+                    {ag.score ? (
+                      <span className="chip sui" style={{ fontSize: 10.5, padding: "2px 6px", flexShrink: 0 }}>
+                        Score {ag.score}
+                      </span>
+                    ) : (
+                      <span className="chip good" style={{ fontSize: 10.5, padding: "2px 6px", flexShrink: 0 }}>
+                        auditable
+                      </span>
+                    )}
                   </div>
 
                   <div
@@ -172,8 +218,23 @@ export default function DecisionCard({
                   >
                     “{ag.reasoning}”
                   </div>
+
+                  {ag.requestId && (
+                    <div
+                      className="mono"
+                      style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 8, wordBreak: "break-all" }}
+                      title="Gonka x-request-id — audit this inference against the gateway"
+                    >
+                      gonka req: {ag.requestId}
+                    </div>
+                  )}
                 </div>
               ))}
+              {!hasRealVotes && (
+                <div style={{ fontSize: 10.5, color: "var(--faint)" }}>
+                  Scripted demo votes — LIVE runs show each Gonka model's real vote with its auditable request id.
+                </div>
+              )}
             </div>
           )}
         </div>

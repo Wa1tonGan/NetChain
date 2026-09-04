@@ -23,12 +23,45 @@ export interface ZkLoginSession {
   idToken?: string;
   maxEpoch?: number | null;
   proof?: unknown;
-  signingMode?: "zk" | "custodial-fallback";
+  signingMode?: "zk" | "custodial-fallback" | "wallet";
   // custodial fallback wallet address (differs from the zkLogin address)
   fallbackAddress?: string;
 }
 
 const EPHEMERAL_KEY = "netchain_zk_ephemeral_v1";
+
+/** Current Sui epoch via the /suirpc proxy. maxEpoch must be an ABSOLUTE
+    epoch ≥ current — a small literal (e.g. 10) mints an instantly-expired
+    session once the chain passes that number. */
+async function fetchCurrentEpoch(): Promise<number | null> {
+  try {
+    const res = await fetch("/suirpc", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "suix_getLatestSuiSystemState", params: [] }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const body = await res.json();
+    const epoch = body?.result?.epoch;
+    return epoch == null ? null : Number(epoch);
+  } catch {
+    return null;
+  }
+}
+
+interface ProofShape {
+  proofPoints: { a: string[]; b: string[][]; c: string[] };
+  issBase64Details: { value: string; indexMod4: number };
+  headerBase64: string;
+}
+
+/** A proof bundle is usable when it carries the groth16 inputs — either at the
+ *  top level (current Mysten prover) or nested under {proof} (older shape). */
+export function hasUsableProof(proof: unknown): boolean {
+  const raw = (proof ?? {}) as Partial<ProofShape> & { proof?: Partial<ProofShape> };
+  const inner = raw.proof ?? raw;
+  return Boolean(inner.proofPoints && inner.issBase64Details && inner.headerBase64);
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -49,7 +82,15 @@ export async function beginZkLogin(redirectPath = "/wallet"): Promise<void> {
   const { generateNonce, generateRandomness } = await import("@mysten/sui/zklogin");
 
   const ephemeral = new Ed25519Keypair();
-  const maxEpoch = Number(import.meta.env.VITE_ZK_MAX_EPOCH ?? 10);
+  // maxEpoch semantics: ABSOLUTE epoch the key dies at. Compute from the
+  // chain: current + ahead (VITE_ZK_MAX_EPOCH now = "how many epochs ahead",
+  // default 10 — testnet epochs are short; testnet API returns 1–2h epochs).
+  // A plain literal like the old `10` mints sessions that expire instantly
+  // once the chain passes epoch 10 ("ZKLogin expired at epoch 10, current
+  // epoch 1212").
+  const currentEpoch = await fetchCurrentEpoch();
+  const ahead = Number(import.meta.env.VITE_ZK_MAX_EPOCH ?? 10);
+  const maxEpoch = currentEpoch != null ? currentEpoch + ahead : ahead;
   const randomness = generateRandomness();
   const nonce = generateNonce(ephemeral.getPublicKey(), maxEpoch, randomness);
 
@@ -184,23 +225,34 @@ export async function zkSignAndSubmit(
     new Uint8Array(atob(txBytesBase64).split("").map((c) => c.charCodeAt(0)))
   );
 
-  // The prover returns { proof: { proofPoints, issBase64Details, headerBase64 },
-  // addressSeed } — flattened into the SDK's ZkLoginSignatureInputs.
-  const proof = session.proof as {
-    proof: {
-      proofPoints: { a: string[]; b: string[][]; c: string[] };
-      issBase64Details: { value: string; indexMod4: number };
-      headerBase64: string;
-    };
+  // The prover returns the groth16 bundle FLAT ({proofPoints, issBase64Details,
+  // headerBase64}), but older sessions may have stored it nested under
+  // {proof: …}. Accept both — never guess the wrapper.
+  const bundle = (session.proof ?? {}) as {
+    proof?: ProofShape;
+    proofPoints?: ProofShape["proofPoints"];
+    issBase64Details?: ProofShape["issBase64Details"];
+    headerBase64?: ProofShape["headerBase64"];
     addressSeed?: string;
   };
+  const inner: ProofShape | undefined = bundle.proof
+    ?? (bundle.proofPoints && bundle.issBase64Details && bundle.headerBase64
+      ? {
+          proofPoints: bundle.proofPoints,
+          issBase64Details: bundle.issBase64Details,
+          headerBase64: bundle.headerBase64,
+        }
+      : undefined);
+  if (!inner?.proofPoints || !inner.issBase64Details || !inner.headerBase64) {
+    throw new Error("proof bundle shape unexpected — log out and back in to fetch a fresh proof");
+  }
 
   const zkLoginSignature = getZkLoginSignature({
     inputs: {
-      proofPoints: proof.proof.proofPoints,
-      issBase64Details: proof.proof.issBase64Details,
-      headerBase64: proof.proof.headerBase64,
-      addressSeed: proof.addressSeed ?? String(genAddressSeed(BigInt(session.salt ?? "0"), "sub", session.sub, session.aud)),
+      proofPoints: inner.proofPoints,
+      issBase64Details: inner.issBase64Details,
+      headerBase64: inner.headerBase64,
+      addressSeed: bundle.addressSeed ?? String(genAddressSeed(BigInt(session.salt ?? "0"), "sub", session.sub, session.aud)),
     },
     maxEpoch: session.maxEpoch ?? maxEpoch,
     userSignature: signed.signature,

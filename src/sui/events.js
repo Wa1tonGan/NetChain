@@ -101,4 +101,21 @@ export class EventLedger {
     }
     return rows;
   }
+
+  /** The last n raw ledger rows, oldest first — lets dashboards seed their
+   *  view on load instead of waiting for the next live event. */
+  recent(n = 30) {
+    if (!existsSync(this.path)) return [];
+    const rows = readFileSync(this.path, "utf8").split("\n").filter((l) => l.trim());
+    return rows
+      .slice(-n)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null; // torn tail write
+        }
+      })
+      .filter(Boolean);
+  }
 }

@@ -3,6 +3,7 @@ import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 import { chainBalanceText, useChainBalance } from "../hooks/useChainBalance";
 import WalletConnectModal from "../components/WalletConnectModal";
+import TransactionHistory from "../components/TransactionHistory";
 
 export default function WalletPage() {
   const s = useAppStore();
@@ -91,34 +92,7 @@ export default function WalletPage() {
       </div>
 
       {/* Recent Activity */}
-      <div className="card-title">Recent Settlements ({s.payments.length})</div>
-      {s.payments.length ? (
-        <div className="card">
-          {s.payments.map((p) => (
-            <div key={p.id} className="row">
-              <div className="grow">
-                <div className="t">{p.label}</div>
-                <div className="s">{p.provider} · {p.cap}</div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div className="v">{rm(p.amount)}</div>
-                <div
-                  className="s"
-                  style={{ color: p.refund ? "var(--warn)" : "var(--ok)", fontWeight: 700 }}
-                >
-                  {p.refund ? `Refunded ${rm(p.refund)}` : "Settled ✓"}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="card">
-          <div className="row">
-            <span className="s">No transactions yet. Payment is only charged after verified delivery.</span>
-          </div>
-        </div>
-      )}
+      <TransactionHistory title={`Recent Settlements (${s.payments.length})`} />
 
       {connectModalOpen && <WalletConnectModal onClose={() => setConnectModalOpen(false)} />}
     </div>

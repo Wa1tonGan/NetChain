@@ -63,11 +63,17 @@ function buildPrompt(offers, request) {
   };
 }
 
-// Extracts the first JSON object embedded in a model answer and returns its
-// "ranking" array filtered to known providerIds, or null.
-function parseVote(content, providerIds) {
+// Extracts the first JSON object embedded in a model answer → { ranking,
+// requestId } filtered to known providerIds, or null.
+function parseVote(answer, providerIds) {
+  let content = answer?.ranking;
   if (typeof content !== "string") {
     return null;
+  }
+  // Reasoning models emit <think>…</think> first — take whatever follows.
+  const closeTag = content.lastIndexOf("</think>");
+  if (closeTag !== -1) {
+    content = content.slice(closeTag + "</think>".length);
   }
 
   const start = content.indexOf("{");
@@ -88,7 +94,7 @@ function parseVote(content, providerIds) {
     const known = ranking.filter((id) => providerIds.includes(id));
     const unique = [...new Set(known)];
 
-    return unique.length > 0 ? unique : null;
+    return unique.length > 0 ? { ranking: unique, requestId: answer.requestId ?? null } : null;
   } catch {
     return null;
   }
@@ -108,7 +114,10 @@ async function queryModel(model, prompt, config, signal, fetchImpl) {
         { role: "user", content: prompt.user }
       ],
       temperature: 0,
-      max_tokens: 200
+      // Reasoning models burn tokens inside <think>…</think> before the JSON
+      // appears — a small cap hit the "length" cutoff with no answer at all.
+      // The trailing </think> is stripped from the content before parsing.
+      max_tokens: 1_000_000
     }),
     signal
   });
@@ -118,7 +127,17 @@ async function queryModel(model, prompt, config, signal, fetchImpl) {
   }
 
   const payload = await response.json();
-  return payload?.choices?.[0]?.message?.content ?? null;
+  const content = payload?.choices?.[0]?.message?.content ?? null;
+  if (content === null) {
+    return null;
+  }
+  // Gonka propagates the upstream request id — capture it verbatim for the
+  // Transparency UI (fake fetches in tests may lack a headers API).
+  const requestId =
+    (typeof response.headers?.get === "function" ? response.headers.get("x-request-id") : null) ??
+    (typeof payload?.id === "string" ? payload.id : null);
+
+  return { ranking: content, requestId };
 }
 
 function mergeVotes(votes, deterministicOrder) {
@@ -187,7 +206,20 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
       return null;
     }
 
-    return mergeVotes(votes, deterministicOrder);
+    const ranking = mergeVotes(
+      votes.map((v) => v.ranking),
+      deterministicOrder
+    );
+
+    // Per-model audit trail: Gonka request id + which providers each model
+    // ranked (Borda inputs), best-first. Returned alongside the merged order.
+    const modelVotes = votes.map((v, i) => ({
+      model: config.models[i] ?? `model-${i + 1}`,
+      requestId: v.requestId,
+      ranking: v.ranking
+    }));
+
+    return { ranking, votes: modelVotes };
   } catch {
     return null;
   } finally {

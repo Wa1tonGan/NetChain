@@ -80,6 +80,13 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
       if (req.method === "POST" && url.pathname === "/v1/activation") {
         return json(res, 200, await service.activation(JSON.parse(await readBody(req))));
       }
+      // Permissionless post-expiry reclaim (escrow::reclaim returns the
+      // locked funds to the commitment's buyer regardless of caller).
+      if (req.method === "POST" && url.pathname === "/v1/reclaim") {
+        const { nonce } = JSON.parse(await readBody(req));
+        if (!nonce) return json(res, 422, { code: "NONCE_REQUIRED", message: "nonce is required" });
+        return json(res, 200, await service.reclaim(nonce));
+      }
       if (req.method === "POST" && url.pathname === "/v1/verify") {
         // Verification Agent intake (blueprint §4.3): a real session monitor
         // posts { incidentId, promisedCapacity, deliveredSamples, … } and the
@@ -91,6 +98,12 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
       }
       if (req.method === "GET" && url.pathname.startsWith("/v1/status/")) {
         return json(res, 200, service.status(url.pathname.split("/").pop()));
+      }
+      // Recent ledger rows — dashboards seed their Sui Trust Ledger view on
+      // load; the SSE stream at /v1/events then carries the live tail.
+      if (req.method === "GET" && url.pathname === "/v1/events/recent") {
+        const limit = Math.min(Number(url.searchParams.get("limit") ?? 30), 200);
+        return json(res, 200, { events: service.ledger.recent(limit) });
       }
       if (req.method === "GET" && url.pathname === "/v1/events") {
         res.writeHead(200, {

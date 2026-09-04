@@ -27,6 +27,60 @@ import s8 from "../../../scenarios/s8-individual-priority-queue.json";
 export const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL ?? "http://127.0.0.1:8082";
 export const TRUST_URL = import.meta.env.VITE_TRUST_URL ?? "http://127.0.0.1:8200";
 
+// Testnet escrow deployment (mirrors .sui/config.testnet.json — the browser
+// builds its own deposit PTB against these shared objects).
+export const ESCROW_DEPLOY = {
+  packageId: "0x531c16cde1a45391ab90f21c9f1e3f06ae3d2965965caee5c3de608a5ed50170",
+  escrowId: "0x9c4c5958a942daba695b1a6cfceeec7bf522ed25bc7d55fc5f4d2d828c2a6a63",
+  usdcType: "0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC",
+  /** the AuthorityCap holder — signs commits (agent mode) + every settle */
+  platformOperator: "0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24",
+} as const;
+
+/** User-funded escrow: the buyer deposits USDC into the shared pool ONCE.
+ *  The PTB is identical either way — only the SIGNATURE adapts to the login:
+ *  wallet mode → the extension (Slush) signs; zk mode → the ephemeral key +
+ *  zk proof signs (session must be fresh: proof usable, epoch not passed).
+ *  Every later agent-signed commit draws from THAT pool, so the agent spends
+ *  the USER'S money under the AuthorityCap's on-chain per-voucher limit. */
+export async function depositToEscrowPool(
+  session: import("./zklogin").ZkLoginSession,
+  amountUsdc: number
+): Promise<{ digest: string }> {
+  const { Transaction } = await import("@mysten/sui/transactions");
+  const tx = new Transaction();
+  const usdc = ESCROW_DEPLOY.usdcType;
+  // CoinWithBalance resolution needs the sender set at build time.
+  tx.setSender(session.address);
+  // Payment drawn from the payer's ADDRESS BALANCE — gasless top-ups land
+  // there, so this works for wallets funded via /v1/fund too.
+  const balance = tx.balance({ type: usdc, balance: Math.round(amountUsdc * 1_000_000) });
+  const coin = tx.moveCall({
+    target: "0x2::coin::from_balance",
+    typeArguments: [usdc],
+    arguments: [balance],
+  });
+  tx.moveCall({
+    target: `${ESCROW_DEPLOY.packageId}::escrow::deposit`,
+    typeArguments: [usdc],
+    arguments: [tx.object(ESCROW_DEPLOY.escrowId), coin],
+  });
+
+  const { SuiJsonRpcClient } = await import("@mysten/sui/jsonRpc");
+  const client = new SuiJsonRpcClient({ url: "/suirpc", network: "testnet" });
+  const built = await tx.build({ client });
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(built)));
+
+  if (session.signingMode === "zk") {
+    const { zkSignAndSubmit } = await import("./zklogin");
+    return zkSignAndSubmit(session, base64);
+  }
+
+  const { connectSuiWallet, walletSignAndSubmit } = await import("./walletConnect");
+  const wallet = await connectSuiWallet(session.address);
+  return walletSignAndSubmit(wallet, base64);
+}
+
 /* ---------------- scenarios (Person 1's RecoveryIntent files) ------------- */
 
 export interface ScenarioEntry {
@@ -120,7 +174,15 @@ export interface GatewayEvent {
   detail?: string;
   atMs?: number;
   incidentId?: string;
+  /** SELECTED events carry the Gonka consensus audit trail (Transparency UI) */
+  votes?: ConsensusVote[];
   [k: string]: unknown;
+}
+
+export interface ConsensusVote {
+  model: string;
+  requestId: string | null;
+  ranking: string[];
 }
 
 export interface SelectedOffer {
@@ -167,7 +229,12 @@ async function postJson(url: string, body: unknown): Promise<unknown> {
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? `${url} → ${res.status}`);
+  // Trust/zkLogin servers answer failures with {code, message}; other
+  // services may use {error}. Show whichever carries the reason.
+  const e = json as { error?: string; message?: string; code?: string };
+  if (!res.ok) {
+    throw new Error(e.message ?? e.error ?? `${url} → ${res.status}`);
+  }
   return json;
 }
 
@@ -202,22 +269,19 @@ export async function commitSelected(selected: SelectedOffer): Promise<{
 }
 
 /** zkLogin buyer-direct commit:
-    1. build-only voucher validation + unsigned commit_as_buyer PTB,
+    1. build-only voucher validation + unsigned commit_as_buyer PTB (the
+       payment Coin is drawn from the buyer's address balance, keyed by the
+       buyerAddress we send),
     2. the BROWSER zk-signs it (ephemeral key + proof — no server key),
     3. confirm the on-chain digest into the ledger. */
 export async function zkCommitSelected(
   selected: SelectedOffer,
   session: import("./zklogin").ZkLoginSession
 ): Promise<{ status: string; txDigest?: string }> {
-  // The buyer pays from their OWN stablecoin coin object (Coin<MYRC>) —
-  // required by escrow::commit_as_buyer's `payment: Coin<T>` argument.
-  const { fetchPaymentCoinId } = await import("./wallet");
-  const payment = await fetchPaymentCoinId(session.address);
-
   const build = (await postJson(`${TRUST_URL}/v1/commit`, {
     ...selected,
     submit: false,
-    paymentCoinId: payment?.coinId ?? null,
+    buyerAddress: session.address,
   })) as { status: string; duplicate?: boolean; txBytes?: string; txDigest?: string };
 
   if (build.duplicate || !build.txBytes) {
@@ -237,8 +301,64 @@ export async function zkCommitSelected(
   return { status: confirmed.status, txDigest: digest };
 }
 
+/** Extension-wallet commit (Slush & any Sui-standard wallet): same build-only
+ *  endpoint, but the buyerAddress is the wallet's address and the EXTENSION
+ *  signs the PTB with its own key + gas — no zk proof, no server key. */
+export async function walletCommitSelected(
+  selected: SelectedOffer,
+  buyerAddress: string
+): Promise<{ digest: string }> {
+  await ensureWalletFunded(buyerAddress);
+
+  const build = (await postJson(`${TRUST_URL}/v1/commit`, {
+    ...selected,
+    submit: false,
+    buyerAddress,
+  })) as { status: string; duplicate?: boolean; txBytes?: string };
+
+  if (build.duplicate) return { digest: "" };
+
+  const { connectSuiWallet, walletSignAndSubmit } = await import("./walletConnect");
+  const wallet = await connectSuiWallet(buyerAddress);
+  const { digest } = await walletSignAndSubmit(wallet, build.txBytes as string);
+
+  await postJson(`${TRUST_URL}/v1/commit/confirm`, {
+    incidentId: selected.incidentId,
+    nonce: selected.agreement.nonce,
+    txDigest: digest,
+    voucher: null,
+  });
+
+  return { digest };
+}
+
+/** Cold-start funding: a freshly connected wallet holds none of the escrow's
+ *  stablecoin (and maybe no SUI gas). The platform tops it up via
+ *  POST /v1/fund so the buyer can pay their own commit_as_buyer. Skipped
+ *  when the wallet already holds enough. */
+async function ensureWalletFunded(address: string): Promise<void> {
+  const { fetchChainBalance } = await import("./wallet");
+  const bal = await fetchChainBalance(address);
+  if (!bal.online) return; // chain read failed — let the commit attempt surface it
+  const needStable = (bal.stable?.total ?? 0) < 15; // one commit ≈ 12–14 USDC
+  const needGas = bal.sui.total < 0.01;
+  if (!needStable && !needGas) return;
+  await postJson(`${TRUST_URL}/v1/fund`, {
+    address,
+    stableBase: needStable ? 20_000_000 : 0, // 20 USDC (6 decimals)
+    suiMist: needGas ? 50_000_000 : 0, // 0.05 SUI gas
+  });
+}
+
 export async function reportActivation(incidentId: string, status: "AVAILABLE" | "FAILED"): Promise<unknown> {
   return postJson(`${TRUST_URL}/v1/activation`, { incidentId, status });
+}
+
+/** Permissionless post-expiry reclaim: returns the locked escrow to the
+ *  commitment's buyer. Used when a commit landed on-chain but the flow died
+ *  before settlement ("chain offline" incidents). */
+export async function reclaimEscrow(nonce: string): Promise<{ status: string; txDigest?: string }> {
+  return postJson(`${TRUST_URL}/v1/reclaim`, { nonce }) as Promise<{ status: string; txDigest?: string }>;
 }
 
 export function openIncidentStream(incidentId: string, onEvent: (ev: GatewayEvent) => void): () => void {
@@ -270,7 +390,8 @@ export function openChainStream(onRow: (row: ChainRow) => void): () => void {
 export function chainRowLabel(row: ChainRow): string {
   const d = row.data ?? {};
   const tx = row.txDigest ? ` · tx ${row.txDigest.slice(0, 10)}…` : "";
-  const rmv = (n: number | undefined): string => "USDC " + (n ?? 0).toFixed(2);
+  // Ledger amounts are BASE units (USDC = 6 decimals) — convert for display.
+  const rmv = (n: number | undefined): string => "USDC " + ((n ?? 0) / 1_000_000).toFixed(2);
   switch (row.type) {
     case "VERIFIED":
       return "🧾 Voucher verified — both signatures valid, nonce reserved";

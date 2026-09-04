@@ -24,10 +24,14 @@ import {
   scenarioShortage,
   submitIntent,
   zkCommitSelected,
+  TRUST_URL,
+  GATEWAY_URL,
   type ChainRow,
+  type ConsensusVote,
   type GatewayEvent,
   type SelectedOffer,
 } from "../services/live";
+import { walletCommitSelected } from "../services/live";
 
 // Latest trust-layer ledger rows (real Sui tx digests) for the Activity feed.
 // Kept small; the chain SSE reconnects with backoff and tolerates downtime.
@@ -35,6 +39,28 @@ let chainClosers: (() => void)[] = [];
 
 function startChainFeed() {
   if (chainClosers.length > 0) return;
+
+  // Seed the Sui Trust Ledger with recent rows so a fresh page load shows
+  // history, not just whatever happens after the SSE connects.
+  void (async () => {
+    try {
+      const res = await fetch(`${TRUST_URL}/v1/events/recent?limit=30`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return;
+      const body = (await res.json()) as { events?: ChainRow[] };
+      const events = body.events ?? [];
+      if (events.length === 0) return;
+      const st = useAppStore.getState();
+      const existing = new Set(st.chainRows.map((r) => r.seq));
+      const seeded = events
+        .filter((e) => !existing.has(e.seq))
+        .map((e) => ({ ...e, receivedAt: Date.now(), label: chainRowLabel(e) }))
+        .reverse(); // ledger is oldest-first → newest on top
+      if (seeded.length === 0) return;
+      useAppStore.setState({ chainRows: [...seeded, ...st.chainRows].slice(0, 50) });
+    } catch {
+      // trust server down — the SSE retry loop will carry the feed later
+    }
+  })();
 
   const connect = () => {
     try {
@@ -57,7 +83,7 @@ function startChainFeed() {
 }
 import { daysAgo, fmtClock } from "../services/format";
 import { startConnectivity, setMockDownlink, setMockFailure, type NetworkSample } from "../services/connectivity";
-import type { ZkLoginSession } from "../services/zklogin";
+import { hasUsableProof, type ZkLoginSession } from "../services/zklogin";
 import type {
   ActivityItem,
   Capacity,
@@ -84,6 +110,10 @@ interface AppState {
   maxDuration: number;
   balance: number;
   notif: boolean;
+  /** true (default): the RescueAgent pays from the pre-funded escrow pool with
+   *  its own server key — agent-to-agent payment, no user prompts.
+   *  false: the user's wallet (Slush/zk) signs every commit personally. */
+  agentSigning: boolean;
   walletAddr: string;
   zkLogin: ZkLoginSession | null;
 
@@ -128,7 +158,9 @@ interface AppState {
   setMaxPerRecovery: (v: number) => void;
   setMonthlyLimit: (v: number) => void;
   setNotif: (v: boolean) => void;
+  setAgentSigning: (v: boolean) => void;
   addFunds: (v: number) => void;
+  recordTopUp: (amount: number, txDigest: string) => void;
   disclose: (key: string) => void;
   setZkLogin: (session: ZkLoginSession | null) => void;
 
@@ -199,6 +231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   maxDuration: 60,
   balance: 65,
   notif: true,
+  agentSigning: true,
   walletAddr: initialZkLogin?.address ?? "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
   zkLogin: initialZkLogin,
 
@@ -240,7 +273,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   setMaxPerRecovery: (v) => set({ maxPerRecovery: v }),
   setMonthlyLimit: (v) => set({ monthlyLimit: v }),
   setNotif: (v) => set({ notif: v }),
+  setAgentSigning: (v) => set({ agentSigning: v }),
   addFunds: (v) => set((s) => ({ balance: +(s.balance + v).toFixed(2) })),
+  // Escrow top-ups join the payments ledger as deposits (money IN) — the
+  // transaction history shows them green with a Suiscan link; spend totals
+  // ("This month") exclude them via kind !== "topup".
+  recordTopUp: (amount, txDigest) =>
+    set((s) => ({
+      payments: [
+        {
+          id: "topup-" + Date.now(),
+          ts: Date.now(),
+          label: "Escrow top-up",
+          provider: "Sui escrow pool",
+          cap: "deposit",
+          amount,
+          refund: 0,
+          refundNote: "",
+          state: "FUNDED",
+          txDigest,
+          kind: "topup" as const,
+        },
+        ...s.payments,
+      ],
+    })),
   disclose: (key) => set((s) => ({ disclosures: { ...s.disclosures, [key]: !s.disclosures[key] } })),
   setZkLogin: (session) => {
     try {
@@ -677,7 +733,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     capacityPatch = { current: 0 };
   }
 
-  const timeline = inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label }));
+  const timeline = inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label, at: e.at }));
   const tx = "0x" + Math.random().toString(16).slice(2, 6) + "…" + Math.random().toString(16).slice(2, 6);
   const logHash = "0x" + Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
 
@@ -709,13 +765,14 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     payments.unshift({
       id: inc.id,
       ts: Date.now(),
-      label: "Autonomous recovery",
+      label: "Autonomous recovery (simulated)",
       provider: "KilatLink FWA",
       cap: `+${inc.shortage} Mbps · ${reqMin} min`,
       amount: charged,
       refund: refund > 0 && kind !== "failed" ? refund : kind === "failed" ? cost : 0,
       refundNote: kind === "failed" ? "reservation refunded" : "",
       state,
+      txDigest: undefined,
     });
   }
 
@@ -824,6 +881,7 @@ interface LiveState {
   chainOffline: boolean;
   arrivals: { providerId: string; receivedAtMs: number }[];
   rejections: { providerId: string; reason: string; detail?: string }[];
+  votes: ConsensusVote[] | null;
   closers: (() => void)[];
   runSeq: number;
   finished: boolean;
@@ -836,12 +894,21 @@ function closeLive() {
   live = null;
 }
 
-function sysBubble(text: string) {
+function sysBubble(text: string, opts?: { event?: boolean }) {
   const st = useAppStore.getState();
   const inc = st.incident;
   if (!inc) return;
   useAppStore.setState({
-    incident: { ...inc, thread: [...inc.thread, { from: "sys", text }] },
+    incident: {
+      ...inc,
+      thread: [...inc.thread, { from: "sys", text }],
+      // agent-visible actions ALSO join inc.events → the incident page's
+      // AgentSteps log (prototype's "Agent activity behind this stage").
+      events:
+        opts?.event === false
+          ? inc.events
+          : [...inc.events, { label: text, at: Date.now() }],
+    },
   });
 }
 
@@ -865,6 +932,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     offer: live.offer,
     committed: live.committed,
     chainOffline: live.chainOffline,
+    votes: live.votes ? [...live.votes] : null,
   };
   closeLive();
   clearMachine();
@@ -883,6 +951,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
             name: `${providerName} (winner)`,
             state: `selected · ${offer.selectedProvider.capacityMbps} Mbps · USDC ${escrow.toFixed(2)} escrowed`,
             sel: true,
+            id: offer.selectedProvider.providerId,
           },
         ]
       : []),
@@ -892,11 +961,13 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
         name: `${liveBrand(a.providerId)} (${a.providerId})`,
         state: `quoted in ${((a.receivedAtMs ?? 0) / 1000).toFixed(1)}s — ranked below the winner`,
         sel: false,
+        id: a.providerId,
       })),
     ...snapshot.rejections.map((r) => ({
       name: `${liveBrand(r.providerId)} (${r.providerId})`,
       state: `✗ ${reasonLabel(r.reason)}${r.detail ? ` — ${r.detail}` : ""}`,
       sel: false,
+      id: r.providerId,
     })),
   ];
 
@@ -909,7 +980,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
   const record: RecoveryRecord = {
     id: inc.id,
     time,
-    timeline: inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label })),
+    timeline: inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label, at: e.at })),
     outcome: kind,
     provider: providerName,
     cap: delivered,
@@ -927,6 +998,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     nonce: inc.req?.nonce ?? undefined,
     commitTx: row?.txDigest ?? undefined,
     comparison,
+    consensus: snapshot.votes ?? undefined,
     providerAddr: "pinned-to-provider-key",
     platformAddr: "platform-treasury",
   };
@@ -945,6 +1017,27 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
       fees: +(st.month.fees + (kind === "ok" ? inc.req?.platformFee ?? 0 : 0)).toFixed(2),
     },
     records: { ...st.records, [inc.id]: record },
+    // LIVE runs join the payments ledger too — the Transaction history and
+    // the Profile "This month" figure are driven by this array.
+    payments: [
+      ...(charged > 0 || refund > 0
+        ? [
+            {
+              id: inc.id,
+              ts: Date.now(),
+              label: "On-chain recovery",
+              provider: providerName,
+              cap: `+${delivered} Mbps · ${reqMin} min`,
+              amount: charged,
+              refund: kind === "failed" ? charged : refund,
+              refundNote: kind === "failed" ? "escrow refunded" : "",
+              state,
+              txDigest: row?.txDigest ?? record.commitTx,
+            },
+          ]
+        : []),
+      ...st.payments,
+    ],
     activity: [
       {
         id: inc.id + "-live",
@@ -965,6 +1058,32 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
       result: { time, charged, refund, state },
     },
   });
+
+  // Late-fill: the Gonka audit trail can lose the race against settlement
+  // (60s model budget vs a fast market). If this record carries no consensus,
+  // pull it from the gateway's durable recovery row and patch in place.
+  if (!record.consensus && record.commitTx) {
+    void (async () => {
+      try {
+        const res = await fetch(`${GATEWAY_URL}/v1/recoveries`, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          recoveries?: { incidentId?: string; consensus?: ConsensusVote[] | null }[];
+        };
+        const row = (body.recoveries ?? []).find((r) => r.incidentId === record.id);
+        if (row?.consensus?.length) {
+          const cur = useAppStore.getState().records[record.id];
+          if (cur && !cur.consensus) {
+            useAppStore.setState({
+              records: { ...useAppStore.getState().records, [record.id]: { ...cur, consensus: row.consensus } },
+            });
+          }
+        }
+      } catch {
+        // audit trail is best-effort
+      }
+    })();
+  }
 }
 
 function finishNoRecovery() {
@@ -1021,6 +1140,22 @@ async function adoptSelectedOffer(incidentId: string) {
   if (!offer || !live || live.finished || live.offer) return;
   live.offer = offer;
 
+  // Durable consensus votes: the SELECTED SSE event is one-shot — if it was
+  // missed (refresh/HMR), recover the audit trail from the recoveries row.
+  void (async () => {
+    try {
+      const res = await fetch(`${GATEWAY_URL}/v1/recoveries`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        recoveries?: { incidentId?: string; consensus?: ConsensusVote[] | null }[];
+      };
+      const row = (body.recoveries ?? []).find((r) => r.incidentId === incidentId);
+      if (row?.consensus?.length && live && !live.votes) live.votes = row.consensus;
+    } catch {
+      // audit trail is best-effort — never block the flow
+    }
+  })();
+
   const st = useAppStore.getState();
   const inc = st.incident;
   if (!inc) return;
@@ -1047,18 +1182,36 @@ async function adoptSelectedOffer(incidentId: string) {
 
   try {
     // zkLogin buyer-direct path: the USER signs the commit_as_buyer PTB in
-    // their browser (no server key touches the payment). Custodial fallback:
-    // server cap path (localnet demo / prover outage).
+    // their browser (no server key touches the payment). Wallet mode: the
+    // extension (Slush etc.) signs with its own key + gas. Custodial
+    // fallback: server cap path (localnet demo / prover outage).
     const zk = st.zkLogin;
-    if (zk?.proof && zk.signingMode === "zk") {
-      sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…");
+    // agentSigning (default): the RescueAgent pays from the pre-funded escrow
+    // pool with its server key — no user prompt. Wallet/zk paths only run
+    // when the user explicitly opts into signing personally.
+    if (st.agentSigning) {
+      sysBubble("🤖 Agent-to-agent payment — RescueAgent commits from the escrow pool (no user signature needed)", { event: false });
+      const res = await commitSelected(offer);
+      if (!live || live.finished) return;
+      live.committed = true;
+      sysBubble(`✓ On-chain commitment ${res.txDigest ? `tx ${res.txDigest.slice(0, 10)}… ` : ""}recorded (agent-signed)`);
+      live.closers.push(openChainStream(onChainRow));
+    } else if (zk?.proof && hasUsableProof(zk.proof) && zk.signingMode === "zk") {
+      sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…", { event: false });
       const zkRes = await zkCommitSelected(offer, zk);
       if (!live || live.finished) return;
       live.committed = true;
       sysBubble(`✓ On-chain commitment ${zkRes.txDigest ? `tx ${zkRes.txDigest.slice(0, 10)}… ` : ""}recorded`);
       live.closers.push(openChainStream(onChainRow));
+    } else if (zk?.signingMode === "wallet") {
+      sysBubble("🔐 Signing the escrow commitment with your connected wallet…", { event: false });
+      const walletRes = await walletCommitSelected(offer, zk.address);
+      if (!live || live.finished) return;
+      live.committed = true;
+      sysBubble(`✓ On-chain commitment ${walletRes.digest ? `tx ${walletRes.digest.slice(0, 10)}… ` : ""}recorded (wallet)`);
+      live.closers.push(openChainStream(onChainRow));
     } else {
-      sysBubble("ℹ️ Demo signing mode (no zk proof) — server-cap commit path");
+      sysBubble("ℹ️ Demo signing mode (no zk proof) — server-cap commit path", { event: false });
       const res = await commitSelected(offer);
       if (!live || live.finished) return;
       live.committed = true;
@@ -1106,6 +1259,7 @@ function onGatewayEvent(ev: GatewayEvent) {
           break;
         case "SELECTED":
           advance("provider_selected", `Gonka + market selected ${liveBrand(ev.providerId ?? "")}`);
+          if (live) live.votes = ev.votes ?? null;
           if (live?.incidentId) void adoptSelectedOffer(live.incidentId);
           break;
         case "ACTIVATING":
@@ -1165,14 +1319,14 @@ function onGatewayEvent(ev: GatewayEvent) {
         sysBubble(
           `${liveBrand(ev.providerId)} quoted in ${(ev.receivedAtMs / 1000).toFixed(1)}s` +
             (typeof ev.pitch === "string" && ev.pitch ? ` — “${ev.pitch}”` : "")
-        );
+        );  // event: true (default) → joins AgentSteps log
       }
       break;
     }
     case "rejection": {
       if (live && ev.providerId && typeof ev.reason === "string") {
         live.rejections.push({ providerId: ev.providerId, reason: ev.reason, detail: ev.detail });
-        sysBubble(`✗ ${liveBrand(ev.providerId)} rejected: ${reasonLabel(ev.reason)}`);
+        sysBubble(`✗ ${liveBrand(ev.providerId)} rejected: ${reasonLabel(ev.reason)}`);  // event → AgentSteps
       }
       break;
     }
@@ -1198,7 +1352,7 @@ function onChainRow(row: ChainRow) {  const st = useAppStore.getState();
   if (!inc || !live || live.finished) return;
   if (row.incidentId && live.incidentId && row.incidentId !== live.incidentId) return;
 
-  sysBubble(chainRowLabel(row));
+  sysBubble(chainRowLabel(row));  // ledger row → AgentSteps log
 
   if (row.type === "SETTLED") {
     finishLive("ok", row);
@@ -1227,6 +1381,7 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
     chainOffline: false,
     arrivals: [],
     rejections: [],
+    votes: null,
     closers: [],
     runSeq,
     finished: false,

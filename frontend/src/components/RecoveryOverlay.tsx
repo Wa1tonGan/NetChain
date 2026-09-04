@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 import { STEP_INDEX } from "../services/flows";
@@ -23,8 +23,18 @@ function useTicker(active: boolean) {
 }
 
 function Thread({ incident }: { incident: Incident }) {
+  // Auto-scroll to the newest bubble whenever the thread grows — the SMS
+  // channel is live-narrated during LIVE runs and must read bottom-up.
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const count = incident.thread.length;
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [count]);
+
   return (
-    <div className="thread" aria-label="Recovery SMS thread" style={{ maxHeight: 260, overflowY: "auto", padding: "4px 0" }}>
+    <div ref={boxRef} className="thread" aria-label="Recovery SMS thread" style={{ maxHeight: 260, overflowY: "auto", padding: "4px 0" }}>
       {incident.thread.map((b, i) => (
         <div
           key={i}
@@ -225,18 +235,41 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </div>
         )}
 
-        {/* Live waiting state: agents are quoting, purchase sheet not ready */}
-        {isLive && !inSms && !completed && incident.status === "request_detected" && (
+        {/* Live states after the SMS reply — ONE narration block, no
+            duplicated thread/spinner: the thread tells the story, the phase
+            chip shows where we are, live quotes render inside the thread. */}
+        {isLive && !inSms && !completed && (
           <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 18,
+                  height: 18,
+                  border: "2px solid var(--accent-soft)",
+                  borderTopColor: "var(--accent)",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+              <span style={{ fontSize: 13.5, fontWeight: 800 }}>
+                {incident.status === "request_detected" && "Agents are quoting your intent…"}
+                {incident.status === "provider_selected" && "Signing & committing the Selected Offer…"}
+                {incident.status === "activating" && "Activating the purchased capacity…"}
+                {incident.status === "verifying" && "Verifying delivered throughput…"}
+                {incident.status === "escrow_locked" && "Escrow locked — activating…"}
+              </span>
+            </div>
             <Thread incident={incident} />
-            <div className="money-state" style={{ marginTop: 10 }}>
-              📡 Provider agents are quoting — ranking the signed offers…
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
+              Requesting +{incident.shortage} Mbps · {incident.req?.min ?? 30} min · budget USDC {incident.req?.budget ?? 0}
             </div>
           </div>
         )}
 
-        {/* Transition / Activating state */}
-        {!inSms && !completed && incident.status !== "escrow_locked" && (
+        {/* Sim (non-live) transition state */}
+        {!isLive && !inSms && !completed && incident.status !== "escrow_locked" && (
           <div style={{ padding: "24px 0", textAlign: "center" }}>
             <div
               style={{
@@ -250,23 +283,14 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 marginBottom: 12,
               }}
             />
-            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
             <div style={{ fontSize: 16, fontWeight: 800 }}>
-              {incident.status === "request_detected" && "Broadcasting intent to the live market…"}
-              {incident.status === "provider_selected" && (isLive ? "Signing & committing the Selected Offer…" : "Matching Best Provider (KilatLink FWA)…")}
+              {incident.status === "provider_selected" && "Matching Best Provider (KilatLink FWA)…"}
               {incident.status === "activating" && "Activating High-Speed Backup Link…"}
               {incident.status === "verifying" && "Verifying Delivered Throughput & SLA…"}
             </div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
               Allocating +{incident.shortage} Mbps replacement bandwidth
             </div>
-          </div>
-        )}
-
-        {/* Live narration: the thread carries real SSE events throughout */}
-        {isLive && !inSms && !completed && (
-          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "14px 18px", marginTop: 10 }}>
-            <Thread incident={incident} />
           </div>
         )}
 

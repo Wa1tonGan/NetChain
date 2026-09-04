@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { beginZkLogin } from "../services/zklogin";
+import { connectSuiWallet, isSuiWalletAvailable } from "../services/walletConnect";
 
 export default function WalletConnectModal({ onClose }: { onClose: () => void }) {
   const s = useAppStore();
   const [customAddr, setCustomAddr] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadingZk, setLoadingZk] = useState(false);
+  const [loadingWallet, setLoadingWallet] = useState(false);
 
   async function handleGoogleZkLogin() {
     setLoadingZk(true);
@@ -21,38 +23,24 @@ export default function WalletConnectModal({ onClose }: { onClose: () => void })
 
   async function handleConnectExtension() {
     setError(null);
-    const win = window as unknown as { suiWallet?: { requestPermissions: () => Promise<string[]>; getAccounts: () => Promise<string[]> } };
-    if (win.suiWallet) {
-      try {
-        await win.suiWallet.requestPermissions();
-        const accounts = await win.suiWallet.getAccounts();
-        if (accounts && accounts[0]) {
-          s.setZkLogin({
-            address: accounts[0],
-            name: "Sui Wallet User",
-            email: null,
-            sub: accounts[0],
-            iss: "sui-extension",
-            aud: "sui-wallet",
-          });
-          onClose();
-          return;
-        }
-      } catch (err) {
-        setError("Could not connect to Sui Wallet extension: " + (err instanceof Error ? err.message : String(err)));
-        return;
-      }
+    setLoadingWallet(true);
+    try {
+      const wallet = await connectSuiWallet();
+      s.setZkLogin({
+        address: wallet.address,
+        name: wallet.name || "Sui Wallet",
+        email: null,
+        sub: wallet.address,
+        iss: "sui-wallet",
+        aud: "sui-extension",
+        signingMode: "wallet",
+      });
+      onClose();
+    } catch (err) {
+      setError("Could not connect to the wallet extension: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoadingWallet(false);
     }
-    const demoExtensionAddr = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    s.setZkLogin({
-      address: demoExtensionAddr,
-      name: "Sui Wallet (Standard)",
-      email: null,
-      sub: demoExtensionAddr,
-      iss: "sui-standard",
-      aud: "sui-extension",
-    });
-    onClose();
   }
 
   function handleSaveCustomAddr(e: React.FormEvent) {
@@ -94,7 +82,32 @@ export default function WalletConnectModal({ onClose }: { onClose: () => void })
         )}
 
         <div style={{ display: "grid", gap: 10 }}>
-          {/* Option 1: Google zkLogin */}
+          {/* Option 1: Browser Wallet Extension (real connect) */}
+          <button
+            className="btn subtle"
+            style={{
+              padding: "14px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              textAlign: "left",
+              border: "1px solid var(--line)",
+            }}
+            onClick={handleConnectExtension}
+            disabled={loadingWallet}
+          >
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13.5 }}>Connect Slush / Sui Wallet</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                {isSuiWalletAvailable()
+                  ? "Extension detected — the wallet signs every escrow commit itself"
+                  : "No extension found — install Slush (slush.app) first"}
+              </div>
+            </div>
+            <span style={{ fontSize: 18, color: "var(--faint)" }}>{loadingWallet ? "…" : "›"}</span>
+          </button>
+
+          {/* Option 2: Google zkLogin */}
           <button
             className="btn subtle"
             style={{
@@ -112,28 +125,6 @@ export default function WalletConnectModal({ onClose }: { onClose: () => void })
               <div style={{ fontWeight: 800, fontSize: 13.5 }}>Google zkLogin (Zero-Knowledge)</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                 Instant login without seed phrase · Sui testnet address derived automatically
-              </div>
-            </div>
-            <span style={{ fontSize: 18, color: "var(--faint)" }}>›</span>
-          </button>
-
-          {/* Option 2: Browser Wallet Extension */}
-          <button
-            className="btn subtle"
-            style={{
-              padding: "14px 16px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              textAlign: "left",
-              border: "1px solid var(--line)",
-            }}
-            onClick={handleConnectExtension}
-          >
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 13.5 }}>Connect Sui Wallet (Extension)</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                Connect browser extension or standard Sui wallet
               </div>
             </div>
             <span style={{ fontSize: 18, color: "var(--faint)" }}>›</span>

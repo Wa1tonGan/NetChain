@@ -98,8 +98,8 @@ export class TrustService {
    */
   async buildCommitForZkLogin(selectedOffer) {
     // Strip transport-only fields before schema validation (strict schema
-    // rejects unknown keys): submit flag + the buyer's payment coin object.
-    const { submit, paymentCoinId, ...offer } = selectedOffer ?? {};
+    // rejects unknown keys): submit flag + the buyer's zkLogin address.
+    const { submit, buyerAddress, ...offer } = selectedOffer ?? {};
     const existing = this.ledger.lookup(offer.agreement?.nonce);
     if (existing) {
       return { status: existing.status, duplicate: true, commitment: existing };
@@ -130,8 +130,18 @@ export class TrustService {
       }
     });
 
-    const tx = buildCommitAsBuyerTx(this.config, voucher, selectedOffer.paymentCoinId);
-    const txBytes = await tx.build({ client: this.client });
+    let txBytes;
+    try {
+      const tx = buildCommitAsBuyerTx(this.config, voucher, buyerAddress);
+      txBytes = await tx.build({ client: this.client });
+    } catch (err) {
+      // PTB build failures are deterministic buyer-side problems (missing
+      // sender, unfunded balance, stale coin) — surface them as a coded 422
+      // instead of the catch-all 500.
+      throw Object.assign(new Error(`commit PTB build failed: ${err.message}`), {
+        code: "COMMIT_BUILD_FAILED"
+      });
+    }
     return {
       status: "BUILD_OK",
       voucher,
@@ -156,20 +166,25 @@ export class TrustService {
       return { status: existing.status, duplicate: true, commitment: existing };
     }
 
-    const result = await this.client.waitForTransaction({
+    // gRPC client: JSON-RPC-style `options` is ignored by waitForTransaction
+    // (returns null events) — `include` on getTransaction is the way to get
+    // events + effects. Event shape here is {eventType, json, module, …}, so
+    // match the Committed event by type suffix / json payload.
+    const result = await this.client.getTransaction({
       digest: txDigest,
-      options: { showEvents: true, showEffects: true }
+      include: { events: true, effects: true }
     });
-    const committedEvent = result.events?.find(
-      (e) => e.json?.idempotent !== undefined || (e.id?.name === "Committed" && e.json?.nonce)
+    const tx = result.Transaction ?? result;
+    const committedEvent = (tx.events ?? []).find(
+      (e) => e.json?.idempotent !== undefined || String(e.eventType ?? "").endsWith("::escrow::Committed")
     );
-    const failed = result.effects?.status?.status !== "success";
+    const failed = tx.status?.success === false;
     if (failed || !committedEvent) {
       this.ledger.emit("VERIFICATION_FAILED", {
         incidentId,
         nonce,
         txDigest,
-        data: { code: "CHAIN_CONFIRM_FAILED", message: result.effects?.status?.error ?? "no Committed event" }
+        data: { code: "CHAIN_CONFIRM_FAILED", message: tx.status?.error ?? "no Committed event" }
       });
       throw new Error("on-chain confirmation failed");
     }
@@ -202,6 +217,34 @@ export class TrustService {
     const platform = platformKeypair();
     if (!platform) {
       throw Object.assign(new Error("PLATFORM_SECRET not configured"), { code: "FUNDING_DISABLED" });
+    }
+
+    // Gas guard: every agent-mode commit/settle is signed (and gas-paid) by
+    // the platform key — when its SUI runs dry the whole flow fails with
+    // "insufficient SUI balance". Best-effort faucet top-up before funding.
+    try {
+      const platformAddr = platform.toSuiAddress();
+      const sui = await this.client
+        .getBalance({ owner: platformAddr, coinType: "0x2::sui::SUI" })
+        .catch(() => null);
+      // gRPC client nests: { balance: { balance } }; JSON-RPC: { totalBalance }
+      const mist = Number(sui?.balance?.balance ?? sui?.totalBalance ?? 0);
+      if (mist < 50_000_000) {
+        const faucet = await import("@mysten/sui/faucet").catch(() => null);
+        if (faucet?.requestSuiFromFaucetV2) {
+          await faucet.requestSuiFromFaucetV2({
+            host: faucet.getFaucetHost(this.config.network ?? "testnet"),
+            recipient: platformAddr,
+          });
+          this.ledger.emit("OPERATOR_FUNDED", {
+            incidentId: null,
+            nonce: `faucet:${platformAddr}:${Date.now()}`,
+            data: { note: "platform gas low — faucet top-up" }
+          });
+        }
+      }
+    } catch {
+      // faucet rate-limited or offline — continue; the send may still succeed
     }
 
     const results = {};

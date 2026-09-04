@@ -625,20 +625,25 @@ export function createRescueAgent({
     }
 
     let ordered = deterministicOrder;
+    let consensusVotes = null;
 
     if (!request.emergencyOverride && deterministicOrder.length >= 2) {
-      const consensusOrder = await rankWithConsensus(
+      const consensus = await rankWithConsensus(
         deterministicOrder,
         request,
         gonkaOverrides
       );
 
-      if (consensusOrder) {
+      if (consensus) {
+        const consensusOrder = consensus.ranking;
         const byProvider = new Map(
           deterministicOrder.map((entry) => [entry.offer.providerId, entry])
         );
         ordered = consensusOrder.map((providerId) => byProvider.get(providerId));
         rankingNote = "Gonka consensus ranking";
+        // Transparency UI: per-model votes + Gonka request ids ride with the
+        // SELECTED event to the dashboard.
+        consensusVotes = consensus.votes;
         logger(
           "info",
           `gonka consensus ranking for ${incidentId}: ${consensusOrder.join(" > ")}`
@@ -650,7 +655,8 @@ export function createRescueAgent({
     emit(incidentId, {
       type: "status",
       status: "SELECTED",
-      providerId: ordered[0].offer.providerId
+      providerId: ordered[0].offer.providerId,
+      votes: consensusVotes
     });
 
     // 5) Activation walk with fallback (§4.2 step 9).
@@ -669,7 +675,10 @@ export function createRescueAgent({
         incidentId,
         selectedOffer: outcome.selected,
         attempt: outcome.attempt,
-        timing: outcome.selected.timing
+        timing: outcome.selected.timing,
+        // durable consensus audit trail — survives page refreshes, unlike the
+        // one-shot SELECTED SSE event
+        consensus: consensusVotes
       };
     }
 

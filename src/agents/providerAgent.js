@@ -27,7 +27,10 @@ import { signOffer } from "../a2a/signing.js";
 import { quoteAsset } from "../a2a/quoteAsset.js";
 import { derivePersonasForIncident } from "../a2a/dynamicProviders.js";
 
-const OFFER_TTL_MS = 60_000;
+// Offer TTL must outlive the buyer-side Gonka ranking budget (2.5 min in
+// .env) plus quote collection — otherwise a valid offer expires before the
+// commit tx reaches the chain. 180s = budget + 30s of margin.
+const OFFER_TTL_MS = 180_000;
 const MODE_VALUES = ["healthy", "down", "unresponsive", "slow", "fail_activation", "laggy"];
 
 function round2(value) {

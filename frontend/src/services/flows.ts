@@ -144,7 +144,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
   },
 ];
 
-export const COMPARISON = [
+export const COMPARISON: { name: string; state: string; sel: boolean; id?: string }[] = [
   { name: "Provider A (NusaNet 5G)", state: "Congested / High Latency", sel: false },
   { name: "Provider B (KilatLink FWA)", state: "Available now · fastest path", sel: true },
   { name: "Provider C (OrbitSat GO)", state: "Available · slower activation", sel: false },

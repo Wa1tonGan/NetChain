@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { beginZkLogin } from "../services/zklogin";
+import { connectSuiWallet, isSuiWalletAvailable } from "../services/walletConnect";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const setZkLogin = useAppStore((s) => s.setZkLogin);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingWallet, setLoadingWallet] = useState(false);
 
   async function handleGoogleLogin() {
     setLoginError(null);
@@ -21,17 +23,29 @@ export default function LoginPage() {
     }
   }
 
-  function handleConnectExtension() {
-    const demoExtensionAddr = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    setZkLogin({
-      address: demoExtensionAddr,
-      name: "Sui Wallet User",
-      email: null,
-      sub: demoExtensionAddr,
-      iss: "sui-standard",
-      aud: "sui-extension",
-    });
-    navigate("/home");
+  /** Real extension wallet (Slush / any Sui-standard wallet). The connected
+   *  address becomes the buyer identity; the extension signs every escrow
+   *  commit with its own key and gas. */
+  async function handleConnectWallet() {
+    setLoginError(null);
+    setLoadingWallet(true);
+    try {
+      const wallet = await connectSuiWallet();
+      setZkLogin({
+        address: wallet.address,
+        name: wallet.name || "Sui Wallet",
+        email: null,
+        sub: wallet.address,
+        iss: "sui-wallet",
+        aud: "sui-extension",
+        signingMode: "wallet",
+      });
+      navigate("/home");
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingWallet(false);
+    }
   }
 
   function handleGuestLogin() {
@@ -113,7 +127,7 @@ export default function LoginPage() {
             <div>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Connect your Sui Account</div>
               <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
-                Link your Google account with Sui zkLogin or connect your Sui wallet for pre-funded escrow.
+                Connect Slush or any Sui wallet to sign escrow commits yourself — or use Google zkLogin.
               </p>
 
               {loginError && (
@@ -125,6 +139,30 @@ export default function LoginPage() {
               <div style={{ display: "grid", gap: 10 }}>
                 <button
                   className="btn primary"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    padding: "12px 16px",
+                  }}
+                  onClick={handleConnectWallet}
+                  disabled={loadingWallet}
+                  title={isSuiWalletAvailable() ? "Connect your Slush / Sui wallet extension" : "Install Slush (slush.app) to connect"}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 7h18M3 12h18M3 17h12" />
+                  </svg>
+                  <span>{loadingWallet ? "Connecting wallet…" : "Connect Slush / Sui Wallet"}</span>
+                </button>
+                {isSuiWalletAvailable() ? null : (
+                  <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: -4 }}>
+                    No Sui extension detected — install Slush (slush.app), then retry
+                  </div>
+                )}
+
+                <button
+                  className="btn subtle"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -154,10 +192,6 @@ export default function LoginPage() {
                     />
                   </svg>
                   <span>{loading ? "Redirecting to Google…" : "Continue with Google (zkLogin)"}</span>
-                </button>
-
-                <button className="btn subtle" onClick={handleConnectExtension}>
-                  💧 Connect Sui Wallet (Extension)
                 </button>
 
                 <button className="btn subtle" onClick={handleGuestLogin}>

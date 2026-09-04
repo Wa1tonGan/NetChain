@@ -255,17 +255,27 @@ export async function commitVoucher(client, keypair, config, voucher) {
 
 /** escrow::commit_as_buyer — zkLogin buyer-direct path (no AuthorityCap;
     the buyer hands in their own payment Coin inside the same PTB).
-    `paymentCoinId` = the buyer's own Coin<MYRC> object id (splitting the gas
-    coin would produce Coin<SUI> — a type mismatch against Coin<MYRC>). */
-export function buildCommitAsBuyerTx(config, voucher, paymentCoinId) {
+    `buyerAddress` = the zkLogin address, stamped as sender so the PTB is
+    buildable/signable: the payment Coin is drawn from the buyer's ADDRESS
+    BALANCE via 0x2::coin::from_balance (gasless top-ups land there — no
+    Coin<T> object exists to pass as tx.object, and splitting the gas coin
+    would produce Coin<SUI>, a type mismatch against Coin<MYRC>). */
+export function buildCommitAsBuyerTx(config, voucher, buyerAddress) {
   const myrc = coinType(config);
-  if (!paymentCoinId) {
-    throw new Error(
-      "paymentCoinId required — the buyer wallet has no stablecoin coin object; fund it via POST /v1/fund first"
+  if (!buyerAddress) {
+    throw Object.assign(
+      new Error("buyer address required — the browser must send the zkLogin address to build the payment coin against"),
+      { code: "BUYER_ADDRESS_REQUIRED" }
     );
   }
   const tx = new Transaction();
-  const payment = tx.object(paymentCoinId);
+  tx.setSender(buyerAddress);
+  const balance = tx.balance({ type: myrc, balance: String(voucher.amount) });
+  const payment = tx.moveCall({
+    target: "0x2::coin::from_balance",
+    typeArguments: [myrc],
+    arguments: [balance]
+  });
   tx.moveCall({
     target: `${config.packageId}::escrow::commit_as_buyer`,
     typeArguments: [myrc],
@@ -370,12 +380,15 @@ export async function verifyDeliveryOnChain(client, keypair, config, { nonce, lo
 }
 
 export async function reclaimVoucher(client, keypair, config, nonce) {
-  const myrc = `${config.packageId}::myrc::MYRC`;
+  // Permissionless: anyone may call after expiry — funds return to the
+  // commitment's buyer (c.buyer), not to the caller. Clock is required by
+  // the Move signature (expiry check) even though the caller cannot benefit.
+  const myrc = coinType(config);
   const tx = new Transaction();
   tx.moveCall({
     target: `${config.packageId}::escrow::reclaim`,
     typeArguments: [myrc],
-    arguments: [tx.object(config.escrowId), utf8Vector(tx, nonce)]
+    arguments: [tx.object(config.escrowId), utf8Vector(tx, nonce), tx.object(SUI_CLOCK_ID)]
   });
   return signAndRun(client, keypair, tx);
 }
