@@ -32,7 +32,7 @@
     "offerSignature": {
       "algorithm": "ed25519",
       "keyId": "provider-b-demo",
-      "value": "W2D/ZL/GXYePiI6fuQLWd/6m1U65IIhTCY+EGQXUh2smQY5CM5QfkrUKNhUBJI+Ue53oAIwEp2zxrsKQAZmFAg=="
+      "value": "qyFqOtkeMJ5vjQsxgeWD+FLHOQYnSE8JmSBfgZmGcufzJXMpol9Yxb4TEKdxhqul8WBl7Pm3ixjTMubYDZjiCQ=="
     },
     "buyerSignature": {
       "algorithm": "ed25519",

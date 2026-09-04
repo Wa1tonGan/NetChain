@@ -39,8 +39,8 @@ const providers = [
     },
     policy: {
       maxCapacityMbps: 400,
-      baseFee: 20,
-      pricePer100MbpsPerHour: 15,
+      baseFee: 0.8,
+      pricePer100MbpsPerHour: 0.5,
       currency: "MYR"
     },
     performance: {
@@ -71,8 +71,8 @@ const providers = [
     },
     policy: {
       maxCapacityMbps: 300,
-      baseFee: 15,
-      pricePer100MbpsPerHour: 15,
+      baseFee: 0.6,
+      pricePer100MbpsPerHour: 0.4,
       currency: "MYR"
     },
     performance: {
@@ -103,8 +103,8 @@ const providers = [
     },
     policy: {
       maxCapacityMbps: 150,
-      baseFee: 10,
-      pricePer100MbpsPerHour: 14,
+      baseFee: 0.3,
+      pricePer100MbpsPerHour: 0.35,
       currency: "MYR"
     },
     performance: {
@@ -153,14 +153,17 @@ for (const provider of providers) {
 }
 
 // Buyer key: the Rescue Agent signs the agreement side of the voucher.
-const buyer = generateKeyPairSync("ed25519");
-writeFileSync(
-  keyPaths("buyer").privatePath,
-  buyer.privateKey.export({ type: "pkcs8", format: "pem" })
-);
-writeFileSync(
-  keyPaths("buyer").publicPath,
-  buyer.publicKey.export({ type: "spki", format: "pem" })
-);
+// Preserved if already present so Buyer 1 on-chain identity stays pinned.
+if (!existsSync(keyPaths("buyer").privatePath)) {
+  const buyer = generateKeyPairSync("ed25519");
+  writeFileSync(
+    keyPaths("buyer").privatePath,
+    buyer.privateKey.export({ type: "pkcs8", format: "pem" })
+  );
+  writeFileSync(
+    keyPaths("buyer").publicPath,
+    buyer.publicKey.export({ type: "spki", format: "pem" })
+  );
+}
 
 console.log(`Provisioned ${providers.length} provider identities + buyer key in fixtures/`);

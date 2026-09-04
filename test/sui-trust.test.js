@@ -32,6 +32,7 @@ const load = (name) => JSON.parse(readFileSync(path.join("fixtures/sui", name), 
 // Fixture stability for the offline suite: the last on-chain run may have
 // left USD fixtures on disk (testnet price-scaled). The offline suite always
 // tests the localnet MYRC path, so regenerate MYRC fixtures before any read.
+process.env.SUI_NETWORK = "localnet";
 execSync("node scripts/sui-fixtures.mjs", {
   stdio: "ignore",
   env: { ...process.env, SUI_NETWORK: "localnet" }

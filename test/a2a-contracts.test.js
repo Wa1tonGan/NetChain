@@ -179,7 +179,7 @@ for (const [label, scenarioFile] of Object.entries(INCIDENT_SCENARIOS)) {
 
   test(`${label}: re-running the deterministic selection reproduces the fixture`, async () => {
     const intent = await loadJson(path.join("scenarios", scenarioFile));
-    const request = buildProviderRequest(intent);
+    const request = buildProviderRequest(intent, { ...process.env, SUI_NETWORK: "localnet" });
     const selected = await loadJson(`fixtures/selected/${label}-selected-offer.json`);
 
     const arrivals = [];

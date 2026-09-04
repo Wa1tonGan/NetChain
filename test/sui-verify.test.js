@@ -92,7 +92,8 @@ describe("sui/verify — deterministic delivery check (blueprint §4.3, pure alg
 
 describe("sui/service — verifyDelivery → settle (offline, stubbed chain)", () => {
   it("records §9 verdict on-chain, then settles with the penalty compensated to the buyer", async () => {
-    execSync("node scripts/sui-fixtures.mjs", { stdio: "ignore" });
+    process.env.SUI_NETWORK = "localnet";
+    execSync("node scripts/sui-fixtures.mjs", { stdio: "ignore", env: { ...process.env, SUI_NETWORK: "localnet" } });
     rmSync("events/test-ledger-verify.jsonl", { force: true });
     const ledger = new EventLedger("events/test-ledger-verify.jsonl");
     const service = new TrustService({
