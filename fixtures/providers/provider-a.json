@@ -41,6 +41,6 @@
   "publicKey": {
     "algorithm": "ed25519",
     "keyId": "provider-a-demo",
-    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAfblpPw9ZkAbigasfa83aoZRXzIPKnZa19mcVLfQpiQk=\n-----END PUBLIC KEY-----"
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANegQOSOBSf/fttBN+tmwm4DyqkVpkp8itrNHw+zIR6g=\n-----END PUBLIC KEY-----"
   }
 }

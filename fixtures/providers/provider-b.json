@@ -40,6 +40,6 @@
   "publicKey": {
     "algorithm": "ed25519",
     "keyId": "provider-b-demo",
-    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAgE+YS8czFX5d7kaMDBgnILb8QL8x4X9z5BTwnTLAeK4=\n-----END PUBLIC KEY-----"
+    "value": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAS3SmNuq9Juw85H1w2IHiyN2lH0nFmpWtcyyyqnGVavg=\n-----END PUBLIC KEY-----"
   }
 }

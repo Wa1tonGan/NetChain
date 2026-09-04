@@ -8,7 +8,7 @@
   "expectedActivationClass": "FAST",
   "expectedActivationTimeMs": 2000,
   "activationLane": "STANDARD",
-  "price": 0.83,
+  "price": 31,
   "currency": "MYR",
   "reliabilityScore": 0.98,
   "latencyMs": 120,
@@ -17,6 +17,6 @@
   "signature": {
     "algorithm": "ed25519",
     "keyId": "provider-c-demo",
-    "value": "Yw1Gd1T5o+4Cwqs9msbS1hbg/NeFYctwdbR8Y9CTMwI898P9TqD9EJNR+h1k596qQtvZ24zuNZvs62eMAfd+Dw=="
+    "value": "DB5bvcxP/nTGfWzwp52o2y8pHFdBkPYjVevBMAo3xMw5eKucyXV+f4+OeGvFrxjL4HOEQE1gFKaMxkauTdVbDw=="
   }
 }
