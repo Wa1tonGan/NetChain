@@ -6,12 +6,10 @@ import RecoveryOverlay from "./components/RecoveryOverlay";
 import DevPage from "./pages/DevPage";
 import UserListPage from "./pages/UserListPage";
 import HomePage from "./pages/HomePage";
-import ServicesPage from "./pages/ServicesPage";
 import ActivityPage from "./pages/ActivityPage";
 import ActivityDetailPage from "./pages/ActivityDetailPage";
 import ProfilePage from "./pages/ProfilePage";
 import LoginPage from "./pages/LoginPage";
-import TruthAgentPage from "./pages/TruthAgentPage";
 
 export default function App() {
   const incident = useAppStore((s) => s.incident);
@@ -45,10 +43,8 @@ export default function App() {
           <Route path="/network/:userId" element={<HomePage />} />
           <Route path="/user/:userId" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/services" element={<ServicesPage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
-          <Route path="/truth" element={<TruthAgentPage />} />
           <Route path="/wallet" element={<Navigate to="/profile" replace />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/home" replace />} />

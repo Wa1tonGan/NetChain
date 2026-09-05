@@ -1,0 +1,20 @@
+# Backend image build context (repo root) — keep it lean and secret-free.
+node_modules
+frontend
+.git
+.zcode
+.playwright-mcp
+
+# secrets & local state (injected at runtime via env_file / bind mounts)
+.env
+.env.*
+.sui
+events
+*.log
+
+# generated locally, never needed at runtime (keeps builds reproducible)
+fixtures/sui
+fixtures/providers/dynamic.json
+move/build
+frontend/dist
+*.png

@@ -229,7 +229,7 @@ export default function DevPage() {
                   <span className="t">Provider Under-Delivery Demo</span>
                   <div className="s">Provider delivers 450/500M → 10% penalty refund settled</div>
                 </span>
-                <button className="btn sm" onClick={() => s.startRecovery("under")} disabled={s.running}>
+                <button className="btn sm" onClick={() => s.startSimRecovery("under")} disabled={s.running}>
                   Run
                 </button>
               </div>
@@ -239,7 +239,7 @@ export default function DevPage() {
                   <span className="t">Provider Activation Failure</span>
                   <div className="s">Activation timeout → 100% reservation refund with 0 fee</div>
                 </span>
-                <button className="btn sm" onClick={() => s.startRecovery("failed")} disabled={s.running}>
+                <button className="btn sm" onClick={() => s.startSimRecovery("failed")} disabled={s.running}>
                   Run
                 </button>
               </div>

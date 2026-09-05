@@ -433,7 +433,8 @@ export function createRescueAgent({
         type: "rejection",
         providerId: candidate.offer.providerId,
         reason: "ACTIVATION_FAILED",
-        detail: `activation attempt ${attempt} failed (${result.backend ?? "adapter"}); moving to the next provider`
+        detail: `activation attempt ${attempt} failed (${result.backend ?? "adapter"}); moving to the next provider`,
+        brand: profileFor(profile, request.incidentId).brand
       });
       rejected.push(
         rejection(
@@ -487,7 +488,8 @@ export function createRescueAgent({
           type: "rejection",
           providerId: provider.providerId,
           reason: "PROVIDER_UNAVAILABLE",
-          detail: health.detail
+          detail: health.detail,
+          brand: profileFor(provider, incidentId).brand
         });
       }
     }
@@ -556,7 +558,11 @@ export function createRescueAgent({
             : result.detail
         );
         rejected.push(entry);
-        emit(incidentId, { type: "rejection", ...entry });
+        emit(incidentId, {
+          type: "rejection",
+          ...entry,
+          brand: profileFor(provider, incidentId).brand
+        });
         continue;
       }
 
@@ -564,7 +570,11 @@ export function createRescueAgent({
 
       if (validated.error) {
         rejected.push(validated.error);
-        emit(incidentId, { type: "rejection", ...validated.error });
+        emit(incidentId, {
+          type: "rejection",
+          ...validated.error,
+          brand: profileFor(provider, incidentId).brand
+        });
         continue;
       }
 
@@ -573,12 +583,26 @@ export function createRescueAgent({
         receivedAtMs: Date.now() - tDetect
       };
       arrivals.push(arrival);
+      // Offer summary rides with the event so dashboards can render real
+      // bid cards (capacity/price/SLA) without fetching each offer. The
+      // brand/category come from the incident-seeded persona so every card
+      // labels the provider identically.
+      const persona = profileFor(provider, incidentId);
       emit(incidentId, {
         type: "arrival",
         providerId: providerId,
         receivedAtMs: arrival.receivedAtMs,
         offerId: arrival.offer.offerId,
-        pitch: arrival.offer.enrichment?.pitch
+        pitch: arrival.offer.enrichment?.pitch,
+        brand: persona.brand,
+        category: persona.category,
+        capacityMbps: arrival.offer.capacityMbps,
+        price: arrival.offer.price,
+        currency: arrival.offer.currency,
+        latencyMs: arrival.offer.latencyMs,
+        packetLossPercent: arrival.offer.packetLossPercent,
+        reliabilityScore: arrival.offer.reliabilityScore,
+        expectedActivationTimeMs: arrival.offer.expectedActivationTimeMs
       });
     }
 
@@ -595,7 +619,11 @@ export function createRescueAgent({
         "bid deadline passed before the offer arrived"
       );
       rejected.push(miss);
-      emit(incidentId, { type: "rejection", ...miss });
+      emit(incidentId, {
+        type: "rejection",
+        ...miss,
+        brand: profileFor(profilesById.get(providerId), incidentId).brand
+      });
     }
 
     // 4) Selection: viability stays deterministic; only NORMAL ranking may
@@ -610,7 +638,11 @@ export function createRescueAgent({
         entry.evaluation.reasons.map((item) => item.detail).join("; ")
       );
       rejected.push(entryRejection);
-      emit(incidentId, { type: "rejection", ...entryRejection });
+      emit(incidentId, {
+        type: "rejection",
+        ...entryRejection,
+        brand: profileFor(profilesById.get(entry.offer.providerId), incidentId).brand
+      });
     }
 
     if (deterministicOrder.length === 0) {

@@ -25,6 +25,11 @@ export default function UserListPage() {
   const goodCount = DUMMY_USERS.filter((u) => u.status === "good").length;
   const lowCount = DUMMY_USERS.filter((u) => u.status === "low").length;
 
+  // KPI descriptors derived from the actual subscriber data, not literals.
+  const stateCount = new Set(DUMMY_USERS.map((u) => u.state)).size;
+  const optimalFloor = Math.min(...DUMMY_USERS.filter((u) => u.status === "good").map((u) => u.speedMbps));
+  const lowCeiling = Math.max(...DUMMY_USERS.filter((u) => u.status === "low").map((u) => u.speedMbps));
+
   return (
     <div>
       {/* Header */}
@@ -46,7 +51,7 @@ export default function UserListPage() {
         </div>
         <span className="chip live">
           <span className="dot" />
-          10 LINES MONITORED · MALAYSIA
+          {DUMMY_USERS.length} LINES MONITORED · MALAYSIA
         </span>
       </div>
 
@@ -67,7 +72,7 @@ export default function UserListPage() {
             {DUMMY_USERS.length}
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            Across 10 Malaysian States / Territories
+            Across {stateCount} Malaysian States / Territories
           </div>
         </div>
 
@@ -79,7 +84,7 @@ export default function UserListPage() {
             {goodCount} <span style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>lines</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            ≥ 300 Mbps · Latency &lt; 30 ms
+            ≥ {optimalFloor} Mbps · Latency &lt; 30 ms
           </div>
         </div>
 
@@ -91,7 +96,7 @@ export default function UserListPage() {
             {lowCount} <span style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>lines</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            &lt; 50 Mbps · Requires RescueAgent
+            &lt; {lowCeiling + 1} Mbps · Requires RescueAgent
           </div>
         </div>
 

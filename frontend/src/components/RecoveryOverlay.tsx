@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
-import type { Incident } from "../services/types";
+import { reasonLabel } from "../services/live";
+import type { ClaimAudit } from "../services/live";
+import type { Incident, RunBid, RunLogEntry } from "../services/types";
 
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
@@ -36,8 +38,55 @@ interface ChatMsg {
   isSpecialIndicator?: boolean;
 }
 
+/* One palette slot per bid, assigned in arrival order — pure UI styling. */
+const BID_TAG_STYLES = [
+  { tagBg: "rgba(2, 132, 199, 0.12)", tagColor: "#0284c7" },
+  { tagBg: "rgba(217, 119, 6, 0.12)", tagColor: "#d97706" },
+  { tagBg: "rgba(99, 102, 241, 0.12)", tagColor: "#6366f1" },
+];
+
+const MODEL_CARD: React.CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  padding: "8px 10px",
+  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+};
+
+const REQ_CHIP: React.CSSProperties = {
+  fontSize: 9.5,
+  fontFamily: "monospace",
+  background: "#f1f5f9",
+  color: "#64748b",
+  padding: "1px 6px",
+  borderRadius: 4,
+  border: "1px solid #e2e8f0",
+};
+
+const shortId = (id?: string | null): string | null => {
+  if (!id) return null;
+  return id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+};
+
+function SuiscanLink({ digest, color }: { digest: string; color: string }) {
+  return (
+    <a
+      href={`https://suiscan.xyz/testnet/tx/${digest}`}
+      target="_blank"
+      rel="noreferrer"
+      style={{ color, fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
+    >
+      Sui Tx: {shortId(digest)} ↗
+    </a>
+  );
+}
+
 export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const dismiss = useAppStore((s) => s.dismissOverlay);
+  const runLog = useAppStore((s) => s.runLog);
+  const audit: ClaimAudit | undefined = useAppStore((s) =>
+    incident.gatewayIncidentId ? s.claimAudits[incident.gatewayIncidentId] : undefined
+  );
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const completed = Boolean(incident.result);
@@ -45,445 +94,422 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   useTicker(!completed);
   const now = Date.now();
   const elapsed = elapsedSecAt(incident, now).toFixed(1);
-  const sec = completed ? 999 : parseFloat(elapsed);
 
-  // Auto-scroll chat to bottom as conversation progresses
+  // Auto-scroll chat to bottom as the conversation progresses
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [incident.status, completed, elapsed]);
+  }, [runLog.length, incident.status, completed, audit]);
 
-  const messages: ChatMsg[] = [
-    {
-      id: "alert",
-      sender: "RescueAgent",
-      role: "agent",
-      tag: "AUTONOMOUS GUARDIAN",
-      tagBg: "rgba(0, 113, 227, 0.12)",
-      tagColor: "#0071e3",
-      time: "T+0.0s",
-      text: (
-        <div>
-          <b>Weak network detected in George Town, Penang.</b>
-          <br />
-          Downlink degraded to <b>15 Mbps</b>. Uplink compromised.
-          <br />
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>
-            Protection rule P1 activated: Auto-broadcasting recovery intent for <b>500 Mbps</b> backup link (budget ≤ <b>USDC 2.00</b>).
-          </span>
-        </div>
-      ),
-    },
-  ];
+  const tLabel = (at: number) => `T+${Math.max(0, (at - incident.startedAt) / 1000).toFixed(1)}s`;
 
-  if (sec >= 1.0 || completed || incident.thread.some((t) => t.from === "user")) {
-    messages.push({
-      id: "intent",
-      sender: "Subscriber Proxy",
-      role: "user",
-      tag: "AUTO INTENT DISPATCH",
-      tagBg: "rgba(255, 255, 255, 0.2)",
-      tagColor: "#ffffff",
-      time: "T+1.0s",
-      text: (
-        <div>
-          <div style={{ fontSize: 14.5, fontWeight: 700 }}>500 Mbps, USDC 2</div>
-          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
-            Dual-Sig pre-authorized · 500 Mbps shortfall replacement
-          </div>
-        </div>
-      ),
-    });
-  }
+  const messages: ChatMsg[] = [];
+  let bidIndex = 0;
 
-  if (sec >= 2.5 || completed || ["request_detected", "provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "maxis",
-      sender: "Maxis Agent",
-      role: "agent",
-      tag: "TELCO 5G BID",
-      tagBg: "rgba(2, 132, 199, 0.12)",
-      tagColor: "#0284c7",
-      time: "T+2.5s",
-      text: (
-        <div>
-          <b>📡 Maxis 5G Ultra Bid Submitted:</b>
-          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            • Bandwidth: <b>500 Mbps</b><br />
-            • Latency: <b>26 ms</b> RTT (Jitter 4 ms)<br />
-            • Offer Price: <b>USDC 2.20</b><br />
-            • SLA: 99.8% availability guarantee
-          </div>
-        </div>
-      ),
-    });
-  }
+  for (const entry of runLog) {
+    switch (entry.kind) {
+      case "alert": {
+        messages.push({
+          id: entry.id,
+          sender: "RescueAgent",
+          role: "agent",
+          tag: "AUTONOMOUS GUARDIAN",
+          tagBg: "rgba(0, 113, 227, 0.12)",
+          tagColor: "#0071e3",
+          time: tLabel(entry.at),
+          text: (
+            <div>
+              <b>
+                {entry.degradedMbps != null
+                  ? `Weak network detected${entry.subject ? ` in ${entry.subject}` : ""}.`
+                  : `Primary link failure detected${entry.subject ? ` in ${entry.subject}` : ""}.`}
+              </b>
+              <br />
+              {entry.degradedMbps != null && (
+                <>
+                  Downlink degraded to <b>{entry.degradedMbps} Mbps</b>. Uplink compromised.
+                  <br />
+                </>
+              )}
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                Protection rule {entry.priority ?? "P1"} activated: Auto-broadcasting recovery intent
+                for <b>{entry.requiredMbps} Mbps</b> backup link (budget ≤ <b>{rm(entry.budgetUsdc)}</b>).
+              </span>
+            </div>
+          ),
+        });
+        break;
+      }
 
-  if (sec >= 3.8 || completed || ["request_detected", "provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "digi",
-      sender: "Digi Agent",
-      role: "agent",
-      tag: "FIBRE AIR BID",
-      tagBg: "rgba(217, 119, 6, 0.12)",
-      tagColor: "#d97706",
-      time: "T+3.8s",
-      text: (
-        <div>
-          <b>📡 Digi Fibre Air Bid Submitted:</b>
-          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            • Bandwidth: <b>450 Mbps</b><br />
-            • Latency: <b>32 ms</b> RTT (Jitter 5 ms)<br />
-            • Offer Price: <b>USDC 1.95</b><br />
-            • SLA: 99.5% availability guarantee
-          </div>
-        </div>
-      ),
-    });
-  }
-
-  if (sec >= 5.0 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "kilatlink",
-      sender: "KilatLink Agent",
-      role: "agent",
-      tag: "KILATLINK FWA BID",
-      tagBg: "rgba(99, 102, 241, 0.12)",
-      tagColor: "#6366f1",
-      time: "T+5.0s",
-      text: (
-        <div>
-          <b>📡 KilatLink FWA Bid Submitted:</b>
-          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            • Bandwidth: <b>500 Mbps</b> (Full shortfall demand)<br />
-            • Latency: <b>18 ms</b> RTT (Lowest latency route)<br />
-            • Offer Price: <b>USDC 1.80</b><br />
-            • SLA: 99.9% uptime · 0% packet loss direct peering
-          </div>
-        </div>
-      ),
-    });
-  }
-
-  if (sec >= 6.8 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "llm-provider-vote",
-      sender: "Gonka Consensus Engine",
-      role: "agent",
-      tag: "ROUND 1: PROVIDER SELECTION VOTE",
-      tagBg: "rgba(2, 132, 199, 0.12)",
-      tagColor: "#0284c7",
-      time: "T+6.8s",
-      isSpecialIndicator: true,
-      text: (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
-            <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 13 }}>
-              🤖 Multi-LLM Provider Evaluation &amp; Voting (Round 1)
-            </span>
-            <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
-              2/2 UNANIMOUS: KILATLINK FWA
-            </span>
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-            2 independent LLM models evaluated the 3 bids (Maxis 5G, Digi Fibre, KilatLink FWA) under P1 recovery criteria:
-          </div>
-
-          {/* 2 LLM Agents Reasoning & Voting Cards */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
-            {/* Model 1: DeepSeek-V4-Flash */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "8px 10px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>DeepSeek-V4-Flash</span>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontFamily: "monospace",
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    gonka req: req-12378127382713821738-123212
+      case "intent": {
+        messages.push({
+          id: entry.id,
+          sender: "Subscriber Proxy",
+          role: "user",
+          tag: "AUTO INTENT DISPATCH",
+          tagBg: "rgba(255, 255, 255, 0.2)",
+          tagColor: "#ffffff",
+          time: tLabel(entry.at),
+          text: (
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 700 }}>{entry.text}</div>
+              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+                Dual-Sig pre-authorized · {entry.capacityMbps} Mbps shortfall replacement ·{" "}
+                {entry.durationMinutes} min
+                {entry.gatewayIncidentId && (
+                  <span className="mono" style={{ opacity: 0.75 }}>
+                    {" "}
+                    · {entry.gatewayIncidentId}
                   </span>
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: KILATLINK FWA ✓</span>
-              </div>
-              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
-                <b>Reasoning:</b> Evaluated 3 provider bids against P1 constraints. KilatLink FWA satisfies 100% capacity demand (500 Mbps) with lowest latency (18ms) and optimal pricing (USDC 1.80 vs USDC 2.00 cap). Maxis 5G exceeds budget; Digi under-delivers bandwidth (450 Mbps). Selected: KilatLink FWA.
+                )}
               </div>
             </div>
+          ),
+        });
+        break;
+      }
 
-            {/* Model 2: MiniMax-M2.7 */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "8px 10px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>MiniMax-M2.7</span>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontFamily: "monospace",
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    gonka req: req-98421094812049182049-582914
-                  </span>
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: KILATLINK FWA ✓</span>
-              </div>
-              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
-                <b>Reasoning:</b> Pareto optimization confirms KilatLink FWA provides best QoS SLA (99.9% uptime guarantee, 0% packet loss) and fastest RTT (18ms). Cost efficiency score 0.985 outperforms competitors. Selected: KilatLink FWA.
+      case "bid": {
+        const style = BID_TAG_STYLES[bidIndex % BID_TAG_STYLES.length];
+        bidIndex += 1;
+        const slaPct =
+          entry.reliabilityScore != null ? `${(entry.reliabilityScore * 100).toFixed(1)}%` : null;
+        messages.push({
+          id: entry.id,
+          sender: `${entry.brand} Agent`,
+          role: "agent",
+          tag: `${(entry.category ?? "Provider").replace(/_/g, " ")} bid`.toUpperCase(),
+          tagBg: style.tagBg,
+          tagColor: style.tagColor,
+          time: tLabel(entry.at),
+          text: (
+            <div>
+              <b>
+                📡 {entry.brand} Bid Submitted:
+                {entry.winner && <span style={{ color: "#059669" }}> ✓ SELECTED</span>}
+              </b>
+              <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+                {entry.capacityMbps != null && (
+                  <>
+                    • Bandwidth: <b>{entry.capacityMbps} Mbps</b>
+                    <br />
+                  </>
+                )}
+                {entry.latencyMs != null && (
+                  <>
+                    • Latency: <b>{entry.latencyMs} ms</b> RTT
+                    <br />
+                  </>
+                )}
+                {entry.priceUsdc != null && (
+                  <>
+                    • Offer Price: <b>{rm(entry.priceUsdc)}</b>
+                    <br />
+                  </>
+                )}
+                {slaPct && (
+                  <>
+                    • SLA: {slaPct} availability
+                    <br />
+                  </>
+                )}
+                {entry.pitch && (
+                  <div style={{ marginTop: 3, color: "var(--muted)" }}>“{entry.pitch}”</div>
+                )}
+                {entry.rejectedReason && (
+                  <div style={{ marginTop: 4, fontSize: 11.5, color: "#b42318", fontWeight: 600 }}>
+                    ✗ Not selected — {reasonLabel(entry.rejectedReason)}
+                    {entry.rejectedDetail ? ` — ${entry.rejectedDetail}` : ""}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          ),
+        });
+        break;
+      }
 
-          <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#0369a1", display: "flex", alignItems: "center", gap: 6 }}>
-            <span>⚡ Round 1 Consensus Reached:</span>
-            <span style={{ color: "#059669" }}>2/2 Unanimous Vote for KilatLink FWA · Committing Dual-Sig Escrow</span>
-          </div>
-        </div>
-      ),
-    });
-  }
-
-  if (sec >= 8.5 || completed || ["escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "escrow",
-      sender: "Sui Trust Layer",
-      role: "agent",
-      tag: "DUAL-SIG ESCROW",
-      tagBg: "rgba(79, 70, 229, 0.12)",
-      tagColor: "#4f46e5",
-      time: "T+8.5s",
-      isEscrow: true,
-      text: (
-        <div>
-          <b>🔒 Sui Dual-Sig Escrow Locked:</b>
-          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            Locked <b>USDC 1.80</b> into Escrow Contract (<span className="mono" style={{ fontSize: 11 }}>0x9c4c...a6a63</span>).
-            <br />
-            Funds secured on-chain. Activating KilatLink FWA backup slice...
-            {incident.commitTxDigest && (
-              <div style={{ marginTop: 4 }}>
-                <a
-                  href={`https://suiscan.xyz/testnet/tx/${incident.commitTxDigest}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "#4f46e5", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
-                >
-                  Sui Escrow Tx: {incident.commitTxDigest.slice(0, 8)}…{incident.commitTxDigest.slice(-6)} ↗
-                </a>
+      case "consensus": {
+        const total = entry.votes.length;
+        const firstChoices = entry.votes.map((v) => v.ranking[0]).filter(Boolean);
+        const unanimous = firstChoices.length === total && firstChoices.every((pid) => pid === entry.winnerProviderId);
+        const winnerBrand = entry.brands[entry.winnerProviderId] ?? entry.winnerProviderId;
+        messages.push({
+          id: entry.id,
+          sender: "Gonka Consensus Engine",
+          role: "agent",
+          tag: "ROUND 1: PROVIDER SELECTION VOTE",
+          tagBg: "rgba(2, 132, 199, 0.12)",
+          tagColor: "#0284c7",
+          time: tLabel(entry.at),
+          isSpecialIndicator: true,
+          text: (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+                <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 13 }}>
+                  🤖 Multi-LLM Provider Evaluation &amp; Voting (Round 1)
+                </span>
+                <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
+                  {unanimous
+                    ? `${total}/${total} UNANIMOUS: ${winnerBrand.toUpperCase()}`
+                    : `${total} MODELS RANKED`}
+                </span>
               </div>
-            )}
-          </div>
-        </div>
-      ),
-    });
-  }
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                {total} independent LLM models evaluated the provider bids under P1 recovery criteria:
+              </div>
 
-  if (sec >= 10.0 || completed || ["activating", "verifying", "restored"].includes(incident.status)) {
-    const walrusId = incident.walrusBlobId || incident.result?.walrusBlobId;
-    messages.push({
-      id: "walrus-report",
-      sender: "Telemetry Agent",
-      role: "agent",
-      tag: "WALRUS TELEMETRY REPORT",
-      tagBg: "rgba(13, 148, 136, 0.12)",
-      tagColor: "#0d9488",
-      time: "T+10.0s",
-      text: (
-        <div>
-          <div style={{ fontWeight: 800, color: "#0d9488", fontSize: 13 }}>
-            📊 Real-Time Network Strength Detected &amp; Packaged:
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: "var(--ink-2)" }}>
-            Physical link telemetry collected across all recovery monitoring windows:
-            <div
-              style={{
-                marginTop: 6,
-                padding: "8px 10px",
-                background: "rgba(13, 148, 136, 0.06)",
-                borderRadius: 8,
-                border: "1px solid rgba(13, 148, 136, 0.2)",
-                fontSize: 11.5,
-                fontFamily: "monospace",
-                color: "#134e4a",
-                lineHeight: 1.55,
-              }}
-            >
-              <div>• Signal Strength: <b>-72 dBm (Excellent 5G/FWA RSRP)</b> · SINR 24 dB</div>
-              <div>• Downlink Throughput: <b>500.4 Mbps</b> (Shortfall demand: 500 Mbps)</div>
-              <div>• Latency &amp; Jitter: <b>18 ms RTT · 2.1 ms jitter</b></div>
-              <div>• Packet Loss: <b>0.00% (Zero loss confirmed)</b></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
+                {entry.votes.map((v, i) => {
+                  const top = v.ranking[0];
+                  const topBrand = top ? entry.brands[top] ?? top : "—";
+                  return (
+                    <div key={i} style={MODEL_CARD}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>{v.model}</span>
+                          {v.requestId && <span style={REQ_CHIP}>gonka req: {v.requestId}</span>}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            color: top === entry.winnerProviderId ? "#059669" : "#b45309",
+                          }}
+                        >
+                          VOTE: {topBrand} {top === entry.winnerProviderId ? "✓" : "≠"}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                        <b>Ranking:</b> {v.ranking.map((pid) => entry.brands[pid] ?? pid).join(" › ")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#0369a1", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>⚡ Round 1 Consensus Reached:</span>
+                <span style={{ color: "#059669" }}>
+                  {unanimous
+                    ? `${total}/${total} Unanimous Vote for ${winnerBrand} · Committing Dual-Sig Escrow`
+                    : `Winner: ${winnerBrand} · Committing Dual-Sig Escrow`}
+                </span>
+              </div>
             </div>
-            <div style={{ marginTop: 6, color: "var(--ink)" }}>
-              Data compiled into immutable <b>SLA Verification Report</b> and stored to Walrus:
+          ),
+        });
+        break;
+      }
+
+      case "escrow": {
+        messages.push({
+          id: entry.id,
+          sender: "Sui Trust Layer",
+          role: "agent",
+          tag: entry.agentSigned ? "DUAL-SIG ESCROW" : "ESCROW · BUYER-SIGNED",
+          tagBg: "rgba(79, 70, 229, 0.12)",
+          tagColor: "#4f46e5",
+          time: tLabel(entry.at),
+          isEscrow: true,
+          text: (
+            <div>
+              <b>🔒 Sui Dual-Sig Escrow Locked:</b>
+              <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+                Locked <b>{rm(entry.amountUsdc)}</b> into Escrow Contract (
+                <span className="mono" style={{ fontSize: 11 }}>
+                  {shortId(entry.escrowId) ?? "on-chain"}
+                </span>
+                ).
+                <br />
+                Funds secured on-chain. Activating {entry.providerBrand} backup slice...
+                {entry.txDigest && (
+                  <div style={{ marginTop: 4 }}>
+                    <SuiscanLink digest={entry.txDigest} color="#4f46e5" />
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ marginTop: 4 }}>
-              {walrusId ? (
-                <a
-                  href={`https://walruscan.com/testnet/blob/${walrusId}`}
-                  target="_blank"
-                  rel="noreferrer"
+          ),
+        });
+        break;
+      }
+
+      case "telemetry": {
+        const walrusId = entry.walrusBlobId ?? incident.walrusBlobId ?? incident.result?.walrusBlobId;
+        messages.push({
+          id: entry.id,
+          sender: "Telemetry Agent",
+          role: "agent",
+          tag: "DELIVERY VERIFICATION",
+          tagBg: "rgba(13, 148, 136, 0.12)",
+          tagColor: "#0d9488",
+          time: tLabel(entry.at),
+          text: (
+            <div>
+              <div style={{ fontWeight: 800, color: "#0d9488", fontSize: 13 }}>
+                📊 Delivered Bandwidth Verified &amp; Packaged:
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: "var(--ink-2)" }}>
+                Recovery-window telemetry measured against the contracted SLA:
+                <div
                   style={{
-                    color: "#0d9488",
-                    fontSize: 11,
-                    textDecoration: "underline",
+                    marginTop: 6,
+                    padding: "8px 10px",
+                    background: "rgba(13, 148, 136, 0.06)",
+                    borderRadius: 8,
+                    border: "1px solid rgba(13, 148, 136, 0.2)",
+                    fontSize: 11.5,
                     fontFamily: "monospace",
-                    fontWeight: 600,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
+                    color: "#134e4a",
+                    lineHeight: 1.55,
                   }}
                 >
-                  <span>📦 Stored to Walrus Blob: {walrusId.slice(0, 10)}…{walrusId.slice(-8)}</span>
-                  <span>↗</span>
-                </a>
-              ) : (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "#0d9488", fontFamily: "monospace" }}>
-                  <span>⏳</span>
-                  <span>Publishing immutable telemetry report to Walrus testnet…</span>
+                  {entry.deliveredMbps != null && (
+                    <div>
+                      • Downlink Throughput: <b>{entry.deliveredMbps} Mbps</b>
+                      {entry.promisedMbps != null && <> (contracted: {entry.promisedMbps} Mbps)</>}
+                    </div>
+                  )}
+                  {entry.latencyMs != null && (
+                    <div>
+                      • Latency: <b>{entry.latencyMs} ms</b> RTT
+                    </div>
+                  )}
+                  {entry.packetLossPercent != null && (
+                    <div>
+                      • Packet Loss: <b>{entry.packetLossPercent}%</b>
+                    </div>
+                  )}
                 </div>
-              )}
+                {walrusId && (
+                  <>
+                    <div style={{ marginTop: 6, color: "var(--ink)" }}>
+                      Evidence compiled into an immutable <b>SLA Verification Report</b> and stored to Walrus:
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                      <a
+                        href={`https://walruscan.com/testnet/blob/${walrusId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          color: "#0d9488",
+                          fontSize: 11,
+                          textDecoration: "underline",
+                          fontFamily: "monospace",
+                          fontWeight: 600,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <span>📦 Stored to Walrus Blob: {shortId(walrusId)}</span>
+                        <span>↗</span>
+                      </a>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      ),
-    });
+          ),
+        });
+        break;
+      }
+    }
   }
 
-  if (sec >= 12.0 || completed || ["verifying", "restored"].includes(incident.status)) {
-    const walrusId = incident.walrusBlobId || incident.result?.walrusBlobId;
+  /* Round-2 SLA audit — the Truth Agent row reliably lands AFTER settlement
+     closes the run, so it renders reactively from claimAudits (real models,
+     verdicts, gonka request ids and reasoning strings). */
+  const auditModels = audit?.models ?? [];
+  if (audit) {
+    const okCount = auditModels.filter((m) => m.ok).length;
+    const total = auditModels.length;
+    const auditDone = audit.status === "COMPLETED" && total > 0;
     messages.push({
-      id: "llm-voting",
+      id: "audit",
       sender: "Truth Agent · Consensus Engine",
       role: "agent",
       tag: "ROUND 2: WALRUS REPORT SLA AUDIT",
       tagBg: "rgba(99, 102, 241, 0.12)",
       tagColor: "#4f46e5",
-      time: "T+12.0s",
+      time: `T+${elapsed}s`,
       isSpecialIndicator: true,
       text: (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
             <span style={{ fontWeight: 800, color: "#4338ca", fontSize: 13 }}>
-              📥 Fetched Walrus Report · Multi-LLM Verification &amp; Voting (Round 2)
+              📥 Fetched Report · Multi-LLM Verification &amp; Voting (Round 2)
             </span>
-            <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
-              2/2 UNANIMOUS PASS
+            <span style={{ fontSize: 10, background: auditDone && okCount === total ? "#ecfdf5" : "#fff7ed", color: auditDone && okCount === total ? "#059669" : "#b45309", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
+              {auditDone
+                ? `${okCount}/${total} ${okCount === total ? "UNANIMOUS PASS" : "MODELS PASS"}`
+                : `AUDIT ${String(audit.status).toUpperCase()}`}
             </span>
           </div>
           <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-            Fetched report blob {walrusId ? (
-              <code style={{ fontSize: 10.5, color: "#0d9488", background: "rgba(13, 148, 136, 0.08)", padding: "1px 4px", borderRadius: 4 }}>{walrusId.slice(0, 12)}…</code>
-            ) : (
-              <span style={{ fontSize: 10.5, color: "#0d9488", fontWeight: 600 }}>telemetry package</span>
-            )} from Walrus. 2 independent LLM models audited report telemetry against SLA:
+            Independent Truth Agent audit
+            {audit.claimRunId ? (
+              <>
+                {" "}
+                run <code style={{ fontSize: 10.5, color: "#4338ca", background: "rgba(99, 102, 241, 0.08)", padding: "1px 4px", borderRadius: 4 }}>{audit.claimRunId}</code>
+              </>
+            ) : null}
+            . {total > 0 ? `${total} models audited the delivered telemetry against the SLA:` : "No model votes recorded."}
           </div>
 
-          {/* 2 LLM Agents Reasoning & Voting Cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
-            {/* Model 1: DeepSeek-V4-Flash */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "8px 10px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>DeepSeek-V4-Flash</span>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontFamily: "monospace",
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    gonka req: req-12378127382713821738-123212
+            {auditModels.map((m, i) => (
+              <div key={i} style={MODEL_CARD}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>{m.model ?? `model ${i + 1}`}</span>
+                    {m.requestId && <span style={REQ_CHIP}>gonka req: {m.requestId}</span>}
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: m.ok ? "#059669" : "#b42318" }}>
+                    VOTE: {(m.verdict ?? (m.ok ? "PASS" : "FAIL")).toUpperCase()} {m.ok ? "✓" : "✗"}
                   </span>
                 </div>
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: REPORT VALID (PASS) ✓</span>
+                {m.reasoning && (
+                  <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                    <b>Reasoning:</b> {m.reasoning}
+                  </div>
+                )}
+                {m.error && (
+                  <div style={{ fontSize: 11.5, color: "#b42318", lineHeight: 1.45 }}>
+                    <b>Error:</b> {m.error}
+                  </div>
+                )}
+                {m.score != null && (
+                  <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 3 }}>
+                    Score: <b>{m.score}</b>
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
-                <b>Reasoning:</b> Validated Walrus telemetry against P1 contract. Throughput (500.4 Mbps) meets 100% threshold; 18ms latency and 0.0% loss confirm zero packet degradation. Evidence hash verified.
-              </div>
-            </div>
-
-            {/* Model 2: MiniMax-M2.7 */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: 8,
-                padding: "8px 10px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>MiniMax-M2.7</span>
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontFamily: "monospace",
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      padding: "1px 6px",
-                      borderRadius: 4,
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    gonka req: req-98421094812049182049-582914
-                  </span>
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: REPORT VALID (PASS) ✓</span>
-              </div>
-              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
-                <b>Reasoning:</b> Physical layer signal strength (-72 dBm RSRP) and jitter (2.1ms) satisfy high-availability criteria. No shortfall penalty warranted. Full escrow payout certified.
-              </div>
-            </div>
+            ))}
           </div>
 
           <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#4338ca", display: "flex", alignItems: "center", gap: 6 }}>
-            <span>⚡ Round 2 Consensus Reached:</span>
-            <span style={{ color: "#059669" }}>2/2 Unanimous PASS · Report Certified Valid · Proceeding to Settlement</span>
+            <span>⚡ Round 2 Consensus:</span>
+            <span style={{ color: auditDone ? "#059669" : "#b45309" }}>
+              {auditDone
+                ? `${audit.score ?? "?"}/100 ${audit.verdict ?? ""} · ${audit.agree ?? "?"} models agree · Settlement executed`
+                : `${String(audit.status).toLowerCase()}${audit.error ? ` — ${audit.error}` : ""} · settlement executed regardless, escrow reclaimable`}
+            </span>
           </div>
         </div>
       ),
     });
   }
 
-  if (completed || incident.status === "restored") {
+  /* Final bubble — restored / failed / noop, driven by the real result. */
+  const winnerEntry = runLog.find((e): e is RunBid => e.kind === "bid" && Boolean(e.winner));
+  const lastTelemetry = [...runLog].reverse().find((e): e is Extract<RunLogEntry, { kind: "telemetry" }> => e.kind === "telemetry");
+  const restoredMbps = incident.available || lastTelemetry?.deliveredMbps || incident.shortage;
+  const winnerBrand = winnerEntry?.brand ?? incident.req?.provider ?? "backup provider";
+  const settleTx = incident.settleTxDigest || incident.result?.tx;
+  const walrusId = incident.walrusBlobId || incident.result?.walrusBlobId;
+
+  if (incident.status === "restored" && incident.result) {
     messages.push({
       id: "restored",
       sender: "RescueAgent",
@@ -491,7 +517,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
       tag: "RESTORED & SETTLED",
       tagBg: "rgba(0, 113, 227, 0.15)",
       tagColor: "#0071e3",
-      time: `${incident.result?.time ?? "12.6"}s`,
+      time: `${incident.result.time ?? elapsed}s`,
       isWinner: true,
       text: (
         <div>
@@ -499,30 +525,23 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             Connection Successfully Restored &amp; Settled
           </div>
           <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-2)" }}>
-            High-speed backup slice active: <b>+500 Mbps</b> via <b>KilatLink FWA</b>.
+            High-speed backup slice active: <b>+{restoredMbps} Mbps</b> via <b>{winnerBrand}</b>.
             <br />
             SLA throughput verified. Escrow settled autonomously on Sui Trust Layer.
-            {(incident.settleTxDigest || incident.result?.tx) && (
+            {settleTx && (
               <div style={{ marginTop: 4 }}>
-                <a
-                  href={`https://suiscan.xyz/testnet/tx/${incident.settleTxDigest || incident.result?.tx}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "#0071e3", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
-                >
-                  Sui Settlement Tx: {(incident.settleTxDigest || incident.result?.tx)?.slice(0, 8)}…{(incident.settleTxDigest || incident.result?.tx)?.slice(-6)} ↗
-                </a>
+                <SuiscanLink digest={settleTx} color="#0071e3" />
               </div>
             )}
-            {(incident.walrusBlobId || incident.result?.walrusBlobId) && (
+            {walrusId && (
               <div style={{ marginTop: 4 }}>
                 <a
-                  href={`https://walruscan.com/testnet/blob/${incident.walrusBlobId || incident.result?.walrusBlobId}`}
+                  href={`https://walruscan.com/testnet/blob/${walrusId}`}
                   target="_blank"
                   rel="noreferrer"
                   style={{ color: "#0d9488", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
                 >
-                  Walrus Evidence Blob: {(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(0, 8)}…{(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(-6)} ↗
+                  Walrus Evidence Blob: {shortId(walrusId)} ↗
                 </a>
               </div>
             )}
@@ -530,7 +549,72 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
         </div>
       ),
     });
+  } else if (incident.status === "failed" && incident.result) {
+    messages.push({
+      id: "failed",
+      sender: "RescueAgent",
+      role: "agent",
+      tag: "RECOVERY FAILED",
+      tagBg: "rgba(180, 35, 24, 0.12)",
+      tagColor: "#b42318",
+      time: `${incident.result.time ?? elapsed}s`,
+      text: (
+        <div>
+          <div style={{ fontWeight: 800, color: "#b42318", fontSize: 13.5 }}>
+            Autonomous recovery could not complete
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-2)" }}>
+            {incident.result.state ?? "Recovery failed"}.
+            {incident.result.refund
+              ? ` Escrow refunded (${rm(incident.result.refund)}).`
+              : " No charge was made."}
+            {settleTx && (
+              <div style={{ marginTop: 4 }}>
+                <SuiscanLink digest={settleTx} color="#b42318" />
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+    });
+  } else if (incident.status === "noop" && incident.result) {
+    messages.push({
+      id: "noop",
+      sender: "RescueAgent",
+      role: "agent",
+      tag: "NO RECOVERY NEEDED",
+      tagBg: "rgba(52, 199, 89, 0.12)",
+      tagColor: "#248a3d",
+      time: `${incident.result.time ?? elapsed}s`,
+      text: (
+        <div>
+          <div style={{ fontWeight: 800, color: "#248a3d", fontSize: 13.5 }}>
+            Network healthy — no external recovery required
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-2)" }}>
+            {incident.result.state ?? "No recovery needed"}. No escrow locked, nothing purchased.
+          </div>
+        </div>
+      ),
+    });
   }
+
+  /* Live progress line — keyed off the REAL incident status, not elapsed time. */
+  const statusLine =
+    incident.status === "detected" ||
+    incident.status === "protecting" ||
+    incident.status === "searching" ||
+    incident.status === "sms"
+      ? "Broadcasting recovery intent to provider agents..."
+      : incident.status === "request_detected"
+      ? "Receiving provider bids from the live agent market..."
+      : incident.status === "provider_selected"
+      ? "Evaluating bids & locking the optimal provider..."
+      : incident.status === "escrow_locked"
+      ? "Locking Sui dual-sig escrow & attaching backup slice..."
+      : incident.status === "activating"
+      ? "Activating backup slice..."
+      : "Verifying delivered bandwidth & settling escrow on Sui...";
 
   return (
     <div
@@ -675,7 +759,13 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: "rgba(255, 255, 255, 0.8)", marginTop: 1 }}>
-                {!completed ? "online · Autonomous Network Guardian" : "Restoration Complete · Backup Active"}
+                {!completed
+                  ? "online · Autonomous Network Guardian"
+                  : incident.status === "restored"
+                  ? "Restoration Complete · Backup Active"
+                  : incident.status === "failed"
+                  ? "Recovery Incomplete · Funds Refunded"
+                  : "Network Healthy · No Recovery Needed"}
               </div>
             </div>
           </div>
@@ -858,13 +948,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                   animation: "pulse 1s infinite alternate",
                 }}
               />
-              <span>
-                {sec < 2.5 && "Broadcasting recovery intent to Malaysian provider agents..."}
-                {sec >= 2.5 && sec < 6.5 && "Receiving provider bids (Maxis, Digi, KilatLink)..."}
-                {sec >= 6.5 && sec < 8.2 && "Evaluating bids & selecting optimal provider..."}
-                {sec >= 8.2 && sec < 10.5 && "Locking Sui dual-sig escrow & attaching backup slice..."}
-                {sec >= 10.5 && "Verifying delivered bandwidth & settling escrow on Sui..."}
-              </span>
+              <span>{statusLine}</span>
             </div>
           )}
 
@@ -872,7 +956,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
         </div>
 
         {/* Step 2 Settlement Summary Card - Theme Blue Accent */}
-        {completed && incident.result && (
+        {completed && incident.result && incident.status === "restored" && (
           <div
             style={{
               padding: "16px 20px",
@@ -913,7 +997,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               <div>
                 <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>RECOVERED</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: "#0071e3", marginTop: 2 }}>
-                  +{incident.available || incident.shortage || 500} Mbps
+                  +{restoredMbps} Mbps
                 </div>
               </div>
               <div>
@@ -936,51 +1020,47 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               </div>
             </div>
 
-            {(incident.settleTxDigest || incident.result.tx) && (
+            {settleTx && (
               <div style={{ marginTop: 10, textAlign: "center", fontSize: 11.5, color: "var(--muted)" }}>
                 Sui On-Chain Settlement:{" "}
-                <a
-                  href={`https://suiscan.xyz/testnet/tx/${incident.settleTxDigest || incident.result.tx}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "#0071e3", fontWeight: 600, textDecoration: "underline", fontFamily: "monospace" }}
-                >
-                  {(incident.settleTxDigest || incident.result.tx)?.slice(0, 10)}…{(incident.settleTxDigest || incident.result.tx)?.slice(-8)} ↗
-                </a>
+                <SuiscanLink digest={settleTx} color="#0071e3" />
               </div>
             )}
 
-            {(incident.walrusBlobId || incident.result?.walrusBlobId) && (
+            {walrusId && (
               <div style={{ marginTop: 6, textAlign: "center", fontSize: 11.5, color: "var(--muted)" }}>
                 Walrus Decentralized Audit:{" "}
                 <a
-                  href={`https://walruscan.com/testnet/blob/${incident.walrusBlobId || incident.result?.walrusBlobId}`}
+                  href={`https://walruscan.com/testnet/blob/${walrusId}`}
                   target="_blank"
                   rel="noreferrer"
                   style={{ color: "#0d9488", fontWeight: 600, textDecoration: "underline", fontFamily: "monospace" }}
                 >
-                  {(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(0, 10)}…{(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(-8)} ↗
+                  {shortId(walrusId)} ↗
                 </a>
               </div>
             )}
+          </div>
+        )}
 
-            <div style={{ marginTop: 14 }}>
-              <button
-                className="btn primary"
-                onClick={dismiss}
-                style={{
-                  width: "100%",
-                  background: "#0071e3",
-                  borderColor: "#0071e3",
-                  padding: "11px",
-                  borderRadius: 24,
-                  fontSize: 14,
-                  fontWeight: 700,
-                }}
-              >
-                Done · Return to Restored Network
-              </button>
-            </div>
+        {/* Done / Close button once the run reached any terminal state */}
+        {completed && (
+          <div style={{ padding: "14px 20px", background: "#f8fafc", borderTop: "1px solid var(--line)" }}>
+            <button
+              className="btn primary"
+              onClick={dismiss}
+              style={{
+                width: "100%",
+                background: "#0071e3",
+                borderColor: "#0071e3",
+                padding: "11px",
+                borderRadius: 24,
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              {incident.status === "restored" ? "Done · Return to Restored Network" : "Close"}
+            </button>
           </div>
         )}
 

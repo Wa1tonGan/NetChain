@@ -63,6 +63,12 @@ export interface Incident {
   commitTxDigest?: string;
   settleTxDigest?: string;
   walrusBlobId?: string;
+  /** live-run context: gateway-side incident id + the degradation the run
+   *  responds to (drives the modal's alert card and audit lookup) */
+  gatewayIncidentId?: string;
+  degradedMbps?: number | null;
+  subject?: string;
+  customerId?: string;
 }
 
 export interface RecoveryRecord {
@@ -159,11 +165,92 @@ export interface Capacity {
   primaryDown: boolean;
 }
 
-export type Priority = "P1" | "P2" | "P3" | "P4" | "P5";
+/* ---------- run transcript (recovery modal) ----------
+   One entry per real run event; the RecoveryOverlay renders these 1:1.
+   Live runs append entries as gateway/trust events arrive; the simulated
+   fallback machine appends the same shapes from its own data. */
 
-export interface ServiceItem {
+export interface RunEntryBase {
   id: string;
-  name: string;
-  prio: Priority;
-  minSpeed: number;
+  at: number;
 }
+
+export interface RunAlert extends RunEntryBase {
+  kind: "alert";
+  subject?: string;
+  degradedMbps: number | null;
+  requiredMbps: number;
+  budgetUsdc: number;
+  priority?: string;
+}
+
+export interface RunIntent extends RunEntryBase {
+  kind: "intent";
+  text: string;
+  capacityMbps: number;
+  budgetUsdc: number;
+  durationMinutes: number;
+  gatewayIncidentId?: string;
+  preAuthorized: boolean;
+}
+
+export interface RunBid extends RunEntryBase {
+  kind: "bid";
+  providerId: string;
+  brand: string;
+  category?: string;
+  pitch?: string;
+  quotedInMs?: number;
+  capacityMbps?: number;
+  priceUsdc?: number;
+  currency?: string;
+  latencyMs?: number;
+  packetLossPercent?: number;
+  reliabilityScore?: number;
+  expectedActivationTimeMs?: number;
+  winner?: boolean;
+  rejectedReason?: string;
+  rejectedDetail?: string;
+}
+
+export interface RunConsensusVote {
+  model: string;
+  requestId: string | null;
+  ranking: string[];
+}
+
+export interface RunConsensus extends RunEntryBase {
+  kind: "consensus";
+  round: number;
+  winnerProviderId: string;
+  brands: Record<string, string>;
+  votes: RunConsensusVote[];
+}
+
+export interface RunEscrow extends RunEntryBase {
+  kind: "escrow";
+  amountUsdc: number;
+  currency: string;
+  escrowId?: string;
+  txDigest?: string;
+  providerBrand: string;
+  agentSigned: boolean;
+}
+
+export interface RunTelemetry extends RunEntryBase {
+  kind: "telemetry";
+  deliveredMbps: number | null;
+  promisedMbps: number | null;
+  latencyMs?: number | null;
+  packetLossPercent?: number | null;
+  walrusBlobId?: string | null;
+  verdict?: string | null;
+}
+
+export type RunLogEntry =
+  | RunAlert
+  | RunIntent
+  | RunBid
+  | RunConsensus
+  | RunEscrow
+  | RunTelemetry;

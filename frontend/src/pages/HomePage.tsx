@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
-import { rm } from "../services/pricing";
+import { rm, DEMAND_MBPS } from "../services/pricing";
 import ProtectionModal from "../components/ProtectionModal";
 import TopUpModal from "../components/TopUpModal";
 import { TextWithIcons } from "../components/Icon";
 import { DUMMY_USERS, type DummyUser } from "../data/dummyUsers";
+import type { RunBid, RunLogEntry } from "../services/types";
 
 function useTicker(active: boolean, ms = 1000) {
   const [, setTick] = useState(0);
@@ -89,6 +90,9 @@ export default function HomePage() {
   const isSimulationUser = Boolean(user.isSimulationUser || user.id === "user-1");
   const [hasRelocated, setHasRelocated] = useState(false);
   const [relocating, setRelocating] = useState(false);
+  /** The relocated link's degraded downlink — the simulation input that the
+   *  recovery intent is built from (15 Mbps measured after the move). */
+  const RELOCATED_MBPS = 15;
 
   const activeLocation = hasRelocated
     ? { city: "George Town", state: "Penang" }
@@ -100,10 +104,17 @@ export default function HomePage() {
     setRelocating(true);
     setHasRelocated(true);
 
-    // Update location to Penang & drop speed to 15 Mbps, then trigger recovery modal
+    // Update location to Penang & drop speed to the degraded downlink, then
+    // trigger recovery (backend-first inside the store; sim if gateway down).
+    // The ask is 200 Mbps — the market's always-coverable floor (rolled
+    // provider tiers quote 200–500 Mbps) and scenario S2's real shortfall.
     setTimeout(() => {
       setRelocating(false);
-      s.startRecovery("auto", 500);
+      s.startRecovery("auto", 200, {
+        degradedMbps: RELOCATED_MBPS,
+        subject: "George Town, Penang",
+        customerId: user.id,
+      });
     }, 650);
   };
 
@@ -114,18 +125,26 @@ export default function HomePage() {
   };
 
   // Determine current metrics based on simulation vs store vs static user data
+  const runLog = s.runLog;
+  const winnerBid = runLog.find((e): e is RunBid => e.kind === "bid" && Boolean(e.winner));
+  const lastTelemetry = [...runLog]
+    .reverse()
+    .find((e): e is Extract<RunLogEntry, { kind: "telemetry" }> => e.kind === "telemetry");
+  const restoredMbps = s.capacity.extra || lastTelemetry?.deliveredMbps || user.speedMbps;
+  const backupBrand = winnerBid?.brand ?? s.incident?.req?.provider ?? "backup link";
+
   let currentMbps: number;
   let latency: number;
   let loss: number;
   let isDegraded: boolean;
 
   if (isRecovered) {
-    currentMbps = Math.max(s.capacity.current, 500);
-    latency = 18;
-    loss = 0.0;
+    currentMbps = restoredMbps;
+    latency = lastTelemetry?.latencyMs ?? winnerBid?.latencyMs ?? user.latencyMs;
+    loss = lastTelemetry?.packetLossPercent ?? 0;
     isDegraded = false;
   } else if (hasRelocated) {
-    currentMbps = 15;
+    currentMbps = RELOCATED_MBPS;
     latency = 142;
     loss = 4.2;
     isDegraded = true;
@@ -295,7 +314,7 @@ export default function HomePage() {
           </div>
           <div className="net-sub">
             {isRecovered
-              ? "Network restored to healthy state (500 Mbps) — high-speed backup active, escrow settled autonomously on Sui."
+              ? `Network restored to healthy state — +${restoredMbps} Mbps backup active (${backupBrand}), escrow settled autonomously on Sui.`
               : isDegraded
               ? "Primary fiber suppressed — your RescueAgent is acquiring replacement capacity right now."
               : "Primary fiber link healthy. Agents are standing by on a 1-second monitoring interval."}
@@ -346,14 +365,14 @@ export default function HomePage() {
             <div className="tile">
               <div className="k">Primary</div>
               <div className={`v ${isDegraded && !isRecovered ? "bad" : "good"}`}>
-                {isDegraded && !isRecovered ? "0 Mbps" : `${s.capacity.primary || 500} Mbps`}
+                {isDegraded && !isRecovered ? "0 Mbps" : `${s.capacity.primary || DEMAND_MBPS} Mbps`}
               </div>
               <div className="s">{isDegraded && !isRecovered ? "suppressed" : "fiber · nominal"}</div>
             </div>
             <div className="tile">
               <div className="k">Backup</div>
-              <div className={`v ${isRecovered ? "good" : ""}`}>{isRecovered ? `+${s.capacity.extra || 500} Mbps` : "—"}</div>
-              <div className="s">{isRecovered ? "KilatLink FWA · active" : "standby"}</div>
+              <div className={`v ${isRecovered ? "good" : ""}`}>{isRecovered ? `+${restoredMbps} Mbps` : "—"}</div>
+              <div className="s">{isRecovered ? `${backupBrand} · active` : "standby"}</div>
             </div>
             <div className="tile">
               <div className="k">Latency</div>

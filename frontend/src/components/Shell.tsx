@@ -23,26 +23,6 @@ const NAV = [
     ),
   },
   {
-    to: "/services",
-    label: "Services",
-    icon: (
-      <>
-        <path d="M12 3 3 8l9 5 9-5-9-5z" />
-        <path d="M3 12l9 5 9-5" />
-      </>
-    ),
-  },
-  {
-    to: "/truth",
-    label: "Truth",
-    icon: (
-      <>
-        <circle cx="12" cy="12" r="8" />
-        <path d="m8.5 12.5 2.5 2.5 4.5-5" />
-      </>
-    ),
-  },
-  {
     to: "/profile",
     label: "Profile",
     icon: (

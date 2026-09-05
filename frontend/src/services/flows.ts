@@ -34,23 +34,16 @@ const POST_SMS: Phase[] = [
 export interface Flow {
   key: RecoveryKind;
   outcome: Outcome;
-  autoSend?: string;
   phases: Phase[];
 }
 
 export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
-  auto: { key: "auto", outcome: "ok", autoSend: "500 Mbps, USDC 2", phases: [...PRE_SMS, ...POST_SMS] },
-  under: {
-    key: "under",
-    outcome: "under",
-    autoSend: "500 Mbps, USDC 2",
-    phases: [...PRE_SMS, ...POST_SMS],
-  },
+  auto: { key: "auto", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
+  under: { key: "under", outcome: "under", phases: [...PRE_SMS, ...POST_SMS] },
   failed: {
     key: "failed",
     outcome: "failed",
-    autoSend: "500 Mbps, USDC 2",
     phases: [
       ...PRE_SMS,
       ["request_detected", 2800],
@@ -60,8 +53,8 @@ export const FLOWS: Record<RecoveryKind, Flow> = {
       ["failed", 11200],
     ],
   },
-  // Live mode: the SMS reply hands control to the REAL backend — the gateway
-  // SSE stream drives every post-reply phase (no scripted timers).
+  // Live mode: the auto-dispatched reply hands control to the REAL backend —
+  // the gateway SSE stream drives every post-reply phase (no scripted timers).
   live: { key: "live", outcome: "ok", phases: [...PRE_SMS] },
 };
 

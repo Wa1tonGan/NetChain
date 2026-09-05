@@ -8,12 +8,15 @@ import {
   rm,
   UNDER_DELIVERY_RATIO,
 } from "../services/pricing";
-import { EVENT_LABELS, FLOWS } from "../services/flows";
+import { EVENT_LABELS, FLOWS, BLUEPRINT_PROVIDERS } from "../services/flows";
 import {
   brand as liveBrand,
+  categoryOf,
   chainRowLabel,
   commitSelected,
+  ESCROW_DEPLOY,
   fetchResult,
+  gatewayHealthy,
   getScenario,
   openChainStream,
   openIncidentStream,
@@ -32,6 +35,7 @@ import {
   type SelectedOffer,
 } from "../services/live";
 import { walletCommitSelected } from "../services/live";
+import { buildRecoveryIntent } from "../services/intentBuilder";
 import type { ExplorerType } from "../services/explorer";
 // Latest trust-layer ledger rows (real Sui tx digests) for the Activity feed.
 // Kept small; the chain SSE reconnects with backoff and tolerates downtime.
@@ -81,6 +85,7 @@ function startChainFeed() {
       const closer = openChainStream((row: ChainRow) => {
         const st = useAppStore.getState();
         ingestClaimAudit(row);
+        absorbRunRow(row);
         useAppStore.setState({
           chainRows: [
             { ...row, receivedAt: Date.now(), label: chainRowLabel(row) },
@@ -109,10 +114,15 @@ import type {
   RecoveryKind,
   RecoveryRecord,
   RecoveryRequest,
-  ServiceItem,
+  RunBid,
+  RunLogEntry,
   Session,
   VerificationSample,
 } from "../services/types";
+
+/** Omit that distributes over unions so each RunLogEntry variant keeps its
+ *  own fields when passed to pushRunLog. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 interface AppState {
   // account & preferences
@@ -149,6 +159,9 @@ interface AppState {
   protectionState: ProtectionState;
   session: Session | null;
   sessionExpired: boolean;
+  /** Per-run transcript — the recovery modal renders these entries 1:1
+   *  (alert, intent, bids, consensus, escrow, telemetry). Reset per run. */
+  runLog: RunLogEntry[];
 
   // device connectivity
   netSample: NetworkSample | null;
@@ -161,10 +174,6 @@ interface AppState {
   payments: Payment[];
   records: Record<string, RecoveryRecord>;
   disclosures: Record<string, boolean>;
-
-  // enterprise services
-  services: ServiceItem[];
-  serviceSeq: number;
 
   // on-chain ledger rows (trust server SSE, real tx digests)
   chainRows: (ChainRow & { receivedAt?: number; label?: string })[];
@@ -184,13 +193,29 @@ interface AppState {
   disclose: (key: string) => void;
   setZkLogin: (session: ZkLoginSession | null) => void;
   setPreferredExplorer: (v: ExplorerType) => void;
-  // actions — enterprise services
-  saveService: (svc: Omit<ServiceItem, "id">, editId?: string) => void;
-  removeService: (id: string) => void;
-
   // actions — recovery
-  startRecovery: (kind: RecoveryKind, customShortage?: number) => void;
-  startLiveRecovery: (scenarioKey: string) => void;
+  /** Backend-first entry point: probes the gateway and runs the REAL agent
+   *  market when it's up, else falls back to the simulated flow. */
+  startRecovery: (
+    kind: RecoveryKind,
+    customShortage?: number,
+    opts?: { degradedMbps?: number | null; subject?: string; customerId?: string }
+  ) => void;
+  startSimRecovery: (
+    kind: RecoveryKind,
+    customShortage?: number,
+    opts?: { degradedMbps?: number | null; subject?: string; customerId?: string }
+  ) => void;
+  startLiveRecovery: (
+    scenarioKey?: string,
+    opts?: {
+      shortageMbps?: number;
+      degradedMbps?: number | null;
+      subject?: string;
+      customerId?: string;
+      budgetUsdc?: number;
+    }
+  ) => void;
   runScenario: (scenarioId: "S1" | "S2" | "S3" | "S4" | "S5" | "S6") => void;
   sendSms: (text: string, opts?: { auto?: boolean }) => void;
   dismissOverlay: () => void;
@@ -219,14 +244,6 @@ const seedActivity: ActivityItem[] = [
     sub: "Switched to KilatLink FWA",
     note: "Sui escrow settled",
   },
-];
-
-const seedServices: ServiceItem[] = [
-  { id: "svc-1", name: "CCTV / Security", prio: "P1", minSpeed: 100 },
-  { id: "svc-2", name: "Payments / POS", prio: "P1", minSpeed: 100 },
-  { id: "svc-3", name: "Live Broadcast", prio: "P2", minSpeed: 300 },
-  { id: "svc-4", name: "Operations VPN", prio: "P3", minSpeed: 50 },
-  { id: "svc-5", name: "Guest Wi-Fi", prio: "P5", minSpeed: 250 },
 ];
 
 function getStoredZkLogin(): ZkLoginSession | null {
@@ -272,6 +289,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   protectionState: "protected",
   session: null,
   sessionExpired: false,
+  runLog: [],
 
   netSample: null,
   outageSource: null,
@@ -282,9 +300,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   payments: [],
   records: {},
   disclosures: {},
-
-  services: seedServices,
-  serviceSeq: 6,
 
   chainRows: [],
 
@@ -341,26 +356,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch {}
     set({ preferredExplorer: v });
   },
-  // ----- enterprise services -----
-  saveService: (svc, editId) =>
-    set((s) => ({
-      services: editId
-        ? s.services.map((x) => (x.id === editId ? { ...x, ...svc } : x))
-        : [...s.services, { ...svc, id: "svc-" + s.serviceSeq }],
-      serviceSeq: editId ? s.serviceSeq : s.serviceSeq + 1,
-    })),
-  removeService: (id) =>
-    set((s) => ({
-      services: s.services.filter((x) => x.id !== id),
-    })),
 
   // ----- recovery -----
-  startRecovery: (kind, customShortage) => {
+  startRecovery: (kind, customShortage, opts) => {
+    if (get().running) return;
+    // Backend-first: the real agent market owns the run when it's reachable;
+    // the scripted simulation only covers gateway-offline demos.
+    void (async () => {
+      if (await gatewayHealthy()) {
+        useAppStore.getState().startLiveRecovery(undefined, {
+          shortageMbps: customShortage,
+          degradedMbps: opts?.degradedMbps ?? null,
+          subject: opts?.subject,
+          customerId: opts?.customerId,
+        });
+      } else {
+        useAppStore.getState().startSimRecovery(kind, customShortage, opts);
+      }
+    })();
+  },
+
+  startSimRecovery: (kind, customShortage, opts) => {
     if (get().running) return;
     clearMachine();
     const flow = FLOWS[kind];
     const st = get();
     const shortage = customShortage ?? st.demand;
+    const degraded = opts?.degradedMbps ?? null;
+    const budget = st.maxPerRecovery;
 
     set({
       running: true,
@@ -378,7 +401,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       kind: flow.key,
       outcome: flow.outcome,
       pauseAt: "sms",
-      autoSend: flow.autoSend ?? null,
+      autoSend: `${shortage} Mbps, USDC ${budget}`,
       status: "detected",
       startedAt: Date.now(),
       elapsedBase: 0,
@@ -388,21 +411,36 @@ export const useAppStore = create<AppState>((set, get) => ({
       result: null,
       req: null,
       sentAt: null,
-      required: shortage,
+      required: degraded != null ? degraded + shortage : shortage,
       available: 0,
       shortage,
+      degradedMbps: degraded,
+      subject: opts?.subject,
+      customerId: opts?.customerId,
     };
 
-    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated" });
+    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated", runLog: [] });
+    pushRunLog({
+      kind: "alert",
+      at: Date.now(),
+      subject: opts?.subject,
+      degradedMbps: degraded,
+      requiredMbps: shortage,
+      budgetUsdc: budget,
+      priority: "P1",
+    });
     scheduleFrom(1);
   },
 
-  startLiveRecovery: (scenarioKey) => {
+  startLiveRecovery: (scenarioKey, opts) => {
     if (get().running) return;
     clearMachine();
     const st = get();
-    const intent = getScenario(scenarioKey);
-    const shortage = scenarioShortage(intent) || st.demand;
+    const scenarioIntent = scenarioKey ? getScenario(scenarioKey) : null;
+    const scenarioShortfall = scenarioIntent ? scenarioShortage(scenarioIntent) : 0;
+    const shortage = opts?.shortageMbps ?? (scenarioShortfall || st.demand);
+    const degraded = opts?.degradedMbps ?? null;
+    const budget = opts?.budgetUsdc ?? st.maxPerRecovery;
 
     set({
       running: true,
@@ -420,7 +458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       kind: "live",
       outcome: "ok",
       pauseAt: "sms",
-      autoSend: null,
+      autoSend: `${shortage} Mbps, USDC ${budget}`,
       status: "detected",
       startedAt: Date.now(),
       elapsedBase: 0,
@@ -430,13 +468,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       result: null,
       req: null,
       sentAt: null,
-      required: shortage,
+      required: degraded != null ? degraded + shortage : shortage,
       available: 0,
       shortage,
-      scenarioKey,
+      scenarioKey: scenarioKey ?? undefined,
+      degradedMbps: degraded,
+      subject: opts?.subject,
+      customerId: opts?.customerId,
     };
 
-    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated" });
+    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated", runLog: [] });
+    pushRunLog({
+      kind: "alert",
+      at: Date.now(),
+      subject: opts?.subject,
+      degradedMbps: degraded,
+      requiredMbps: shortage,
+      budgetUsdc: budget,
+      priority: "P1",
+    });
     void refreshBrands();
     scheduleFrom(1);
   },
@@ -445,18 +495,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     const st = get();
     if (st.running) return;
 
+    // These are the scripted demo stories (DevPage) — always the simulated
+    // machine, never the live market.
     if (scenarioId === "S1") {
-      get().startRecovery("auto", 300);
+      get().startSimRecovery("auto", 300);
     } else if (scenarioId === "S2") {
-      get().startRecovery("auto", 500);
+      get().startSimRecovery("auto", 500);
     } else if (scenarioId === "S3") {
-      get().startRecovery("auto", 250);
+      get().startSimRecovery("auto", 250);
     } else if (scenarioId === "S4") {
-      get().startRecovery("main", 500);
+      get().startSimRecovery("main", 500);
     } else if (scenarioId === "S5") {
-      get().startRecovery("auto", 500);
+      get().startSimRecovery("auto", 500);
     } else {
-      get().startRecovery("auto", 500);
+      get().startSimRecovery("auto", 500);
     }
   },
 
@@ -470,7 +522,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         incident: {
           ...inc,
-          thread: [...inc.thread, { from: "err", text: `Couldn't read that. Try: “${inc.kind === "live" ? "500 Mbps, USDC 5" : "500 Mbps, USDC 14"}”.` }],
+          thread: [
+            ...inc.thread,
+            {
+              from: "err",
+              text: `Couldn't read that. Try: “${inc.autoSend ?? `${inc.shortage} Mbps, USDC ${st.maxPerRecovery}`}”.`,
+            },
+          ],
         },
       });
       return;
@@ -511,6 +569,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       void beginLive(req, text);
       return;
     }
+    pushRunLog({
+      kind: "intent",
+      at: now,
+      text,
+      capacityMbps: inc.shortage,
+      budgetUsdc: p.budget,
+      durationMinutes: plan.min,
+      preAuthorized: true,
+    });
     const phases = FLOWS[inc.kind].phases;
     const idx = phases.findIndex(([s]) => s === inc.pauseAt);
     scheduleFrom(idx + 1);
@@ -531,6 +598,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       session: null,
       sessionExpired: false,
       outageSource: null,
+      runLog: [],
     });
   },
 
@@ -643,6 +711,72 @@ function clearMachine() {
   closeLive();
 }
 
+/* ---------------- run transcript (recovery modal) ---------------- */
+let runLogSeq = 0;
+
+function pushRunLog(entry: DistributiveOmit<RunLogEntry, "id">) {
+  const st = useAppStore.getState();
+  useAppStore.setState({
+    runLog: [...st.runLog, { ...entry, id: "run-" + ++runLogSeq } as RunLogEntry],
+  });
+}
+
+function patchRunLog(id: string, patch: Partial<RunBid>) {
+  const st = useAppStore.getState();
+  useAppStore.setState({
+    runLog: st.runLog.map((e) => (e.id === id ? ({ ...e, ...patch } as RunLogEntry) : e)),
+  });
+}
+
+function latestBidEntryFor(providerId: string): RunBid | null {
+  const runLog = useAppStore.getState().runLog;
+  for (let i = runLog.length - 1; i >= 0; i--) {
+    const e = runLog[i];
+    if (e.kind === "bid" && e.providerId === providerId) return e;
+  }
+  return null;
+}
+
+/** The simulated market's winning quote ("Provider B (KilatLink FWA)" in the
+ *  blueprint) and its display brand — offline-fallback data only. */
+function quoteWinner(): (typeof BLUEPRINT_PROVIDERS)[number] {
+  return BLUEPRINT_PROVIDERS.find((q) => q.selected) ?? BLUEPRINT_PROVIDERS[0];
+}
+
+function quoteBrand(q: (typeof BLUEPRINT_PROVIDERS)[number]): string {
+  return /\((.+)\)/.exec(q.name)?.[1] ?? q.name;
+}
+
+/** Fold late trust-ledger rows (Walrus archive, settle digest) into the
+ *  current run's incident/record even after the run machine has finished —
+ *  the archive row reliably lands AFTER the SETTLED row closes the run. */
+function absorbRunRow(row: ChainRow) {
+  const st = useAppStore.getState();
+  const inc = st.incident;
+  if (!inc?.gatewayIncidentId || row.incidentId !== inc.gatewayIncidentId) return;
+
+  if (row.type === "ARCHIVED" && (row.data as { blobId?: string } | undefined)?.blobId) {
+    const blobId = (row.data as { blobId?: string }).blobId!;
+    const patch: Partial<AppState> = {};
+    if (inc.walrusBlobId !== blobId) {
+      patch.incident = {
+        ...inc,
+        walrusBlobId: blobId,
+        result: inc.result ? { ...inc.result, walrusBlobId: blobId } : inc.result,
+      };
+    }
+    const rec = st.records[inc.id];
+    if (rec && rec.walrusBlobId !== blobId) {
+      patch.records = { ...st.records, [inc.id]: { ...rec, walrusBlobId: blobId } };
+    }
+    if (Object.keys(patch).length > 0) useAppStore.setState(patch);
+  }
+
+  if (row.type === "SETTLED" && row.txDigest && !inc.settleTxDigest) {
+    useAppStore.setState({ incident: { ...inc, settleTxDigest: row.txDigest } });
+  }
+}
+
 function scheduleFrom(fromIdx: number) {
   const inc = useAppStore.getState().incident;
   if (!inc) return;
@@ -671,11 +805,34 @@ function advance(status: string) {
     },
   });
 
+  // Simulated market: the blueprint quotes stand in for the live provider
+  // race when the gateway is offline.
+  if (status === "request_detected") {
+    for (const q of BLUEPRINT_PROVIDERS) {
+      pushRunLog({
+        kind: "bid",
+        at: Date.now(),
+        providerId: q.id,
+        brand: quoteBrand(q),
+        category: q.type,
+        pitch: q.state,
+        capacityMbps: q.capacityMbps,
+        latencyMs: q.latencyMs,
+        priceUsdc: q.cost,
+        currency: "USDC",
+      });
+    }
+  }
+  if (status === "provider_selected") {
+    const entry = latestBidEntryFor(quoteWinner().id);
+    if (entry) patchRunLog(entry.id, { winner: true });
+  }
+
   if (status === "escrow_locked") {
     fetch("/v1/demo/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ incidentId: inc.id, price: 1.8 }),
+      body: JSON.stringify({ incidentId: inc.id, price: quoteWinner().cost }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -684,6 +841,16 @@ function advance(status: string) {
           if (cur && cur.id === inc.id) {
             useAppStore.setState({ incident: { ...cur, commitTxDigest: data.txDigest } });
           }
+          pushRunLog({
+            kind: "escrow",
+            at: Date.now(),
+            amountUsdc: inc.req?.cost ?? quoteWinner().cost,
+            currency: "USDC",
+            escrowId: ESCROW_DEPLOY.escrowId,
+            txDigest: data.txDigest,
+            providerBrand: quoteBrand(quoteWinner()),
+            agentSigned: true,
+          });
           // Immediately archive evidence & telemetry report to Walrus for this new incident
           fetch("/v1/archive", {
             method: "POST",
@@ -758,6 +925,16 @@ function advance(status: string) {
         if (Object.keys(patch).length > 0) {
           useAppStore.setState(patch);
         }
+        const deliveredSim =
+          inc.outcome === "under" ? Math.round(inc.shortage * UNDER_DELIVERY_RATIO) : inc.shortage;
+        pushRunLog({
+          kind: "telemetry",
+          at: Date.now(),
+          deliveredMbps: deliveredSim,
+          promisedMbps: inc.shortage,
+          latencyMs: quoteWinner().latencyMs,
+          walrusBlobId: data.walrusBlobId ?? null,
+        });
       })
       .catch((err) => console.warn("Simulation settle error:", err));
   }
@@ -779,6 +956,7 @@ function pauseForSms() {
   const inc = st.incident;
   if (!inc) return;
   const now = Date.now();
+  const suggested = inc.autoSend ?? `${inc.shortage} Mbps, USDC ${st.maxPerRecovery}`;
   useAppStore.setState({
     incident: {
       ...inc,
@@ -792,7 +970,7 @@ function pauseForSms() {
           from: "net",
           text:
             `Line degraded · Shortage: ${inc.shortage} Mbps. ` +
-            `Reply with bandwidth & budget — e.g. “500 Mbps, USDC 2”.`,
+            `Reply with bandwidth & budget — e.g. “${suggested}”.`,
         },
       ],
     },
@@ -827,11 +1005,13 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
   let protectionState: ProtectionState = "protected";
   let capacityPatch: Partial<Capacity> | null = null;
 
+  const simProvider = quoteBrand(quoteWinner());
+
   if (kind === "ok") {
     charged = cost;
     state = "Settled";
     actTitle = "Recovery completed";
-    actSub = "KilatLink FWA active";
+    actSub = `${simProvider} active`;
     actNote = `+${inc.shortage} Mbps · ${reqMin} min`;
     session = makeSession(inc.id, reqMin, cost, inc.shortage, inc.shortage);
   } else if (kind === "under") {
@@ -862,11 +1042,11 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     time,
     timeline,
     outcome: kind,
-    provider: "KilatLink FWA",
+    provider: simProvider,
     cap: inc.shortage,
     min: reqMin,
     smsText: inc.req?.text ?? "",
-    budget: inc.req?.budget ?? 2,
+    budget: inc.req?.budget ?? st.maxPerRecovery,
     cost,
     charged,
     refund,
@@ -888,7 +1068,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
       id: inc.id,
       ts: Date.now(),
       label: "Autonomous recovery (simulated)",
-      provider: "KilatLink FWA",
+      provider: simProvider,
       cap: `+${inc.shortage} Mbps · ${reqMin} min`,
       amount: charged,
       refund: refund > 0 && kind !== "failed" ? refund : kind === "failed" ? cost : 0,
@@ -1006,8 +1186,8 @@ interface LiveState {
   activationReported: boolean;
   adopting: boolean;
   chainOffline: boolean;
-  arrivals: { providerId: string; receivedAtMs: number }[];
-  rejections: { providerId: string; reason: string; detail?: string }[];
+  arrivals: { providerId: string; receivedAtMs: number; brand?: string }[];
+  rejections: { providerId: string; reason: string; detail?: string; brand?: string }[];
   votes: ConsensusVote[] | null;
   closers: (() => void)[];
   runSeq: number;
@@ -1071,6 +1251,24 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
   const reqMin = inc.req?.min ?? 30;
   const delivered = kind === "ok" ? (offer?.selectedProvider.capacityMbps ?? inc.shortage) : 0;
 
+  // Telemetry card: delivered capacity is what the provider activation
+  // actually reported (echoed back on the SETTLED ledger row).
+  if (kind === "ok" && offer) {
+    const settled = row?.data as { recoveredCapacityMbps?: number } | undefined;
+    pushRunLog({
+      kind: "telemetry",
+      at: Date.now(),
+      deliveredMbps:
+        settled?.recoveredCapacityMbps ??
+        offer.activation?.recoveredCapacityMbps ??
+        offer.selectedProvider.capacityMbps,
+      promisedMbps: offer.selectedProvider.capacityMbps,
+      latencyMs: offer.selectedProvider.latencyMs ?? null,
+      packetLossPercent: offer.selectedProvider.packetLossPercent ?? null,
+      walrusBlobId: inc.walrusBlobId ?? null,
+    });
+  }
+
   const seenProviders = new Set<string>();
   const comparison: { name: string; state: string; sel: boolean; id: string }[] = [];
 
@@ -1092,14 +1290,14 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     const rej = rejectionByProvider.get(a.providerId);
     if (rej) {
       comparison.push({
-        name: `${liveBrand(rej.providerId)} (${rej.providerId})`,
+        name: `${rej.brand ?? liveBrand(rej.providerId)} (${rej.providerId})`,
         state: `✗ ${reasonLabel(rej.reason)}${rej.detail ? ` — ${rej.detail}` : ""}`,
         sel: false,
         id: rej.providerId,
       });
     } else {
       comparison.push({
-        name: `${liveBrand(a.providerId)} (${a.providerId})`,
+        name: `${a.brand ?? liveBrand(a.providerId)} (${a.providerId})`,
         state: `quoted in ${((a.receivedAtMs ?? 0) / 1000).toFixed(1)}s — ranked below the winner`,
         sel: false,
         id: a.providerId,
@@ -1111,7 +1309,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     if (seenProviders.has(r.providerId)) continue;
     seenProviders.add(r.providerId);
     comparison.push({
-      name: `${liveBrand(r.providerId)} (${r.providerId})`,
+      name: `${r.brand ?? liveBrand(r.providerId)} (${r.providerId})`,
       state: `✗ ${reasonLabel(r.reason)}${r.detail ? ` — ${r.detail}` : ""}`,
       sel: false,
       id: r.providerId,
@@ -1202,6 +1400,7 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     incident: {
       ...inc,
       status: kind === "ok" ? "restored" : "failed",
+      settleTxDigest: row?.txDigest ?? inc.settleTxDigest,
       result: {
         time,
         charged,
@@ -1340,6 +1539,26 @@ async function adoptSelectedOffer(incidentId: string) {
     // extension (Slush etc.) signs with its own key + gas. Custodial
     // fallback: server cap path (localnet demo / prover outage).
     const zk = st.zkLogin;
+    /** Record the on-chain commitment: real escrow card in the run transcript
+     *  + the commit digest on the incident (drives the Suiscan link). */
+    const onCommitted = (txDigest: string | undefined, agentSigned: boolean) => {
+      if (!live || live.finished) return;
+      live.committed = true;
+      if (txDigest) {
+        const cur = useAppStore.getState().incident;
+        if (cur) useAppStore.setState({ incident: { ...cur, commitTxDigest: txDigest } });
+      }
+      pushRunLog({
+        kind: "escrow",
+        at: Date.now(),
+        amountUsdc: offer.agreement.amount,
+        currency: offer.agreement.currency ?? "USDC",
+        escrowId: ESCROW_DEPLOY.escrowId,
+        txDigest,
+        providerBrand: offer.selectedProvider.brand,
+        agentSigned,
+      });
+    };
     // agentSigning (default): the RescueAgent pays from the pre-funded escrow
     // pool with its server key — no user prompt. Wallet/zk paths only run
     // when the user explicitly opts into signing personally.
@@ -1347,28 +1566,28 @@ async function adoptSelectedOffer(incidentId: string) {
       sysBubble("🤖 Agent-to-agent payment — RescueAgent commits from the escrow pool (no user signature needed)", { event: false });
       const res = await commitSelected(offer);
       if (!live || live.finished) return;
-      live.committed = true;
+      onCommitted(res.txDigest, true);
       sysBubble(`✓ On-chain commitment ${res.txDigest ? `tx ${res.txDigest.slice(0, 10)}… ` : ""}recorded (agent-signed)`);
       live.closers.push(openChainStream(onChainRow));
     } else if (zk?.proof && hasUsableProof(zk.proof) && zk.signingMode === "zk") {
       sysBubble("🔐 Signing the escrow commitment with your zkLogin identity…", { event: false });
       const zkRes = await zkCommitSelected(offer, zk);
       if (!live || live.finished) return;
-      live.committed = true;
+      onCommitted(zkRes.txDigest, false);
       sysBubble(`✓ On-chain commitment ${zkRes.txDigest ? `tx ${zkRes.txDigest.slice(0, 10)}… ` : ""}recorded`);
       live.closers.push(openChainStream(onChainRow));
     } else if (zk?.signingMode === "wallet") {
       sysBubble("🔐 Signing the escrow commitment with your connected wallet…", { event: false });
       const walletRes = await walletCommitSelected(offer, zk.address);
       if (!live || live.finished) return;
-      live.committed = true;
+      onCommitted(walletRes.digest || undefined, false);
       sysBubble(`✓ On-chain commitment ${walletRes.digest ? `tx ${walletRes.digest.slice(0, 10)}… ` : ""}recorded (wallet)`);
       live.closers.push(openChainStream(onChainRow));
     } else {
       sysBubble("ℹ️ Autonomous signing mode (no zk proof) — server-cap commit path", { event: false });
       const res = await commitSelected(offer);
       if (!live || live.finished) return;
-      live.committed = true;
+      onCommitted(res.txDigest, true);
       live.closers.push(openChainStream(onChainRow));
       void res;
     }
@@ -1411,11 +1630,38 @@ function onGatewayEvent(ev: GatewayEvent) {
         case "QUERYING":
           advance("request_detected", "Intent broadcast to the live provider market");
           break;
-        case "SELECTED":
+        case "SELECTED": {
           advance("provider_selected", `Gonka + market selected ${liveBrand(ev.providerId ?? "")}`);
           if (live) live.votes = ev.votes ?? null;
+          const winnerId = ev.providerId;
+          const bidEntry = winnerId ? latestBidEntryFor(winnerId) : null;
+          if (bidEntry) patchRunLog(bidEntry.id, { winner: true });
+          // Round-1 consensus card from the REAL Gonka votes (model, request
+          // id, ranking). Absent when the deterministic fallback ranked.
+          if (winnerId && ev.votes && ev.votes.length > 0) {
+            // Label providers with the incident-seeded brands already captured
+            // on the bid cards, so votes and bids name providers identically.
+            const brands: Record<string, string> = {};
+            const cur = useAppStore.getState();
+            for (const e of cur.runLog) {
+              if (e.kind === "bid") brands[e.providerId] = e.brand;
+            }
+            brands[winnerId] ??= liveBrand(winnerId);
+            for (const v of ev.votes) {
+              for (const pid of v.ranking) brands[pid] ??= liveBrand(pid);
+            }
+            pushRunLog({
+              kind: "consensus",
+              at: Date.now(),
+              round: 1,
+              winnerProviderId: winnerId,
+              brands,
+              votes: ev.votes,
+            });
+          }
           if (live?.incidentId) void adoptSelectedOffer(live.incidentId);
           break;
+        }
         case "ACTIVATING":
           advance("activating", `Activating ${liveBrand(ev.providerId ?? "")} (attempt ${ev.attempt ?? 1})`);
           break;
@@ -1470,8 +1716,35 @@ function onGatewayEvent(ev: GatewayEvent) {
     case "arrival": {
       if (live && ev.providerId && typeof ev.receivedAtMs === "number") {
         if (!live.arrivals.some((a) => a.providerId === ev.providerId)) {
-          live.arrivals.push({ providerId: ev.providerId, receivedAtMs: ev.receivedAtMs });
+          live.arrivals.push({
+            providerId: ev.providerId,
+            receivedAtMs: ev.receivedAtMs,
+            brand: typeof ev.brand === "string" ? ev.brand : undefined,
+          });
         }
+        // Real bid card from the signed offer's headline numbers.
+        pushRunLog({
+          kind: "bid",
+          at: Date.now(),
+          providerId: ev.providerId,
+          brand: typeof ev.brand === "string" && ev.brand ? ev.brand : liveBrand(ev.providerId),
+          category:
+            typeof ev.category === "string" && ev.category
+              ? ev.category
+              : categoryOf(ev.providerId),
+          pitch: typeof ev.pitch === "string" ? ev.pitch : undefined,
+          quotedInMs: ev.receivedAtMs,
+          capacityMbps: typeof ev.capacityMbps === "number" ? ev.capacityMbps : undefined,
+          priceUsdc: typeof ev.price === "number" ? ev.price : undefined,
+          currency: typeof ev.currency === "string" ? ev.currency : "USDC",
+          latencyMs: typeof ev.latencyMs === "number" ? ev.latencyMs : undefined,
+          packetLossPercent:
+            typeof ev.packetLossPercent === "number" ? ev.packetLossPercent : undefined,
+          reliabilityScore:
+            typeof ev.reliabilityScore === "number" ? ev.reliabilityScore : undefined,
+          expectedActivationTimeMs:
+            typeof ev.expectedActivationTimeMs === "number" ? ev.expectedActivationTimeMs : undefined,
+        });
         sysBubble(
           `${liveBrand(ev.providerId)} quoted in ${(ev.receivedAtMs / 1000).toFixed(1)}s` +
             (typeof ev.pitch === "string" && ev.pitch ? ` — “${ev.pitch}”` : "")
@@ -1482,7 +1755,16 @@ function onGatewayEvent(ev: GatewayEvent) {
     case "rejection": {
       if (live && ev.providerId && typeof ev.reason === "string") {
         if (!live.rejections.some((r) => r.providerId === ev.providerId)) {
-          live.rejections.push({ providerId: ev.providerId, reason: ev.reason, detail: ev.detail });
+          live.rejections.push({
+            providerId: ev.providerId,
+            reason: ev.reason,
+            detail: ev.detail,
+            brand: typeof ev.brand === "string" ? ev.brand : undefined,
+          });
+        }
+        const bidEntry = latestBidEntryFor(ev.providerId);
+        if (bidEntry) {
+          patchRunLog(bidEntry.id, { rejectedReason: ev.reason, rejectedDetail: ev.detail });
         }
       }
       break;
@@ -1501,7 +1783,19 @@ function reportActivationWhenCommitted() {
   if (!live || live.activationReported || live.finished) return;
   if (!live.committed || !live.incidentId) return; // not yet — retried by the commit path
   live.activationReported = true;
-  void reportActivation(live.incidentId, "AVAILABLE").catch(() => {});
+  void reportActivation(live.incidentId, "AVAILABLE")
+    .then((res) => {
+      // The settle response carries the Walrus evidence blob before the
+      // ARCHIVED ledger row reaches the SSE feed — adopt it immediately.
+      const walrus = (res as { walrusBlobId?: string | null })?.walrusBlobId;
+      if (walrus) {
+        const cur = useAppStore.getState().incident;
+        if (cur && !cur.walrusBlobId) {
+          useAppStore.setState({ incident: { ...cur, walrusBlobId: walrus } });
+        }
+      }
+    })
+    .catch(() => {});
 }
 
 function onChainRow(row: ChainRow) {  const st = useAppStore.getState();
@@ -1509,6 +1803,7 @@ function onChainRow(row: ChainRow) {  const st = useAppStore.getState();
   if (!inc || !live || live.finished) return;
   if (row.incidentId && live.incidentId && row.incidentId !== live.incidentId) return;
 
+  absorbRunRow(row); // fold settle/archive digests into the incident too
   sysBubble(chainRowLabel(row));  // ledger row → AgentSteps log
 
   if (row.type === "SETTLED") {
@@ -1544,15 +1839,19 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
     finished: false,
   };
 
-  const intent: Record<string, unknown> = {
-    ...baseIntent,
+  // Real RecoveryIntent built from the app's actual state (degraded downlink,
+  // demanded capacity, the user's budget/duration settings).
+  const intent = buildRecoveryIntent({
     incidentId: gatewayIncidentId,
-    constraints: {
-      ...((baseIntent.constraints as Record<string, unknown>) ?? {}),
-      durationMinutes: req.min,
-      maxBudget: req.budget,
-    },
-  };
+    customerId: inc.customerId,
+    shortageMbps: inc.shortage,
+    degradedMbps: inc.degradedMbps ?? null,
+    budgetUsdc: req.budget,
+    durationMinutes: req.min,
+  });
+  useAppStore.setState({
+    incident: { ...useAppStore.getState().incident!, gatewayIncidentId },
+  });
 
   sysBubble(`Live mode — broadcasting your intent (${inc.shortage} Mbps · ${"USDC " + req.budget.toFixed(0)}) to the agent market…`);
 
@@ -1560,6 +1859,16 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
     const ack = await submitIntent(intent);
     if (!live) return;
     live.incidentId = ack.incidentId ?? gatewayIncidentId;
+    pushRunLog({
+      kind: "intent",
+      at: Date.now(),
+      text: smsText,
+      capacityMbps: inc.shortage,
+      budgetUsdc: req.budget,
+      durationMinutes: req.min,
+      gatewayIncidentId: live.incidentId,
+      preAuthorized: true,
+    });
     live.closers.push(openIncidentStream(live.incidentId, onGatewayEvent));
     sysBubble(`Gateway accepted the intent (${live.incidentId}) — provider agents are quoting now.`);
   } catch (error) {

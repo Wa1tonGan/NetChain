@@ -122,16 +122,18 @@ export const BRANDS: Record<string, string> = {
 };
 
 const LIVE_BRANDS: Record<string, string> = {};
+const LIVE_CATEGORIES: Record<string, string> = {};
 
 export async function refreshBrands(): Promise<void> {
   try {
     const res = await fetch(`${GATEWAY_URL}/readiness`, { signal: AbortSignal.timeout(2500) });
     if (!res.ok) return;
     const body = (await res.json()) as {
-      providers?: { providerId: string; brand?: string }[];
+      providers?: { providerId: string; brand?: string; category?: string }[];
     };
     for (const p of body.providers ?? []) {
       if (p.providerId && p.brand) LIVE_BRANDS[p.providerId] = p.brand;
+      if (p.providerId && p.category) LIVE_CATEGORIES[p.providerId] = p.category;
     }
   } catch {
     /* gateway offline — fallback brands remain */
@@ -140,6 +142,11 @@ export async function refreshBrands(): Promise<void> {
 
 export const brand = (providerId: string): string =>
   LIVE_BRANDS[providerId] ?? BRANDS[providerId] ?? providerId;
+
+/** Provider category from the gateway readiness snapshot (e.g. "Fixed
+ *  Wireless Access") — labels the bid card tag; undefined before readiness. */
+export const categoryOf = (providerId: string): string | undefined =>
+  LIVE_CATEGORIES[providerId];
 
 const REASON_LABELS: Record<string, string> = {
   ACTIVATION_TOO_SLOW: "too slow to activate",
@@ -167,6 +174,9 @@ export interface GatewayEvent {
   type: string;
   status?: string;
   providerId?: string;
+  /** arrival/rejection events carry the incident-seeded persona brand so
+   *  every card labels the provider identically */
+  brand?: string;
   attempt?: number;
   receivedAtMs?: number;
   pitch?: string;
@@ -174,6 +184,14 @@ export interface GatewayEvent {
   detail?: string;
   atMs?: number;
   incidentId?: string;
+  /** arrival events carry the signed offer's headline numbers (real bid cards) */
+  capacityMbps?: number;
+  price?: number;
+  currency?: string;
+  latencyMs?: number;
+  packetLossPercent?: number;
+  reliabilityScore?: number;
+  expectedActivationTimeMs?: number;
   /** SELECTED events carry the Gonka consensus audit trail (Transparency UI) */
   votes?: ConsensusVote[];
   [k: string]: unknown;
@@ -192,6 +210,10 @@ export interface SelectedOffer {
     brand: string;
     capacityMbps: number;
     price: number;
+    latencyMs?: number;
+    packetLossPercent?: number;
+    reliabilityScore?: number;
+    expectedActivationTimeMs?: number;
   };
   agreement: {
     planPrice: number;
@@ -200,6 +222,18 @@ export interface SelectedOffer {
     providerAmount: number;
     durationMinutes: number;
     nonce: string;
+    currency?: string;
+  };
+  activation?: {
+    status?: string;
+    recoveredCapacityMbps?: number;
+    confirmedAtMs?: number;
+  };
+  timing?: {
+    tDetect?: number;
+    tDecide?: number;
+    tActivate?: number;
+    tRecover?: number;
   };
   [k: string]: unknown;
 }
@@ -250,6 +284,10 @@ async function postJson(url: string, body: unknown): Promise<unknown> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    // A hung chain submission must not wedge the run machine forever — the
+    // trust ledger is idempotent by nonce, so a retry after this timeout is
+    // safe (duplicate commits are blocked server-side).
+    signal: AbortSignal.timeout(90_000),
   });
   const json = await res.json().catch(() => ({}));
   // Trust/zkLogin servers answer failures with {code, message}; other
@@ -277,6 +315,18 @@ export async function fetchResult(incidentId: string): Promise<SelectedOffer | n
   if (res.status === 409) return null;
   if (!res.ok) throw new Error(`result → ${res.status}`);
   return (await res.json()) as SelectedOffer;
+}
+
+/** Cheap gateway liveness probe — gates backend-first recovery routing. */
+export async function gatewayHealthy(timeoutMs = 1500): Promise<boolean> {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { healthy?: boolean };
+    return body.healthy !== false;
+  } catch {
+    return false;
+  }
 }
 
 export async function commitSelected(selected: SelectedOffer): Promise<{

@@ -1,0 +1,81 @@
+# NetChain demo stack — one box, plain HTTP, no OAuth (zkLogin dropped).
+#
+#   agents   : provider agents (8101-8103) + Rescue gateway (8082)
+#              + Truth/claim agent (8105)     — one process tree, one container
+#   trust    : Sui trust server (8200)          — same image, different command
+#   frontend : nginx serving the built React app on :80
+#
+# The BROWSER talks directly to agents:8082 and trust:8200 (both send CORS *),
+# so ports 8082, 8200 and 80 must be open in the EC2 security group.
+# Provider/claim ports stay container-internal — nothing calls them cross-box.
+#
+# Required in .env (copy .env.docker.example): PUBLIC_IP, PLATFORM_SECRET,
+# SUI_NETWORK=testnet; GONKA_API_KEY recommended. Also required on the box:
+# .sui/config.testnet.json (gitignored — copy it from your dev machine).
+
+services:
+  agents:
+    build: .
+    image: netchain-backend
+    command: ["node", "scripts/start-all.mjs"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # containers reach each other by service name, never 127.0.0.1
+      TRUTH_AGENT_URL: http://agents:8105
+      SUI_P2_URL: http://agents:8082
+      P2_CALLBACK_URL: http://agents:8082/callbacks/settlement
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./events:/app/events            # append-only ledger survives restarts
+      - ./.sui:/app/.sui:ro             # testnet package/escrow config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8082/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  trust:
+    image: netchain-backend             # same image, different entrypoint
+    command: ["node", "--env-file-if-exists=.env", "src/sui/server.js"]
+    restart: unless-stopped
+    depends_on:
+      - agents
+    env_file: .env
+    environment:
+      TRUTH_AGENT_URL: http://agents:8105
+      SUI_P2_URL: http://agents:8082
+      P2_CALLBACK_URL: http://agents:8082/callbacks/settlement
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./events:/app/events
+      - ./.sui:/app/.sui:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8200/v1/events/recent?limit=1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # baked into the JS bundle at BUILD time — after changing PUBLIC_IP
+        # run:  docker compose build frontend && docker compose up -d frontend
+        VITE_GATEWAY_URL: http://${PUBLIC_IP}:8082
+        VITE_TRUST_URL: http://${PUBLIC_IP}:8200
+    restart: unless-stopped
+    depends_on:
+      - agents
+      - trust
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
