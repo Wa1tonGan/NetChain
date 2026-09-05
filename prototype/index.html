@@ -494,12 +494,12 @@ function viewOnboarding() {
     <p>Both experiences share the same automatic recovery engine.</p>
     <div class="ob-cards">
       <button class="ob-card" onclick="NC.choose('individual')">
-        <div class="ic">📱</div>
+        <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg></div>
         <div class="t">Individual</div>
         <div class="d">Protect my personal connectivity — my device, my plan, my recovery funds.</div>
       </button>
       <button class="ob-card" onclick="NC.choose('business')">
-        <div class="ic">🏟️</div>
+        <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M20 12v8H4v-8"/><path d="M4 12V8a8 8 0 0 1 16 0v4"/></svg></div>
         <div class="t">Business</div>
         <div class="d">Protect sites and critical business services — venues, offices, operations.</div>
       </button>
@@ -1008,7 +1008,7 @@ function incidentDetail(id) {
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <b>Recovery option selected</b>
           <span style="color:var(--muted);font-size:14px">${inc.provider}</span>
-          <span class="chip green" style="margin-left:auto">Within policy ✓</span>
+          <span class="chip green" style="margin-left:auto">Within policy <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg></span>
         </div>
         <div style="display:flex;gap:30px;margin-top:10px;font-size:14px;color:var(--muted);flex-wrap:wrap">
           <span>Additional capacity <b style="color:var(--ink)">+${inc.additional} Mbps</b></span>

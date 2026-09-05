@@ -5,7 +5,8 @@ import { rm } from "../services/pricing";
 import { ESCROW_DEPLOY } from "../services/live";
 import ProtectionModal from "../components/ProtectionModal";
 import TopUpModal from "../components/TopUpModal";
-
+import Icon, { TextWithIcons } from "../components/Icon";
+import { getExplorerAddressUrl, getExplorerName } from "../services/explorer";
 function useTicker(active: boolean, ms = 1000) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -316,17 +317,17 @@ export default function HomePage() {
             </span>
             <a
               className="link-btn ghost"
-              style={{ padding: "2px 8px", fontSize: 10.5, textDecoration: "none" }}
-              href={`https://suiscan.xyz/testnet/account/${ESCROW_DEPLOY.platformOperator}`}
+              style={{ padding: "2px 8px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}
+              href={getExplorerAddressUrl(ESCROW_DEPLOY.platformOperator, s.preferredExplorer)}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Suiscan ↗
+              <span>{getExplorerName(s.preferredExplorer)}</span>
+              <Icon name="external-link" size={10} />
             </a>
           </div>
         </div>
       </div>
-
       {/* Agent interaction feed */}
       <div className="card-title">
         Agent activity
@@ -346,7 +347,7 @@ export default function HomePage() {
                 <span className="feed-title">{log.title}</span>
                 <span className="feed-time">{log.time}</span>
               </div>
-              <div className="feed-desc">{log.desc}</div>
+              <div className="feed-desc"><TextWithIcons text={log.desc} /></div>
             </div>
           </div>
         ))}

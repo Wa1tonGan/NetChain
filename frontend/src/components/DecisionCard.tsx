@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { rm, rm0 } from "../services/pricing";
 import { COMPARISON } from "../services/flows";
-
+import Icon, { TextWithIcons } from "./Icon";
 export interface ComparisonRow {
   name: string;
   state: string;
@@ -145,15 +145,15 @@ export default function DecisionCard({
                     <div style={{ fontWeight: c.sel ? 800 : 600, color: c.sel ? "var(--ok-ink)" : "var(--ink)" }}>
                       {c.name}
                     </div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{c.state}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}><TextWithIcons text={c.state} /></div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 12 }}>
                     <div style={{ fontWeight: 800, color: c.sel ? "var(--ok-ink)" : "var(--ink)" }}>
                       {price || "—"}
                     </div>
                     {c.sel && (
-                      <span className="chip green" style={{ fontSize: 10, padding: "1px 5px", marginTop: 2 }}>
-                        ✓ Winner
+                      <span className="chip green" style={{ fontSize: 10, padding: "1px 5px", marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                        <Icon name="check" size={10} /> Winner
                       </span>
                     )}
                   </div>
@@ -167,10 +167,11 @@ export default function DecisionCard({
         <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
           <button
             className="btn link"
-            style={{ padding: 0, fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}
+            style={{ padding: 0, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}
             onClick={() => setShowAgentLogs(!showAgentLogs)}
           >
-            <span>{showAgentLogs ? "▼ Hide Agent Reasoning Logs" : "▶ View Agent Reasoning Logs (3 Models)"}</span>
+            <Icon name={showAgentLogs ? "chevron-down" : "chevron-right"} size={12} />
+            <span>{showAgentLogs ? "Hide Agent Reasoning Logs" : "View Agent Reasoning Logs (3 Models)"}</span>
           </button>
 
           {showAgentLogs && (

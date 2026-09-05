@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { beginZkLogin } from "../services/zklogin";
 import { connectSuiWallet, isSuiWalletAvailable } from "../services/walletConnect";
-
+import Icon from "./Icon";
 export default function WalletConnectModal({ onClose }: { onClose: () => void }) {
   const s = useAppStore();
   const [customAddr, setCustomAddr] = useState("");
@@ -66,8 +66,8 @@ export default function WalletConnectModal({ onClose }: { onClose: () => void })
       <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div className="modal-head">
           <h3>Configure Sui Wallet</h3>
-          <button className="btn link" onClick={onClose} style={{ fontSize: 18, padding: 0 }}>
-            ✕
+          <button className="btn link" onClick={onClose} aria-label="Close" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+            <Icon name="close" size={16} />
           </button>
         </div>
 

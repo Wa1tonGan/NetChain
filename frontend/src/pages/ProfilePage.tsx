@@ -9,7 +9,7 @@ import ProtectionModal from "../components/ProtectionModal";
 import WalletConnectModal from "../components/WalletConnectModal";
 import TopUpModal from "../components/TopUpModal";
 import TransactionHistory from "../components/TransactionHistory";
-
+import Icon from "../components/Icon";
 export default function ProfilePage() {
   const s = useAppStore();
   const navigate = useNavigate();
@@ -119,11 +119,15 @@ export default function ProfilePage() {
           </div>
           <div className="id-chips">
             {s.zkLogin?.signingMode === "zk" ? (
-              <span className="act-ref green">✓ zkLogin self-custody</span>
+              <span className="act-ref green" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <Icon name="check" size={11} /> zkLogin self-custody
+              </span>
             ) : s.zkLogin?.signingMode === "custodial-fallback" ? (
               <span className="act-ref amber">custodial fallback</span>
             ) : isWalletConfigured ? (
-              <span className="act-ref green">✓ {walletSourceLabel}</span>
+              <span className="act-ref green" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                <Icon name="check" size={11} /> {walletSourceLabel}
+              </span>
             ) : (
               <span className="act-ref">no wallet</span>
             )}
@@ -303,8 +307,8 @@ export default function ProfilePage() {
                   style={{ width: "100%", border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
                   onClick={() => a.recordId && navigate("/activity/" + a.recordId)}
                 >
-                  <span className={`txd-check${a.type === "failed" ? "" : ""}`} style={a.type === "failed" ? { background: "var(--amber-soft)", color: "var(--amber-ink)" } : undefined}>
-                    {a.type === "failed" ? "!" : "✓"}
+                  <span className={`txd-check${a.type === "failed" ? "" : ""}`} style={{ ...(a.type === "failed" ? { background: "var(--amber-soft)", color: "var(--amber-ink)" } : undefined), display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                    {a.type === "failed" ? <Icon name="warning" size={12} /> : <Icon name="check" size={12} />}
                   </span>
                   <div className="grow">
                     <div className="rec-id">
@@ -315,14 +319,14 @@ export default function ProfilePage() {
                   <div style={{ marginLeft: "auto", textAlign: "right" }}>
                     <div style={{ fontWeight: 700, fontSize: 13.5 }}>{a.cost != null && a.cost > 0 ? rm(a.cost) : a.note}</div>
                     <div className="rec-sub" style={{ color: a.type === "failed" ? "var(--amber-ink)" : "var(--green-ink)", fontWeight: 600 }}>
-                      {a.type === "failed" ? "REFUND" : "OK ✓"}
+                      {a.type === "failed" ? "REFUND" : <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>OK <Icon name="check" size={11} /></span>}
                     </div>
                   </div>
                 </button>
               ))
             ) : (
               <div className="rec-row">
-                <span className="txd-check">✓</span>
+                <span className="txd-check" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon name="check" size={12} /></span>
                 <div>
                   <div className="rec-id">No recoveries yet</div>
                   <div className="rec-sub">Payment is only charged after verified delivery.</div>
@@ -338,8 +342,7 @@ export default function ProfilePage() {
           <div className="pcard span2">
             <div className="pcard-title">Transaction history</div>
             <div className="pcard-sub">
-              Live on-chain history for your address — top-ups, commits, settlements and refunds, each linking to
-              Suiscan
+              Live on-chain history for your address — top-ups, commits, settlements and refunds, with direct verification on SuiVision or Suiscan
             </div>
             <div style={{ marginTop: 8 }}>
               <TransactionHistory collapsible />
@@ -352,8 +355,7 @@ export default function ProfilePage() {
           <div className="pcard span2">
             <div className="pcard-title">Purchased network offers</div>
             <div className="pcard-sub">
-              Network capacity offers your agent bought for you — every purchase and settlement on-chain, one click
-              from Suiscan
+              Network capacity offers your agent bought for you — every purchase and settlement on-chain, one click from SuiVision or Suiscan
             </div>
             <div style={{ marginTop: 8 }}>
               <TransactionHistory ownerAddress={ESCROW_DEPLOY.platformOperator} mode="purchase" collapsible />

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RecoveryRecord } from "../services/types";
 import { rm } from "../services/pricing";
+import { TextWithIcons } from "./Icon";
 
 /* The mockup's "Agent activity behind this stage" list — populated from the
    record's REAL timeline events (store: inc.events), never canned stories.
@@ -148,7 +149,7 @@ function AgentSteps({ steps, r, providerNet }: { steps: Step[]; r: RecoveryRecor
                     <span className="astep-verb">{actor.verb}</span>
                     <span className="astep-t">{tPlus}</span>
                   </div>
-                  <div className="astep-text">{s.label}</div>
+                  <div className="astep-text"><TextWithIcons text={s.label} /></div>
                 </div>
                 <span className="astep-caret">›</span>
               </button>

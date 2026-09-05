@@ -861,7 +861,7 @@ function viewHome() {
         <div class="status ${heroText[0]}"><span class="dot ${s === "protected" ? "protected" : s}"></span>${heroText[1]}</div>
         <h1>${store.capacity.current}<span class="u">Mbps</span></h1>
         <div class="sub">Current capacity · ${heroSub}</div>
-        ${store.capacity.extra && s === "protected" ? `<span class="pill-note">⚡ +${store.capacity.extra} Mbps temporary plan</span>` : ""}
+        ${store.capacity.extra && s === "protected" ? `<span class="pill-note"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:2px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> +${store.capacity.extra} Mbps temporary plan</span>` : ""}
       </div>
       ${problem}
       ${s === "protected" ? sessionCard() : ""}
@@ -917,7 +917,7 @@ function viewProtection() {
           }[p];
           return `
           <button class="plan-card ${store.plan === p ? "sel" : ""}" onclick="NC.setPlan('${p}')">
-            <div class="pn">${p}${store.plan === p ? `<span class="tick">✓</span>` : ""}</div>
+            <div class="pn">${p}${store.plan === p ? `<span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg></span>` : ""}</div>
             <div class="pd">${{ NORMAL: "Standard protection", VIP: "Priority protection", VVIP: "Maximum protection" }[p]}</div>
             <ul>${d.map((x) => `<li>${x}</li>`).join("")}</ul>
           </button>`;
@@ -1020,7 +1020,7 @@ function viewActivity() {
   });
 
   const item = (a) => {
-    const ic = { ok: ["ok", "⚡"], check: ["check", "✓"], failed: ["bad", "⚠"] }[a.type] || ["check", "·"];
+    const ic = { ok: ["ok", "bolt"], check: ["check", "check"], failed: ["bad", "warn"] }[a.type] || ["check", "·"];
     const hasDetail = !!a.recordId;
     const inner = `
       <div class="act-ic ${ic[0]}">${ic[1]}</div>
@@ -1150,7 +1150,7 @@ function viewProfile() {
       <h1 style="font-size:24px;font-weight:800;letter-spacing:-.01em;padding-top:6px">Profile</h1>
       <div class="card">
         <div class="row">
-          <div class="act-ic ok" style="font-size:17px">📱</div>
+          <div class="act-ic ok"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg></div>
           <div class="grow"><div class="t">${store.deviceName}</div><div class="s">${store.service}</div></div>
           <span class="chip green"><span class="dot"></span>Connected</span>
         </div>
@@ -1205,7 +1205,7 @@ function viewOnboarding() {
       <div class="plans" style="margin-top:18px">
         ${["NORMAL", "VIP", "VVIP"].map((p) => `
         <button class="plan-card ${s.plan === p ? "sel" : ""}" onclick="NC.obPlan('${p}')">
-          <div class="pn">${p}${s.plan === p ? `<span class="tick">✓</span>` : ""}</div>
+          <div class="pn">${p}${s.plan === p ? `<span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg></span>` : ""}</div>
           <div class="pd">${{ NORMAL: "Standard protection", VIP: "Priority protection", VVIP: "Maximum protection" }[p]}</div>
         </button>`).join("")}
       </div>
@@ -1252,7 +1252,7 @@ function viewOnboarding() {
        <div style="text-align:center;margin-top:10px"><button class="btn link" onclick="NC.obNext(true)">I'll add funds later</button></div>`);
     case 5: return obShell(5, `
       <div class="ob-center">
-        <div class="big-ic">🛡️</div>
+        <div class="big-ic"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
         <h1>You're protected</h1>
         <p class="lede">NetChain will watch your connection. If your backup isn't enough, you'll get an SMS — just reply with a duration and budget, and NetChain does the rest.</p>
       </div>`,
@@ -1265,7 +1265,7 @@ function viewObWelcome() {
   return `
   <div class="ob-center">
     <span class="logo" style="font-size:20px"><span class="dot" style="color:var(--accent)">·</span>NetChain</span>
-    <div class="big-ic" style="margin-top:26px">📶</div>
+    <div class="big-ic" style="margin-top:26px"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/></svg></div>
     <h1>Keep your connection alive</h1>
     <p class="lede">When your normal backup isn't enough, NetChain finds and activates extra connectivity. You approve it with one SMS — duration and budget, your choice.</p>
   </div>`;
@@ -1310,7 +1310,7 @@ function purchaseHtml(inc) {
     <div class="pr"><span class="k">Total</span><span class="v">${rm(r.cost)}</span></div>
     <div class="why">Why Provider B: available now · meets ${MBPS_BUY} Mbps · lowest price · within your ${rm0(r.budget)} budget</div>
   </div>
-  <div class="money-state">🔒 ${rm(r.cost)} locked in escrow — released only after verification passes</div>`;
+  <div class="money-state"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> ${rm(r.cost)} locked in escrow — released only after verification passes</div>`;
 }
 
 function stepListHtml(inc) {
@@ -1374,8 +1374,8 @@ function overlayDone(inc) {
         <div class="rg"><div class="rk">Cost</div><div class="rv" style="font-size:16px">${costHtml}</div></div>
       </div>
       <div class="money-state ${under ? "" : "ok"}" style="margin-top:14px">${under
-        ? `✓ ${rm(r.charged)} settled · ${rm(r.refund)} refunded — penalty applied for under-delivery`
-        : `✓ ${rm(r.charged)} settled — released only after verified delivery`}</div>
+        ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg>${rm(r.charged)} settled · ${rm(r.refund)} refunded — penalty applied for under-delivery`
+        : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg>${rm(r.charged)} settled — released only after verified delivery`}</div>
       <div style="margin-top:14px;color:var(--muted);font-size:13px">Signal strength ${strengthBars(under ? 2 : 4, under ? "strength-2" : "")} <b style="color:var(--ink)">${under ? "Fair" : "Excellent"}</b> · Provider ${r.provider} · ${r.min}-minute plan</div>
       <div style="margin-top:16px;display:flex;gap:10px">
         <button class="btn primary" onclick="NC.dismissOverlay()">Done</button>
@@ -1418,7 +1418,7 @@ function overlayFailed(inc) {
       <div class="rg"><div class="rk">Available now</div><div class="rv">${store.capacity.current} Mbps</div></div>
       <div class="rg"><div class="rk">Recovery time</div><div class="rv">${r.time} sec</div></div>
     </div>
-    <div class="money-state ok">✓ ${rm(r.cost)} refunded — the locked amount returned to your balance automatically</div>
+    <div class="money-state ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg> ${rm(r.cost)} refunded — the locked amount returned to your balance automatically</div>
     <p class="note">NetChain keeps watching. Send a new recovery request from Home anytime.</p>
     <div style="margin-top:14px"><button class="btn primary" onclick="NC.dismissOverlay()">Done</button></div>
   </div></div>`;
@@ -1540,7 +1540,7 @@ window.NC = {
     inc.thread.push({
       from: "sys",
       text: `Request detected — ${MBPS_BUY} Mbps · ${plan.min} min · ${rm(plan.cost)}` +
-        (plan.adjusted ? ` (closest option within your ${rm0(p.budget)} budget)` : ` (within your ${rm0(p.budget)} budget ✓)`),
+        (plan.adjusted ? ` (closest option within your ${rm0(p.budget)} budget)` : ` (within your ${rm0(p.budget)} budget <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg>)`),
     });
     inc.req = plan;
     inc.sentAt = Date.now();

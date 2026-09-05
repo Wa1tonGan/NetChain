@@ -222,6 +222,29 @@ export interface ChainRow {
   [k: string]: unknown;
 }
 
+/** Truth Agent audit delivered on the CLAIM_VERIFIED ledger row. */
+export interface ClaimAuditModel {
+  model: string;
+  ok: boolean;
+  verdict?: string | null;
+  score?: number | null;
+  requestId: string | null;
+  reasoning?: string | null;
+  error?: string | null;
+}
+
+export interface ClaimAudit {
+  claimRunId: string | null;
+  status: "COMPLETED" | "FAILED" | "TIMEOUT" | string;
+  verdict?: string | null;
+  score?: number | null;
+  confidenceBand?: [number, number] | null;
+  agree?: string | null;
+  models: ClaimAuditModel[];
+  durationMs?: number | null;
+  error?: string | null;
+}
+
 async function postJson(url: string, body: unknown): Promise<unknown> {
   const res = await fetch(url, {
     method: "POST",
@@ -408,6 +431,13 @@ export function chainRowLabel(row: ChainRow): string {
     case "DELIVERY_VERIFIED":
       return `🕵️ Delivery check: ${d.verdict ?? "OK"}` +
         (d.penaltyAmount ? ` · penalty ${rmv(d.penaltyAmount)} refunded` : "") + tx;
+    case "CLAIM_VERIFIED": {
+      const audit = d as unknown as ClaimAudit;
+      if (audit.status === "COMPLETED") {
+        return `🧠 Truth Agent audit — ${audit.score ?? "?"}/100 ${audit.verdict ?? ""} (${audit.agree ?? "?"} models agree)`;
+      }
+      return `🧠 Truth Agent audit unavailable (${String(audit.status).toLowerCase()})`;
+    }
     case "DUPLICATE_BLOCKED":
       return "♻️ Replay blocked — this deal was already committed";
     case "VERIFICATION_FAILED":

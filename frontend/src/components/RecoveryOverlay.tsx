@@ -3,6 +3,8 @@ import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 import { STEP_INDEX } from "../services/flows";
 import type { Incident } from "../services/types";
+import { getExplorerTxUrl } from "../services/explorer";
+import Icon, { TextWithIcons } from "./Icon";
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
     <span className={`strength ${cls ?? ""}`} role="img" aria-label={`${filled} of 4 signal bars`}>
@@ -51,7 +53,7 @@ function Thread({ incident }: { incident: Incident }) {
               Autonomous Reply Engine
             </span>
           )}
-          {b.text}
+          <TextWithIcons text={b.text} />
         </div>
       ))}
     </div>
@@ -128,6 +130,7 @@ function Composer({ shortage, live }: { shortage: number; live?: boolean }) {
 
 export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const dismiss = useAppStore((s) => s.dismissOverlay);
+  const preferredExplorer = useAppStore((s) => s.preferredExplorer);
   const curIdx = STEP_INDEX[incident.status] ?? 0;
   const inSms = incident.status === "sms";
   const isLive = incident.kind === "live";
@@ -181,7 +184,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
               style={{ fontSize: 18, padding: "0 4px", color: "var(--muted)" }}
               aria-label="Close"
             >
-              ✕
+              <Icon name="close" size={16} />
             </button>
           </div>
         </div>
@@ -324,8 +327,10 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 <div style={{ animation: "fadeIn 0.2s 1.6s backwards" }}><span style={{ color: "#3b82f6", fontWeight: "bold" }}>[Wallet]</span> Auto-signing payload with connected Sui identity...</div>
                 <div style={{ animation: "fadeIn 0.2s 2.4s backwards" }}><span style={{ color: "#22c55e", fontWeight: "bold" }}>[Network]</span> Broadcasting to Sui Testnet...</div>
                 <div style={{ animation: "fadeIn 0.2s 3.2s backwards", marginTop: 8, padding: 10, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)", borderRadius: 6 }}>
-                  <div style={{ color: "#4ade80", fontWeight: "bold", marginBottom: 4 }}>✓ Transaction Executed Successfully</div>
-                  <div style={{ color: "#cbd5e1" }}>Digest: <a href="https://suiscan.xyz/testnet/tx/8AbX9Z12398jklmnOPqrstUVWxyZ" target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "bold" }}>8AbX9Z12398jklmnOPqrstUVWxyZ ↗</a></div>
+                  <div style={{ color: "#4ade80", fontWeight: "bold", marginBottom: 4, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Icon name="check" size={14} /> Transaction Executed Successfully
+                  </div>
+                  <div style={{ color: "#cbd5e1" }}>Digest: <a href={getExplorerTxUrl("8AbX9Z12398jklmnOPqrstUVWxyZ", preferredExplorer)} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "bold", display: "inline-flex", alignItems: "center", gap: 3 }}>8AbX9Z12398jklmnOPqrstUVWxyZ <Icon name="external-link" size={11} /></a></div>
                 </div>
               </div>
             </div>
@@ -350,8 +355,8 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 marginTop: 10,
               }}
             >
-              <span style={{ fontSize: 24 }}>
-                {incident.status === "failed" ? "✕" : incident.status === "noop" ? "✓" : "✓"}
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                {incident.status === "failed" ? <Icon name="fail" size={24} /> : <Icon name="check" size={24} />}
               </span>
               <div>
                 <div style={{ fontWeight: 800, fontSize: 15 }}>
@@ -390,7 +395,9 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                   </div>
                   <div className="rg">
                     <div className="rk">Trust Layer</div>
-                    <div className="rv ok">{isLive ? "Sui On-Chain ✓" : "Sui Dual-Sig ✓"}</div>
+                    <div className="rv ok" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {isLive ? (<>Sui On-Chain <Icon name="check" size={12} /></>) : (<>Sui Dual-Sig <Icon name="check" size={12} /></>)}
+                    </div>
                   </div>
                 </>
               )}

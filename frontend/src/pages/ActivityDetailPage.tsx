@@ -6,8 +6,10 @@ import { rm } from "../services/pricing";
 import { reclaimEscrow } from "../services/live";
 import SlaLineChart from "../components/SlaLineChart";
 import DecisionCard from "../components/DecisionCard";
+import ClaimAuditCard from "../components/ClaimAuditCard";
 import AgentSteps, { stepsForStage } from "../components/AgentSteps";
-
+import Icon from "../components/Icon";
+import { getExplorerTxUrl, getExplorerName } from "../services/explorer";
 function Stage({
   kicker,
   name,
@@ -36,7 +38,7 @@ function Stage({
   const [open, setOpen] = useState(Boolean(defaultOpen));
   return (
     <div className={`stage${open ? " open" : ""}`}>
-      <div className={`stage-dot${dot ? " " + dot : ""}`}>{dot === "pen" ? "!" : dot === "ref" ? "↩" : "✓"}</div>
+      <div className={`stage-dot${dot ? " " + dot : ""}`}>{dot === "pen" ? <Icon name="warning" size={11} /> : dot === "ref" ? <Icon name="refund" size={11} /> : <Icon name="check" size={11} />}</div>
       <div className="stage-card">
         <button className="stage-head" onClick={() => setOpen(!open)}>
           <div>
@@ -62,10 +64,12 @@ function Stage({
 export default function ActivityDetailPage() {
   const { id } = useParams();
   const s = useAppStore();
-  // LIVE runs append "-live" to their activity id while the record is keyed
+  const preferredExplorer = s.preferredExplorer;
   // by the plain incident id — match both.
   const a = s.activity.find((x) => x.id === id || x.recordId === id);
   const r = id ? s.records[id] : undefined;
+  const gatewayId = r?.nonce?.split(":")[0];
+  const audit = (gatewayId ? s.claimAudits[gatewayId] : undefined) ?? (id ? s.claimAudits[id] : undefined);
   const [showDisc, setShowDisc] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [reclaimState, setReclaimState] = useState<"idle" | "working" | "done" | "error">("idle");
@@ -195,7 +199,7 @@ export default function ActivityDetailPage() {
                       </span>
                     ) : (
                       <button className="link-btn" onClick={handleReclaim} disabled={reclaimState === "working"}>
-                        {reclaimState === "working" ? "Reclaiming…" : "↩ Reclaim escrow"}
+                        {reclaimState === "working" ? "Reclaiming…" : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Icon name="refund" size={12} /> Reclaim escrow</span>}
                       </button>
                     )}
                   </div>
@@ -325,7 +329,7 @@ export default function ActivityDetailPage() {
                     <span>{r.commitTx ?? r.tx}</span>
                   </div>
                   <div className={`r-stamp${stampCls ? " " + stampCls : ""}`}>
-                    {isPenalty ? "PENALTY APPLIED" : "AUTO-RELEASED ✓"}
+                    {isPenalty ? "PENALTY APPLIED" : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>AUTO-RELEASED <Icon name="check" size={12} /></span>}
                   </div>
                   <div className="r-foot">
                     Nobody clicked “pay” — the contract released funds
@@ -345,11 +349,19 @@ export default function ActivityDetailPage() {
             </div>
           )}
 
+          {/* Truth Agent audit (Gonka multi-model SLA verification) */}
+          {audit && <ClaimAuditCard audit={audit} />}
+
           {/* Cryptographic proofs */}
           <div className="card" style={{ marginTop: 18 }}>
             <div className="pad">
-              <button className="btn link" style={{ padding: 0, fontSize: 12.5 }} onClick={() => setShowDisc(!showDisc)}>
-                {showDisc ? "▼ Hide cryptographic proofs" : "▶ View cryptographic proofs"}
+              <button
+                className="btn link"
+                style={{ padding: 0, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 4 }}
+                onClick={() => setShowDisc(!showDisc)}
+              >
+                <Icon name={showDisc ? "chevron-down" : "chevron-right"} size={12} />
+                <span>{showDisc ? "Hide cryptographic proofs" : "View cryptographic proofs"}</span>
               </button>
               {showDisc && (
                 <div className="tech-box">
@@ -394,11 +406,14 @@ export default function ActivityDetailPage() {
                     <div className="tv">
                       <a
                         className="txlink"
-                        href={r.commitTx ? `https://suiscan.xyz/testnet/tx/${r.commitTx}` : "https://suiscan.xyz/testnet"}
+                        href={r.commitTx ? getExplorerTxUrl(r.commitTx, preferredExplorer) : (preferredExplorer === "suivision" ? "https://testnet.suivision.xyz" : "https://suiscan.xyz/testnet")}
                         target="_blank"
                         rel="noopener noreferrer"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
                       >
-                        {r.commitTx ?? r.tx} ↗ SuiScan
+                        <span>{r.commitTx ?? r.tx}</span>
+                        <Icon name="external-link" size={11} />
+                        <span>{getExplorerName(preferredExplorer)}</span>
                       </a>
                     </div>
                   </div>
@@ -425,3 +440,4 @@ export default function ActivityDetailPage() {
     </div>
   );
 }
+

@@ -9,6 +9,10 @@
 // Contract with the frontend AgentThinkingPage:
 //   POST /claims                 { input: string, sourceType?: auto|url|tweet|text }
 //                                 → 202 { claimId }
+//   POST /claims (structured)    { claims: string[] (≤4), evidence?: [{source, excerpt}],
+//                                  meta?: {incidentId, nonce} } — caller-supplied claims skip
+//                                  LLM extraction; caller-supplied evidence skips the live
+//                                  web pass. The {input, sourceType} path is unchanged.
 //   GET  /claims/:id             → full record (steps, verdict, scores)
 //   GET  /claims/:id/events      → SSE stream of thinking steps
 //   GET  /health
@@ -194,7 +198,10 @@ async function queryModel(model, claim, evidencePack, config, fetchImpl, signal)
         }
       ],
       temperature: 0,
-      max_tokens: 400
+      // Reasoning models (MiniMax M2, DeepSeek V4) spend 300–500 tokens in
+      // <think> before the JSON verdict — 400 truncated mid-think on
+      // composite claims (finish_reason=length, no JSON to parse).
+      max_tokens: 1200
     }),
     signal
   });
@@ -208,32 +215,66 @@ async function queryModel(model, claim, evidencePack, config, fetchImpl, signal)
   const requestId = response.headers.get("x-request-id") ?? null;
   const payload = await response.json();
   const bodyId = typeof payload?.id === "string" ? payload.id : null;
+  // Reasoning models (MiniMax M2, DeepSeek V4) emit a <think>…</think> block
+  // whose braces defeat a naive first-{…last-} slice — scan for the LAST
+  // BALANCED top-level JSON object in the content instead.
   const content = payload?.choices?.[0]?.message?.content;
-  const start = typeof content === "string" ? content.indexOf("{") : -1;
-  const end = typeof content === "string" ? content.lastIndexOf("}") : -1;
+  const parsed = typeof content === "string" ? extractLastJsonObject(content) : null;
 
-  if (start === -1 || end <= start) {
+  if (!parsed) {
     return { ok: false, error: "unparseable answer", requestId: requestId ?? bodyId };
   }
+  const verdicts = ["TRUE", "FALSE", "PARTLY_TRUE", "UNVERIFIABLE"];
+  const verdict = verdicts.includes(parsed.verdict) ? parsed.verdict : "UNVERIFIABLE";
+  const score = Math.max(0, Math.min(100, Number(parsed.score ?? 50)));
 
-  try {
-    const parsed = JSON.parse(content.slice(start, end + 1));
-    const verdicts = ["TRUE", "FALSE", "PARTLY_TRUE", "UNVERIFIABLE"];
-    const verdict = verdicts.includes(parsed.verdict) ? parsed.verdict : "UNVERIFIABLE";
-    const score = Math.max(0, Math.min(100, Number(parsed.score ?? 50)));
+  return {
+    ok: true,
+    requestId: requestId ?? bodyId,
+    model,
+    verdict,
+    score,
+    reasoning: String(parsed.reasoning ?? "").slice(0, 300),
+    evidenceUsed: Array.isArray(parsed.evidenceUsed) ? parsed.evidenceUsed.map(String).slice(0, 3) : []
+  };
+}
 
-    return {
-      ok: true,
-      requestId: requestId ?? bodyId,
-      model,
-      verdict,
-      score,
-      reasoning: String(parsed.reasoning ?? "").slice(0, 300),
-      evidenceUsed: Array.isArray(parsed.evidenceUsed) ? parsed.evidenceUsed.map(String).slice(0, 3) : []
-    };
-  } catch {
-    return { ok: false, error: "invalid JSON verdict", requestId: requestId ?? bodyId };
+/**
+ * Scan content for the last balanced `{…}` object and return it parsed.
+ * Handles <think> blocks and prose around the answer. Returns null when no
+ * parseable object exists.
+ */
+function extractLastJsonObject(content) {
+  for (let end = content.lastIndexOf("}"); end !== -1; end = content.lastIndexOf("}", end - 1)) {
+    // Walk backwards to the matching open brace (string-aware, depth count).
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let start = end; start >= 0; start--) {
+      const ch = content[start];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === "}") depth++;
+      else if (ch === "{") {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(content.slice(start, end + 1));
+          } catch {
+            break; // not a valid object here — try an earlier close brace
+          }
+        }
+      } else if (ch === '"') {
+        // opening quote of a string while scanning backwards — flip in/out
+        inString = true;
+      }
+    }
   }
+  return null;
 }
 
 // -- Consensus (step 4) -------------------------------------------------------
@@ -266,75 +307,105 @@ function mergeVerdicts(modelAnswers) {
 
 // -- Orchestrator: runs the whole verification for one claim ------------------
 
-export async function verifyClaim({ input, sourceType }, config, fetchImpl, emit) {
+export async function verifyClaim(
+  { input, sourceType, claims = null, evidencePack = null, meta = null },
+  config,
+  fetchImpl,
+  emit
+) {
   const t0 = nowMs();
   const resolvedType = sourceType && sourceType !== "auto" ? sourceType : detectSourceType(input);
 
   emit({ step: "received", status: "done", detail: `source type: ${resolvedType}`, atMs: nowMs() - t0 });
 
-  // Step 1 — extraction
-  emit({ step: "extract", status: "running", detail: "extracting verifiable claims…", atMs: nowMs() - t0 });
-  const extractionController = new AbortController();
-  const extractionTimer = setTimeout(() => extractionController.abort(), 10_000);
+  // Step 1 — extraction. Caller-supplied claims (structured SLA audit path)
+  // skip the extraction LLM call entirely; the {input, sourceType} path is
+  // byte-identical to the pre-structured behavior.
   let extraction;
 
-  try {
-    extraction = await extractClaims(input, resolvedType, config, fetchImpl, extractionController.signal);
-  } finally {
-    clearTimeout(extractionTimer);
-  }
-  emit({
-    step: "extract",
-    status: "done",
-    detail: extraction.claims.join(" · "),
-    claims: extraction.claims,
-    topic: extraction.topic,
-    atMs: nowMs() - t0
-  });
-
-  const claim = extraction.claims[0];
-
-  // Step 2 — live data (best-effort, never load-bearing)
-  emit({ step: "live_data", status: "running", detail: "fetching live evidence…", atMs: nowMs() - t0 });
-  const evidencePack = [];
-  const evidenceNotes = [];
-
-  if (config.webVerify) {
-    const liveController = new AbortController();
-    const liveTimer = setTimeout(() => liveController.abort(), 12_000);
+  if (Array.isArray(claims) && claims.length > 0) {
+    const normalized = claims.map(String).map((c) => c.trim()).filter(Boolean).slice(0, 4);
+    extraction = { claims: normalized, topic: meta?.incidentId ?? "structured input" };
+    emit({
+      step: "extract",
+      status: "done",
+      detail: "claims provided by caller",
+      claims: normalized,
+      topic: extraction.topic,
+      atMs: nowMs() - t0
+    });
+  } else {
+    emit({ step: "extract", status: "running", detail: "extracting verifiable claims…", atMs: nowMs() - t0 });
+    const extractionController = new AbortController();
+    const extractionTimer = setTimeout(() => extractionController.abort(), 10_000);
 
     try {
-      if (resolvedType === "url") {
-        const page = await fetchReadable(input, fetchImpl, liveController.signal);
-
-        if (page) {
-          evidencePack.push({ source: input, excerpt: page });
-          evidenceNotes.push(`fetched ${input} (${page.length} chars)`);
-        }
-      }
-
-      const results = await searchWeb(claim, fetchImpl, liveController.signal);
-
-      if (results.length > 0) {
-        evidenceNotes.push(`${results.length} web results via DuckDuckGo`);
-        for (const result of results.slice(0, 4)) {
-          evidencePack.push({ source: result.title, excerpt: result.snippet });
-        }
-      }
-    } catch {
-      evidenceNotes.push("live fetch unavailable — models judge on internal knowledge");
+      extraction = await extractClaims(input, resolvedType, config, fetchImpl, extractionController.signal);
     } finally {
-      clearTimeout(liveTimer);
+      clearTimeout(extractionTimer);
     }
+    emit({
+      step: "extract",
+      status: "done",
+      detail: extraction.claims.join(" · "),
+      claims: extraction.claims,
+      topic: extraction.topic,
+      atMs: nowMs() - t0
+    });
+  }
+
+  // Multiple caller claims are verified as ONE composite claim — the join is
+  // the injection point into queryModel's {claim, evidence} prompt envelope.
+  const claim = extraction.claims.join("\n- ");
+
+  // Step 2 — live data (best-effort, never load-bearing). Caller-supplied
+  // evidence (signed SLA probes) replaces the web pass entirely — no fetches.
+  const evidenceNotes = [];
+  let liveEvidence = evidencePack;
+
+  if (Array.isArray(liveEvidence) && liveEvidence.length > 0) {
+    evidenceNotes.push(`evidence provided by caller (${liveEvidence.length} items)`);
   } else {
-    evidenceNotes.push("live data pass disabled (GONKA_VERIFY_WEB!=true)");
+    liveEvidence = [];
+    emit({ step: "live_data", status: "running", detail: "fetching live evidence…", atMs: nowMs() - t0 });
+
+    if (config.webVerify) {
+      const liveController = new AbortController();
+      const liveTimer = setTimeout(() => liveController.abort(), 12_000);
+
+      try {
+        if (resolvedType === "url") {
+          const page = await fetchReadable(input, fetchImpl, liveController.signal);
+
+          if (page) {
+            liveEvidence.push({ source: input, excerpt: page });
+            evidenceNotes.push(`fetched ${input} (${page.length} chars)`);
+          }
+        }
+
+        const results = await searchWeb(claim, fetchImpl, liveController.signal);
+
+        if (results.length > 0) {
+          evidenceNotes.push(`${results.length} web results via DuckDuckGo`);
+          for (const result of results.slice(0, 4)) {
+            liveEvidence.push({ source: result.title, excerpt: result.snippet });
+          }
+        }
+      } catch {
+        evidenceNotes.push("live fetch unavailable — models judge on internal knowledge");
+      } finally {
+        clearTimeout(liveTimer);
+      }
+    } else {
+      evidenceNotes.push("live data pass disabled (GONKA_VERIFY_WEB!=true)");
+    }
   }
 
   emit({
     step: "live_data",
     status: "done",
     detail: evidenceNotes.join(" · ") || "no evidence pack",
-    evidenceCount: evidencePack.length,
+    evidenceCount: liveEvidence.length,
     atMs: nowMs() - t0
   });
 
@@ -353,7 +424,7 @@ export async function verifyClaim({ input, sourceType }, config, fetchImpl, emit
   const modelAnswers = await Promise.all(
     config.models.map(async (model) => {
       try {
-        const answer = await queryModel(model, claim, evidencePack, config, fetchImpl, controller.signal);
+        const answer = await queryModel(model, claim, liveEvidence, config, fetchImpl, controller.signal);
 
         if (answer.ok) {
           emit({
@@ -400,7 +471,7 @@ export async function verifyClaim({ input, sourceType }, config, fetchImpl, emit
     step: "consensus",
     status: "done",
     ...consensus,
-    evidencePackUsed: evidencePack.length,
+    evidencePackUsed: liveEvidence.length,
     atMs: nowMs() - t0
   });
 
@@ -492,9 +563,13 @@ export function createClaimAgentServer({ port } = {}) {
         }
 
         const input = typeof body.input === "string" ? body.input.trim() : "";
+        // Structured path: caller-supplied claims (≤4) instead of free text.
+        const callerClaims = Array.isArray(body.claims)
+          ? body.claims.map(String).map((c) => c.trim()).filter(Boolean).slice(0, 4)
+          : null;
 
-        if (input.length < 3) {
-          return json(400, { error: "input must be a URL, tweet link or text snippet" });
+        if (input.length < 3 && (callerClaims === null || callerClaims.length === 0)) {
+          return json(400, { error: "input must be a URL, tweet link or text snippet (or pass claims[])" });
         }
 
         if (!config.apiKey || !config.baseUrl || config.models.length === 0) {
@@ -502,10 +577,12 @@ export function createClaimAgentServer({ port } = {}) {
         }
 
         const claimId = `CLAIM-${randomUUID().slice(0, 8)}`;
+        const meta = body.meta && typeof body.meta === "object" ? body.meta : null;
         const record = {
           id: claimId,
           createdAt: new Date().toISOString(),
           input: input.slice(0, 500),
+          meta,
           steps: [],
           result: null,
           done: false,
@@ -514,8 +591,11 @@ export function createClaimAgentServer({ port } = {}) {
         claims.set(claimId, record);
 
         // Fire-and-forget run; the UI follows progress over SSE.
-        verifyClaim({ input, sourceType: body.sourceType }, config, fetchImpl, (event) =>
-          pushStep(record, event)
+        verifyClaim(
+          { input, sourceType: body.sourceType, claims: callerClaims, evidencePack: Array.isArray(body.evidence) ? body.evidence : null, meta },
+          config,
+          fetchImpl,
+          (event) => pushStep(record, event)
         )
           .then((result) => {
             record.result = result;
@@ -600,6 +680,7 @@ export function createClaimAgentServer({ port } = {}) {
         id: record.id,
         createdAt: record.createdAt,
         input: record.input,
+        meta: record.meta ?? null,
         steps: record.steps,
         result: record.result,
         done: record.done

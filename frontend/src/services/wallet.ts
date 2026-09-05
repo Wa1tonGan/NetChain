@@ -25,7 +25,7 @@ export interface ChainBalance {
   online: boolean;
 }
 
-const RPC = "/suirpc";
+const RPC_ENDPOINTS = ["/suirpc", "/suirpc-backup", "https://testnet.sui.rpcpool.com"];
 
 const SUI_TYPE = "0x2::sui::SUI";
 const STABLE_COINS: { match: RegExp; label: string; decimals: number }[] = [
@@ -35,24 +35,32 @@ const STABLE_COINS: { match: RegExp; label: string; decimals: number }[] = [
 const SUI_DECIMALS = 9;
 
 async function rpc(method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(8000),
-  });
+  let lastErr: unknown;
+  for (const endpoint of RPC_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(8000),
+      });
 
-  if (!res.ok) {
-    throw new Error(`sui rpc ${method} → ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`sui rpc ${method} → ${res.status}`);
+      }
+
+      const body = await res.json();
+
+      if (body.error) {
+        throw new Error(body.error.message ?? "rpc error");
+      }
+
+      return body.result;
+    } catch (err) {
+      lastErr = err;
+    }
   }
-
-  const body = await res.json();
-
-  if (body.error) {
-    throw new Error(body.error.message ?? "rpc error");
-  }
-
-  return body.result;
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "RPC request failed"));
 }
 
 interface BalanceEntry {
@@ -152,16 +160,167 @@ const KIND_BY_FN: Record<string, string> = {
   deposit: "Top up",
 };
 
-async function rawRpc(method: string, params: unknown[]): Promise<any> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = await res.json();
-  if (body.error) throw new Error(body.error.message ?? "rpc error");
-  return body.result;
+interface SuiTxResponseBlock {
+  digest: string;
+  timestampMs?: string | number | null;
+  transaction?: {
+    data?: {
+      sender?: string;
+      transaction?: {
+        inputs?: Array<{
+          type?: string;
+          typeArg?: { balance?: string };
+          reservation?: { maxAmountU64?: string };
+          value?: unknown;
+          valueType?: string;
+        }>;
+        transactions?: Array<{
+          MoveCall?: {
+            package?: string;
+            module?: string;
+            function?: string;
+          };
+        }>;
+      };
+    };
+  };
+  events?: Array<{
+    type?: string;
+    parsedJson?: Record<string, unknown>;
+  }>;
+  balanceChanges?: Array<{
+    coinType?: string;
+    amount?: string | number;
+    owner?: Record<string, unknown>;
+  }>;
+  effects?: {
+    gasUsed?: {
+      computationCost?: string | number;
+      storageCost?: string | number;
+      storageRebate?: string | number;
+    };
+  };
+}
+
+interface CachedTxInfo {
+  amountUsdc: number | null;
+  gasSui: number | null;
+  kind: string;
+  fn: string;
+  tsMs: number | null;
+}
+
+const TX_CACHE_STORAGE_KEY = "netchain_tx_cache_v1";
+
+function loadTxCache(): Map<string, CachedTxInfo> {
+  const map = new Map<string, CachedTxInfo>();
+  if (typeof window === "undefined" || !window.sessionStorage) return map;
+  try {
+    const raw = window.sessionStorage.getItem(TX_CACHE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, CachedTxInfo>;
+      for (const [digest, info] of Object.entries(parsed)) {
+        if (info && info.amountUsdc != null) {
+          map.set(digest, info);
+        }
+      }
+    }
+  } catch {
+    // sessionStorage unavailable or private browsing mode
+  }
+  return map;
+}
+
+function saveTxCache(cache: Map<string, CachedTxInfo>): void {
+  if (typeof window === "undefined" || !window.sessionStorage) return;
+  try {
+    const obj: Record<string, CachedTxInfo> = {};
+    for (const [digest, info] of cache.entries()) {
+      if (info && info.amountUsdc != null) {
+        obj[digest] = info;
+      }
+    }
+    window.sessionStorage.setItem(TX_CACHE_STORAGE_KEY, JSON.stringify(obj));
+  } catch {
+    // storage quota or private browsing mode
+  }
+}
+
+const txDigestCache = loadTxCache();
+
+interface ResolverGate<T> {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function delay(ms: number): Promise<void> {
+  const p = Promise as unknown as { withResolvers?: <T>() => ResolverGate<T> };
+  if (typeof p.withResolvers === "function") {
+    const { promise, resolve } = p.withResolvers<void>();
+    setTimeout(resolve, ms);
+    return promise;
+  }
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function rawRpc(method: string, params: unknown[]): Promise<unknown> {
+  let lastErr: unknown;
+  for (const endpoint of RPC_ENDPOINTS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let isIndexerLag = false;
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        if (!res.ok) {
+          if ((res.status === 429 || res.status >= 500) && attempt === 0) {
+            await delay(1000);
+            continue;
+          }
+          throw new Error(`sui rawRpc ${method} on ${endpoint} → HTTP ${res.status}`);
+        }
+
+        const body = (await res.json()) as { error?: { message?: string }; result?: unknown };
+        if (body.error) {
+          const errMsg = body.error.message ?? `sui rawRpc ${method} error`;
+          const lower = errMsg.toLowerCase();
+          if (lower.includes("effect is empty") || (lower.includes("balance") && lower.includes("effect"))) {
+            isIndexerLag = true;
+          }
+          throw new Error(errMsg);
+        }
+        return body.result;
+      } catch (err) {
+        lastErr = err;
+        if (isIndexerLag) {
+          // Healthy RPC node definitively reported transient indexer lag.
+          // Fast-fail so caller can fall back immediately rather than wasting seconds.
+          throw err;
+        }
+        if (attempt === 0) {
+          await delay(1000);
+          continue;
+        }
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? "RPC request failed"));
+}
+
+/** Translates transient JSON-RPC indexer errors (e.g. empty effects before derivation)
+ *  into clear, user-friendly messages for the UI. */
+export function sanitizeRpcError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  const lower = msg.toLowerCase();
+  if (lower.includes("effect is empty") || (lower.includes("balance") && lower.includes("effect"))) {
+    return "Recent transactions are finalizing on Sui testnet";
+  }
+  return msg;
 }
 
 /** Full on-chain history for one address: everything it SENT plus everything
@@ -170,6 +329,8 @@ async function rawRpc(method: string, params: unknown[]): Promise<any> {
 export async function fetchAddressHistory(address: string, limit = 15): Promise<OnChainTx[]> {
   const lower = address.toLowerCase();
   const digests = new Set<string>();
+  let successCount = 0;
+  let lastQueryError: unknown = null;
 
   for (const filter of [{ FromAddress: address }, { ToAddress: address }]) {
     try {
@@ -177,48 +338,166 @@ export async function fetchAddressHistory(address: string, limit = 15): Promise<
         data?: { digest: string }[];
       };
       for (const t of page?.data ?? []) digests.add(t.digest);
-    } catch {
+      successCount++;
+    } catch (e) {
+      lastQueryError = e;
       // one direction failing shouldn't hide the other
     }
   }
+
+  // If neither direction could be queried, do not claim empty history.
+  if (successCount === 0) {
+    const rawMsg = lastQueryError instanceof Error ? lastQueryError.message : String(lastQueryError);
+    const friendly = sanitizeRpcError(lastQueryError);
+    if (friendly !== rawMsg) {
+      throw new Error(friendly);
+    }
+    throw (
+      lastQueryError instanceof Error
+        ? lastQueryError
+        : new Error(`Failed to query transactions for ${address}: ${rawMsg}`)
+    );
+  }
+
   if (digests.size === 0) return [];
 
   const list = [...digests];
   const out: OnChainTx[] = [];
+  let blockFetchError: unknown = null;
+
   for (let i = 0; i < list.length; i += 10) {
+    const batchDigests = list.slice(i, i + 10);
     try {
-      const blocks = (await rawRpc("sui_multiGetTransactionBlocks", [
-        list.slice(i, i + 10),
-        { showInput: true, showBalanceChanges: true, showEffects: true },
-      ])) as any[];
+      let blocks: SuiTxResponseBlock[] | null | undefined;
+      try {
+        blocks = (await rawRpc("sui_multiGetTransactionBlocks", [
+          batchDigests,
+          { showInput: true, showBalanceChanges: true, showEffects: true, showEvents: true },
+        ])) as SuiTxResponseBlock[] | null | undefined;
+      } catch (batchErr) {
+        const msg = batchErr instanceof Error ? batchErr.message : String(batchErr ?? "");
+        const lowerMsg = msg.toLowerCase();
+        if (lowerMsg.includes("effect is empty") || lowerMsg.includes("balance")) {
+          // Transient Sui indexer lag: retry batch with events & inputs so
+          // transactions still load immediately with function, gas, ts, amounts, and digest.
+          blocks = (await rawRpc("sui_multiGetTransactionBlocks", [
+            batchDigests,
+            { showInput: true, showEffects: true, showEvents: true },
+          ])) as SuiTxResponseBlock[] | null | undefined;
+        } else {
+          throw batchErr;
+        }
+      }
       for (const b of blocks ?? []) {
-        const calls: { MoveCall?: { package?: string; function?: string } }[] =
-          b.transaction?.data?.transaction?.transactions ?? [];
+        const calls = b.transaction?.data?.transaction?.transactions ?? [];
         // publicnode returns MoveCall as {package, module, function} — no
         // single `target` string.
         const escrowCall = calls
           .map((c) => c.MoveCall ?? {})
           .find((m) => (m.package ?? "").toLowerCase().startsWith(ESCROW_PKG_PREFIX));
-        const fn = escrowCall?.function ?? null;
+        let fn = escrowCall?.function ?? null;
+        let amountUsdc: number | null = null;
+
+        // 1. Direct USDC balance changes
         const usdcChange = (b.balanceChanges ?? []).find(
-          (c: any) =>
+          (c) =>
             String(c.coinType ?? "").toLowerCase().endsWith("::usdc::usdc") &&
             Object.values(c.owner ?? {}).some((v) => String(v).toLowerCase() === lower)
         );
+        if (usdcChange) {
+          amountUsdc = Number(usdcChange.amount) / 10 ** USDC_DECIMALS;
+        }
+
+        // 2. Escrow events fallback (emitted during execution, resilient to pruned/lagging object effects)
+        if (amountUsdc === null) {
+          const escrowEvent = (b.events ?? []).find(
+            (e) => String(e.type ?? "").toLowerCase().includes("::escrow::") && e.parsedJson?.amount != null
+          );
+          if (escrowEvent) {
+            const rawAmt = Number(escrowEvent.parsedJson?.amount) / 10 ** USDC_DECIMALS;
+            const evType = String(escrowEvent.type).toLowerCase();
+            if (evType.endsWith("::escrowfunded") || evType.endsWith("::committed")) {
+              amountUsdc = -rawAmt; // Outgoing/locked funds
+            } else if (evType.endsWith("::refunded") || evType.endsWith("::reclaimed")) {
+              amountUsdc = rawAmt; // Incoming refund
+            } else {
+              amountUsdc = rawAmt;
+            }
+          }
+        }
+
+        // 3. PTB fundsWithdrawal inputs fallback (gasless balance withdrawal in PTB)
+        if (amountUsdc === null) {
+          const inputs = b.transaction?.data?.transaction?.inputs ?? [];
+          const withdrawal = inputs.find(
+            (inp) =>
+              inp.type === "fundsWithdrawal" &&
+              String(inp.typeArg?.balance ?? "").toLowerCase().endsWith("::usdc::usdc")
+          );
+          if (withdrawal && withdrawal.reservation?.maxAmountU64) {
+            const rawAmt = Number(withdrawal.reservation.maxAmountU64) / 10 ** USDC_DECIMALS;
+            const sender = String(b.transaction?.data?.sender ?? "").toLowerCase();
+            amountUsdc = sender === lower ? -rawAmt : rawAmt;
+          }
+        }
+
+        // 4. Cache fallback (previously derived immutable on-chain amount)
+        const cached = txDigestCache.get(b.digest);
+        if (amountUsdc === null && cached?.amountUsdc != null) {
+          amountUsdc = cached.amountUsdc;
+        }
+
         const gas = b.effects?.gasUsed;
+        let gasSui = gas
+          ? (Number(gas.computationCost) + Number(gas.storageCost) - Number(gas.storageRebate)) / 1e9
+          : null;
+        if (gasSui === null && cached?.gasSui != null) {
+          gasSui = cached.gasSui;
+        }
+
+        let kind = fn ? (KIND_BY_FN[fn] ?? `escrow::${fn}`) : "Transfer";
+        if (kind === "Transfer" && cached?.kind && cached.kind !== "Transfer") {
+          kind = cached.kind;
+          fn = cached.fn;
+        }
+
+        const tsMs = b.timestampMs ? Number(b.timestampMs) : (cached?.tsMs ?? null);
+
+        // Store in cache once amountUsdc is resolved
+        if (amountUsdc !== null) {
+          txDigestCache.set(b.digest, { amountUsdc, gasSui, kind, fn: fn ?? "transfer", tsMs });
+        }
+
         out.push({
           digest: b.digest,
-          tsMs: b.timestampMs ? Number(b.timestampMs) : null,
-          kind: fn ? (KIND_BY_FN[fn] ?? `escrow::${fn}`) : "Transfer",
+          tsMs,
+          kind,
           fn: fn ?? "transfer",
-          amountUsdc: usdcChange ? Number(usdcChange.amount) / 10 ** USDC_DECIMALS : null,
-          gasSui: gas ? (Number(gas.computationCost) + Number(gas.storageCost) - Number(gas.storageRebate)) / 1e9 : null,
+          amountUsdc,
+          gasSui,
         });
       }
-    } catch {
-      // skip a failed batch — show what we have
+    } catch (e) {
+      blockFetchError = e;
+      // skip a failed batch if we already have some data
     }
   }
+
+  // If there were digests but all block requests failed, rethrow instead of returning []
+  if (list.length > 0 && out.length === 0 && blockFetchError) {
+    const rawMsg = blockFetchError instanceof Error ? blockFetchError.message : String(blockFetchError);
+    const friendly = sanitizeRpcError(blockFetchError);
+    if (friendly !== rawMsg) {
+      throw new Error(friendly);
+    }
+    throw (
+      blockFetchError instanceof Error
+        ? blockFetchError
+        : new Error(`Failed to get transaction blocks: ${rawMsg}`)
+    );
+  }
+
+  saveTxCache(txDigestCache);
   return out.sort((a, b) => (b.tsMs ?? 0) - (a.tsMs ?? 0));
 }
 

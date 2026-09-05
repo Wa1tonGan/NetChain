@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { GATEWAY_URL, SCENARIOS, TRUST_URL } from "../services/live";
-
+import Icon from "../components/Icon";
 function LiveBackendCard({ running }: { running: boolean }) {
   const startLiveRecovery = useAppStore((s) => s.startLiveRecovery);
   const [scenario, setScenario] = useState("s2");
@@ -120,7 +120,7 @@ export default function DevPage() {
     <div className="app-col">
       <div className="topbar full">
         <div className="logo">
-          <span className="dot">●</span> NetChain
+          <span className="dot" /> NetChain
           <span className="tagline">Scenario Matrix</span>
         </div>
         <span className="chip sui">Hackathon Showcase</span>
@@ -247,7 +247,9 @@ export default function DevPage() {
 
             <div className="card" style={{ background: "var(--bg-subtle)", marginTop: 14 }}>
               <div className="pad">
-                <div style={{ fontWeight: 800, fontSize: 13 }}>💡 Judge Evaluation Notes</div>
+                <div style={{ fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="lightbulb" size={15} color="var(--amber-ink)" /> Judge Evaluation Notes
+                </div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.6 }}>
                   • <b>Time-to-Recovery</b>: Measured live on every scenario.
                   <br />• <b>A2A Independence</b>: Parallel provider queries to NusaNet, KilatLink, and OrbitSat.

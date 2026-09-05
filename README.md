@@ -256,6 +256,55 @@ npm run generate:fixtures         # regenerate signed fixtures for Person 3
 Gonka ranking/pitch enrichment is read from `.env` (see `.env.example`
 naming); without a key everything runs on the deterministic path.
 
+## Gonka Router integration (AI for Society track)
+
+All AI reasoning in NetChain runs on the Gonka Network via the official
+inference gateway (`GONKA_BASE_URL=https://api.gonkarouter.io/v1` in
+`.env`). Two independent consumers share the same integration pattern —
+every configured model in `GONKA_MODELS` answers independently, answers
+are kept raw with their **Gonka Request ID** (`x-request-id` response
+header, falling back to the response body `id`), and slow/failed models
+are honestly reported, never hidden:
+
+| Consumer | File | Role | Multi-model consensus |
+| --- | --- | --- | --- |
+| Gonka Ranker | `src/a2a/gonkaRanker.js` | Borda-count ranking of provider quotes at market close (votes within `GONKA_RANKING_BUDGET_MS`; ties fall back to the deterministic order) | ✅ every model votes |
+| Truth Agent | `src/a2a/claimAgent.js` | SLA claim verification: claim extraction → live-data pass → parallel per-model verdicts → consensus score 0–100 + confidence band | ✅ mean score, disagreement widens the band |
+
+### Truth Agent as the rescue market's audit layer
+
+Beyond the public fact-checking UI (`/truth` — paste a URL, tweet or text),
+the Truth Agent audits every settlement: after the deterministic
+`checkDelivery()` verdict (the **only** money-path arbiter — the audit
+never blocks or changes settlement), `src/sui/truthLink.js` posts the
+provider's **signed SLA claims** (promised Mbps, claimed reliability /
+latency / activation time) plus the session's connection-log and probe
+evidence to `POST /claims` on the Truth Agent (structured input path).
+Every configured Gonka model judges the claims against that evidence;
+the result lands on the ledger as a `CLAIM_VERIFIED` event carrying per-
+model verdicts, scores, reasoning and **Gonka Request IDs**, and renders
+on the Activity detail page's Truth Agent audit card (with a deep link to
+`/truth?run=<claimRunId>` for the full trace).
+
+### Track checklist coverage
+
+- **Claim Extraction** — `/truth` accepts URL / tweet / text; the audit
+  path extracts structured claims from signed offers.
+- **Decentralized Verification** — Gonka-hosted models judge against
+  live web data (`GONKA_VERIFY_WEB=true`: page snapshot + DuckDuckGo
+  snippets) or the session's probe evidence (internal knowledge base).
+- **Truth Score & Reasoning** — 0–100 consensus score, per-model scores
+  and ≤180-char reasoning each, confidence band widened on disagreement.
+- **Transparency UI** — every inference step carries its Gonka Request
+  ID: `/truth` trace, the per-model table on the audit card, and the
+  ledger event (`events/reliability-events.jsonl`).
+
+### Env vars (see `.env.example`)
+
+`GONKA_BASE_URL` · `GONKA_API_KEY` · `GONKA_MODELS` (≥2 models for
+consensus) · `GONKA_VERIFY_WEB` · `GONKA_VERIFY_BUDGET_MS` ·
+`TRUTH_AGENT_URL` · `TRUTH_LINK_BUDGET_MS`.
+
 ## Architecture
 
 ```

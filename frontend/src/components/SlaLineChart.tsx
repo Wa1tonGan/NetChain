@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StrengthBars } from "./RecoveryOverlay";
-
+import Icon from "./Icon";
 export interface SlaPoint {
   timeLabel: string;
   minOffset: number;
@@ -112,7 +112,7 @@ export default function SlaLineChart({
         </div>
 
         <button className="btn sm subtle" onClick={() => setZoomModalOpen(true)}>
-          🔍 Zoom & Inspect Audit
+          <Icon name="search" size={14} style={{ marginRight: 6 }} /> Zoom & Inspect Audit
         </button>
       </div>
 
@@ -205,9 +205,15 @@ export default function SlaLineChart({
               pointerEvents: "none",
             }}
           >
-            <div>⏱ {hoveredPoint.timeLabel}: <strong>{hoveredPoint.mbps} Mbps</strong></div>
-            <div style={{ fontSize: 10.5, color: "#94a3b8" }}>
-              Latency: {hoveredPoint.latencyMs}ms · {hoveredPoint.passed ? "SLA Pass ✓" : "Under tolerance ⚠️"}
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <Icon name="clock" size={12} /> {hoveredPoint.timeLabel}: <strong>{hoveredPoint.mbps} Mbps</strong>
+            </div>
+            <div style={{ fontSize: 10.5, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+              Latency: {hoveredPoint.latencyMs}ms · {hoveredPoint.passed ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>SLA Pass <Icon name="check" size={11} /></span>
+              ) : (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>Under tolerance <Icon name="warning" size={11} /></span>
+              )}
             </div>
           </div>
         )}
@@ -228,8 +234,8 @@ export default function SlaLineChart({
           <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
             <div className="modal-head">
               <h3>SLA Network Strength Audit Inspection</h3>
-              <button className="btn link" onClick={() => setZoomModalOpen(false)} style={{ fontSize: 18, padding: 0 }}>
-                ✕
+              <button className="btn link" onClick={() => setZoomModalOpen(false)} aria-label="Close" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+                <Icon name="close" size={16} />
               </button>
             </div>
 
@@ -261,8 +267,12 @@ export default function SlaLineChart({
               </div>
               <div className="rg">
                 <div className="rk">Audit Verdict</div>
-                <div className={`rv ${compliancePct >= 95 ? "ok" : "warn"}`}>
-                  {compliancePct >= 95 ? "SLA Verified ✓" : "Penalty Refund Triggered ⚠️"}
+                <div className={`rv ${compliancePct >= 95 ? "ok" : "warn"}`} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  {compliancePct >= 95 ? (
+                    <>SLA Verified <Icon name="check" size={12} /></>
+                  ) : (
+                    <>Penalty Refund Triggered <Icon name="warning" size={12} /></>
+                  )}
                 </div>
               </div>
             </div>

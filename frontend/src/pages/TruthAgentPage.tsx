@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
+import Icon from "../components/Icon";
 // Truth Agent page — claim verification through Gonka multi-model inference.
 // Track checklist served here:
 //   Claim Extraction        → step "extract" (claims normalized from input)
@@ -130,7 +130,7 @@ function Pipeline({ events }: { events: StepEvent[] }) {
                   />
                 )}
                 {s.label}
-                {st === "done" && <span style={{ fontWeight: 800 }}>✓</span>}
+                {st === "done" && <Icon name="check" size={12} />}
               </div>
               {i < PIPE_STEPS.length - 1 && (
                 <span style={{ color: "var(--faint)", fontSize: 12 }}>→</span>
@@ -282,7 +282,7 @@ function ChecklistPanel({ events, active }: { events: StepEvent[]; active: boole
                     animation: on ? "fadeIn .3s ease" : undefined,
                   }}
                 >
-                  ✓
+                  <Icon name="check" size={10} />
                 </span>
                 <b style={{ fontWeight: 700, color: on ? "var(--ink)" : "var(--muted)" }}>{c.label}</b>
                 <span style={{ color: "var(--faint)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -394,6 +394,16 @@ export default function TruthAgentPage() {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Deep link (/truth?run=CLAIM-xxxx — from the Activity detail audit card):
+  // show that run instead of the newest one. Best-effort — the claim agent
+  // keeps records in memory only, so a restart makes the link 404; the
+  // ledger event on the detail card stays the durable source of truth.
+  useEffect(() => {
+    const runId = new URLSearchParams(window.location.search).get("run");
+    if (runId) void viewRun(runId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -641,8 +651,8 @@ export default function TruthAgentPage() {
             onClick={() => setInputOpen(!inputOpen)}
             disabled={running}
           >
-            <span>{inputOpen ? "▼" : "▶"}</span>
-            Run a new verification (URL, tweet, or text snippet)
+            <Icon name={inputOpen ? "chevron-down" : "chevron-right"} size={13} />
+            <span>Run a new verification (URL, tweet, or text snippet)</span>
           </button>
           {inputOpen && (
             <div style={{ marginTop: 10 }}>

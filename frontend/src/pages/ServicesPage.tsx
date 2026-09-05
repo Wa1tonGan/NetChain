@@ -7,7 +7,7 @@ import {
   type FailureMode,
   type ProviderMarketEntry,
 } from "../services/market";
-
+import Icon from "../components/Icon";
 const PRIORITIES: Priority[] = ["P1", "P2", "P3", "P4", "P5"];
 
 const PRIORITY_META: Record<Priority, { label: string; color: string; bg: string }> = {
@@ -63,8 +63,8 @@ function ServiceModal({
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{service ? "Edit Service Policy" : "Add Enterprise Service"}</h3>
-          <button className="btn link" onClick={onClose} style={{ fontSize: 18, padding: 0 }}>
-            ✕
+          <button className="btn link" onClick={onClose} aria-label="Close" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+            <Icon name="close" size={16} />
           </button>
         </div>
 
@@ -335,7 +335,10 @@ export default function ServicesPage() {
 
           {isThrottledDemo && (
             <div className="money-state" style={{ marginTop: 12 }}>
-              ⚠️ Deficit detected: P5 Guest Wi-Fi throttled to 0 Mbps to preserve P1 POS / P1 CCTV.
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Icon name="warning" size={14} color="var(--amber-ink)" />
+                <span>Deficit detected: P5 Guest Wi-Fi throttled to 0 Mbps to preserve P1 POS / P1 CCTV.</span>
+              </span>
               <button
                 className="btn link"
                 style={{ marginLeft: "auto", fontSize: 12 }}

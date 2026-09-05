@@ -4,7 +4,9 @@ import { rm } from "../services/pricing";
 import { fmtDate } from "../services/format";
 import SlaLineChart from "../components/SlaLineChart";
 import DecisionCard from "../components/DecisionCard";
+import ClaimAuditCard from "../components/ClaimAuditCard";
 import AgentSteps, { stepsForStage } from "../components/AgentSteps";
+import Icon from "../components/Icon";
 import type { ActivityItem, RecoveryRecord } from "../services/types";
 
 function outcomeChip(outcome: ActivityItem["type"]) {
@@ -41,7 +43,7 @@ function Stage({
   const [open, setOpen] = useState(Boolean(defaultOpen));
   return (
     <div className={`stage${open ? " open" : ""}`}>
-      <div className={`stage-dot${dot ? " " + dot : ""}`}>{dot === "pen" ? "!" : dot === "ref" ? "↩" : "✓"}</div>
+      <div className={`stage-dot${dot ? " " + dot : ""}`}>{dot === "pen" ? <Icon name="warning" size={11} /> : dot === "ref" ? <Icon name="refund" size={11} /> : <Icon name="check" size={11} />}</div>
       <div className="stage-card">
         <button className="stage-head" onClick={() => setOpen(!open)}>
           <div>
@@ -71,6 +73,9 @@ function IncidentFlow({ record }: { record: RecoveryRecord }) {
   const capCharge = Math.max(0, +(r.charged - r.fee).toFixed(2));
   const providerNet = isFailed ? 0 : Math.max(0, +(capCharge - r.refund).toFixed(2));
   const totalPct = capCharge > 0 ? Math.round((providerNet / capCharge) * 100) : 0;
+  const claimAudits = useAppStore((s) => s.claimAudits);
+  const gatewayId = r.nonce?.split(":")[0];
+  const audit = (gatewayId ? claimAudits[gatewayId] : undefined) ?? claimAudits[r.id];
 
   return (
     <div>
@@ -204,7 +209,7 @@ function IncidentFlow({ record }: { record: RecoveryRecord }) {
                 <span>{r.commitTx ?? r.tx}</span>
               </div>
               <div className={`r-stamp${isPenalty ? " amber" : ""}`}>
-                {isPenalty ? "PENALTY APPLIED" : "AUTO-RELEASED ✓"}
+                {isPenalty ? "PENALTY APPLIED" : <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>AUTO-RELEASED <Icon name="check" size={12} /></span>}
               </div>
               <div className="r-foot">
                 Nobody clicked “pay” — the contract released funds
@@ -221,6 +226,13 @@ function IncidentFlow({ record }: { record: RecoveryRecord }) {
       {r.outcome !== "failed" && (
         <div style={{ marginTop: 18 }}>
           <DecisionCard cap={r.cap} cost={r.cost} budget={r.budget} provider={r.provider} comparison={r.comparison} votes={r.consensus} />
+        </div>
+      )}
+
+      {/* Truth Agent SLA audit */}
+      {audit && (
+        <div style={{ marginTop: 18 }}>
+          <ClaimAuditCard audit={audit} />
         </div>
       )}
     </div>

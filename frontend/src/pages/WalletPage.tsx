@@ -4,7 +4,7 @@ import { rm } from "../services/pricing";
 import { chainBalanceText, useChainBalance } from "../hooks/useChainBalance";
 import WalletConnectModal from "../components/WalletConnectModal";
 import TransactionHistory from "../components/TransactionHistory";
-
+import Icon from "../components/Icon";
 export default function WalletPage() {
   const s = useAppStore();
   const walletAddress = s.zkLogin?.address ?? s.walletAddr;
@@ -34,7 +34,7 @@ export default function WalletPage() {
           </p>
         </div>
         <button className="btn sm subtle" onClick={() => setConnectModalOpen(true)}>
-          ⚙ Configure Wallet
+          <Icon name="gear" size={14} style={{ marginRight: 6 }} /> Configure Wallet
         </button>
       </div>
 

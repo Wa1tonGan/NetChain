@@ -1,6 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
 import { rm, rm0 } from "../services/pricing";
-
+import Icon from "./Icon";
 export default function ProtectionModal({ onClose }: { onClose: () => void }) {
   const s = useAppStore();
 
@@ -12,8 +12,8 @@ export default function ProtectionModal({ onClose }: { onClose: () => void }) {
       <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-head">
           <h3>Protection Settings</h3>
-          <button className="btn link" onClick={onClose} style={{ fontSize: 18, padding: 0 }}>
-            ✕
+          <button className="btn link" onClick={onClose} aria-label="Close" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+            <Icon name="close" size={16} />
           </button>
         </div>
 

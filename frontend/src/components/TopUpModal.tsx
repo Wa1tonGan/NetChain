@@ -2,7 +2,7 @@ import { useState } from "react";
 import { depositToEscrowPool } from "../services/live";
 import { fetchEscrowPoolBalance } from "../services/wallet";
 import { useAppStore } from "../store/useAppStore";
-
+import Icon from "./Icon";
 /* Top-up modal: pick an amount (quick chips or custom), ONE signature — the
    signing method adapts to the login: wallet session → Slush approves;
    zk session → the ephemeral key + zk proof signs (no popup, needs a fresh
@@ -48,8 +48,8 @@ export default function TopUpModal({
       <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
         <div className="modal-head">
           <h3>Top up escrow pool</h3>
-          <button className="btn link" onClick={onClose} style={{ fontSize: 18, padding: 0 }}>
-            ✕
+          <button className="btn link" onClick={onClose} aria-label="Close" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: 4 }}>
+            <Icon name="close" size={16} />
           </button>
         </div>
 

@@ -9,6 +9,7 @@ import { loadConfig, makeClient, buyerKeypair, platformKeypair, commitVoucher, s
 import { sendCoin } from "./gasless.js";
 import { buildVoucher, VoucherError } from "./voucher.js";
 import { checkDelivery, connectionLog, connectionLogDigest } from "./verify.js";
+import { buildSlaClaimPayload, runSlaAudit } from "./truthLink.js";
 
 export class TrustService {
   constructor({ ledger = new EventLedger(), config = loadConfig(), paths = defaultPaths() } = {}) {
@@ -84,7 +85,17 @@ export class TrustService {
         voucherDigest: Buffer.from(voucher.voucherDigest).toString("hex"),
         provider: voucher.providerId,
         providerAddress: voucher.providerAddress,
-        expiryMs: voucher.expiryMs
+        expiryMs: voucher.expiryMs,
+        capacityMbps: selectedOffer?.selectedProvider?.capacityMbps ?? null,
+        providerClaims: selectedOffer?.selectedProvider
+          ? {
+              reliabilityScore: selectedOffer.selectedProvider.reliabilityScore,
+              latencyMs: selectedOffer.selectedProvider.latencyMs,
+              packetLossPercent: selectedOffer.selectedProvider.packetLossPercent,
+              expectedActivationTimeMs: selectedOffer.selectedProvider.expectedActivationTimeMs
+            }
+          : null,
+        timing: { tDetectMs: selectedOffer?.timing?.tDetect ?? null }
       }
     });
     return { status: "COMMITTED", duplicate: false, idempotent, txDigest: result.digest, voucher };
@@ -287,7 +298,9 @@ export class TrustService {
     deliveredSamples,
     sessionStart = null,
     sessionEnd = Date.now(),
-    tolerancePercent = undefined
+    tolerancePercent = undefined,
+    providerClaims = null,
+    timing = null
   }) {
     const commitments = this.ledger.byIncident(incidentId);
     const commitment = commitments.find((c) => c.status === "COMMITTED");
@@ -333,6 +346,47 @@ export class TrustService {
         shortfallPct: check.shortfallPct
       }
     });
+
+    // Truth Agent SLA audit (Gonka multi-model) — independent layer, NEVER
+    // load-bearing for money: fire-and-forget so settlement is not delayed,
+    // result lands in the ledger as CLAIM_VERIFIED when the audit completes.
+    // Failure here degrades to a FAILED/TIMEOUT audit event, never an error.
+    void runSlaAudit(
+      buildSlaClaimPayload({
+        incidentId,
+        nonce: commitment.nonce,
+        brand: commitment.provider ?? null,
+        promisedCapacity,
+        deliveredSamples,
+        check,
+        providerClaims,
+        timing
+      })
+    )
+      .then((audit) =>
+        this.ledger.emit("CLAIM_VERIFIED", {
+          incidentId,
+          nonce: commitment.nonce,
+          data: {
+            claimRunId: audit.claimRunId ?? null,
+            status: audit.status,
+            verdict: audit.verdict ?? null,
+            score: audit.score ?? null,
+            confidenceBand: audit.confidenceBand ?? null,
+            agree: audit.agree ?? null,
+            models: audit.models ?? [],
+            durationMs: audit.durationMs ?? null,
+            error: audit.error ?? null
+          }
+        })
+      )
+      .catch((err) => {
+        this.ledger.emit("CLAIM_VERIFIED", {
+          incidentId,
+          nonce: commitment.nonce,
+          data: { status: "FAILED", error: String(err?.message ?? err) }
+        });
+      });
     return { status: "VERIFIED", verdict: check.verdict, penaltyAmount, connectionLogHash, connectionLog: log, txDigest: result.digest };
   }
 
@@ -361,6 +415,62 @@ export class TrustService {
         }
       });
       await this.postSettlement(incidentId, "SETTLED", commitment.nonce, result.digest);
+
+      // Truth Agent SLA audit: if verifyDelivery was not called first (e.g.
+      // direct browser recovery flow), fire the multi-model audit now so
+      // every settled incident receives its independent SLA audit card.
+      const alreadyAudited = this.ledger.eventsByIncident(incidentId).some((e) => e.type === "CLAIM_VERIFIED");
+      if (!alreadyAudited) {
+        const promisedCapacity = commitment.capacityMbps ?? recoveredCapacityMbps ?? 500;
+        const deliveredSamples = [recoveredCapacityMbps ?? promisedCapacity];
+        const check = {
+          verdict: "OK",
+          avgDeliveredMbps: deliveredSamples[0],
+          shortfallPct: 0,
+          penaltyPct: 0,
+          tolerancePercent: 10
+        };
+        const timing = {
+          tDetectMs: commitment.timing?.tDetectMs ?? null,
+          tRecoverMs: confirmedAtMs
+        };
+        void runSlaAudit(
+          buildSlaClaimPayload({
+            incidentId,
+            nonce: commitment.nonce,
+            brand: commitment.provider ?? null,
+            promisedCapacity,
+            deliveredSamples,
+            check,
+            providerClaims: commitment.providerClaims ?? null,
+            timing
+          })
+        )
+          .then((audit) =>
+            this.ledger.emit("CLAIM_VERIFIED", {
+              incidentId,
+              nonce: commitment.nonce,
+              data: {
+                claimRunId: audit.claimRunId ?? null,
+                status: audit.status,
+                verdict: audit.verdict ?? null,
+                score: audit.score ?? null,
+                confidenceBand: audit.confidenceBand ?? null,
+                agree: audit.agree ?? null,
+                models: audit.models ?? [],
+                durationMs: audit.durationMs ?? null,
+                error: audit.error ?? null
+              }
+            })
+          )
+          .catch((err) => {
+            this.ledger.emit("CLAIM_VERIFIED", {
+              incidentId,
+              nonce: commitment.nonce,
+              data: { status: "FAILED", error: String(err?.message ?? err) }
+            });
+          });
+      }
       return { status: "SETTLED", txDigest: result.digest, penaltyAmount };
     }
     if (status === "FAILED") {

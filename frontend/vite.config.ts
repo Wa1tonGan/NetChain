@@ -24,6 +24,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/suirpc/, ""),
       },
+      "/suirpc-backup": {
+        target: "https://testnet.sui.rpcpool.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/suirpc-backup/, ""),
+      },
     },
   },
 });

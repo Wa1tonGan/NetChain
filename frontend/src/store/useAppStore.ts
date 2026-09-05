@@ -27,16 +27,30 @@ import {
   TRUST_URL,
   GATEWAY_URL,
   type ChainRow,
+  type ClaimAudit,
   type ConsensusVote,
   type GatewayEvent,
   type SelectedOffer,
 } from "../services/live";
 import { walletCommitSelected } from "../services/live";
-
+import type { ExplorerType } from "../services/explorer";
 // Latest trust-layer ledger rows (real Sui tx digests) for the Activity feed.
 // Kept small; the chain SSE reconnects with backoff and tolerates downtime.
 let chainClosers: (() => void)[] = [];
 
+/** Ingest a CLAIM_VERIFIED ledger row into claimAudits (cap 20, newest kept). */
+function ingestClaimAudit(row: ChainRow) {
+  if (row.type !== "CLAIM_VERIFIED" || !row.incidentId) return;
+  const st = useAppStore.getState();
+  const next: Record<string, ClaimAudit> = { ...st.claimAudits };
+  const entries = Object.entries(next);
+  if (entries.length >= 20 && !(row.incidentId in next)) {
+    // drop the oldest entry (insertion order) to make room
+    delete next[entries[0][0]];
+  }
+  next[row.incidentId] = (row.data ?? {}) as unknown as ClaimAudit;
+  useAppStore.setState({ claimAudits: next });
+}
 function startChainFeed() {
   if (chainClosers.length > 0) return;
 
@@ -55,6 +69,7 @@ function startChainFeed() {
         .filter((e) => !existing.has(e.seq))
         .map((e) => ({ ...e, receivedAt: Date.now(), label: chainRowLabel(e) }))
         .reverse(); // ledger is oldest-first → newest on top
+      seeded.forEach(ingestClaimAudit);
       if (seeded.length === 0) return;
       useAppStore.setState({ chainRows: [...seeded, ...st.chainRows].slice(0, 50) });
     } catch {
@@ -66,6 +81,7 @@ function startChainFeed() {
     try {
       const closer = openChainStream((row: ChainRow) => {
         const st = useAppStore.getState();
+        ingestClaimAudit(row);
         useAppStore.setState({
           chainRows: [
             { ...row, receivedAt: Date.now(), label: chainRowLabel(row) },
@@ -74,8 +90,9 @@ function startChainFeed() {
         });
       });
       chainClosers.push(closer);
-    } catch {
       // EventSource constructor rarely throws; EventSource itself retries.
+    } catch {
+      // ignore — the SSE stream retries on its own.
     }
   };
 
@@ -152,7 +169,11 @@ interface AppState {
 
   // on-chain ledger rows (trust server SSE, real tx digests)
   chainRows: (ChainRow & { receivedAt?: number; label?: string })[];
+  // Truth Agent SLA audits keyed by incident (CLAIM_VERIFIED ledger rows).
+  claimAudits: Record<string, ClaimAudit>;
 
+  // explorer preference
+  preferredExplorer: ExplorerType;
   // actions — settings
   setAuto: (v: boolean) => void;
   setMaxPerRecovery: (v: number) => void;
@@ -163,7 +184,7 @@ interface AppState {
   recordTopUp: (amount: number, txDigest: string) => void;
   disclose: (key: string) => void;
   setZkLogin: (session: ZkLoginSession | null) => void;
-
+  setPreferredExplorer: (v: ExplorerType) => void;
   // actions — enterprise services
   saveService: (svc: Omit<ServiceItem, "id">, editId?: string) => void;
   removeService: (id: string) => void;
@@ -229,6 +250,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   monthlyLimit: 100,
   minSpeed: 100,
   maxDuration: 60,
+  preferredExplorer:
+    (typeof localStorage !== "undefined" &&
+      (localStorage.getItem("netchain_explorer") as ExplorerType)) ||
+    "suivision",
   balance: 65,
   notif: true,
   agentSigning: true,
@@ -237,7 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   capacity: { primary: DEMAND_MBPS, current: DEMAND_MBPS, extra: 0, primaryDown: false },
   demand: DEMAND_MBPS,
-
+  claimAudits: {},
   month: { usage: 12.6, fees: 0.63 },
   locked: 0,
   recoverySeq: 1023,
@@ -311,7 +336,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       walletAddr: session ? session.address : "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
     });
   },
-
+  setPreferredExplorer: (v) => {
+    try {
+      localStorage.setItem("netchain_explorer", v);
+    } catch {}
+    set({ preferredExplorer: v });
+  },
   // ----- enterprise services -----
   saveService: (svc, editId) =>
     set((s) => ({

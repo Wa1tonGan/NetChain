@@ -251,18 +251,52 @@ button.row:hover { background: rgba(0,0,0,.02); }
 .seg button.on { background: var(--ink); color: #fff; font-weight: 700; }
 
 /* switch (prototype button style) */
-.switch { width:40px; height:24px; border-radius:9999px; background:rgba(0,0,0,.16); position:relative; cursor:pointer; border:0; flex:none; transition: background 220ms var(--spring); }
-.switch::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition: transform 260ms var(--spring); }
-.switch.on { background:var(--green); }
-.switch.on::after { transform: translateX(16px); }
-/* legacy checkbox switch (input + i) */
-label.switch { position: relative; display: inline-block; }
-label.switch input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
-label.switch i { position:absolute; inset:0; border-radius:999px; background:rgba(0,0,0,.16); transition: 220ms var(--spring); pointer-events:none; }
-label.switch i::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; background:#fff; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.25); transition: 260ms var(--spring); }
-label.switch input:checked + i { background: var(--green); }
-label.switch input:checked + i::after { transform: translateX(16px); }
+button.switch {
+  width: 44px; height: 26px; border-radius: 9999px;
+  background: rgba(0,0,0,.14); position: relative; cursor: pointer;
+  border: 0; flex: none; transition: background 220ms var(--spring);
+}
+button.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform 260ms var(--spring);
+}
+button.switch.on { background: var(--green); }
+button.switch.on::after { transform: translateX(18px); }
 
+/* checkbox switch (input + i inside label.switch) */
+label.switch {
+  position: relative; display: inline-block;
+  width: 44px; height: 26px; cursor: pointer; flex: none;
+}
+label.switch::after {
+  content: none !important; /* prevent any duplicate knob */
+}
+label.switch input {
+  position: absolute; opacity: 0; width: 100%; height: 100%;
+  margin: 0; cursor: pointer; z-index: 2;
+}
+label.switch i {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: rgba(0,0,0,.14); transition: background 220ms var(--spring);
+  pointer-events: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.04);
+}
+label.switch i::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 22px; height: 22px; background: #fff; border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,.2), 0 0 1px rgba(0,0,0,.15);
+  transition: transform 260ms var(--spring);
+}
+label.switch input:checked + i {
+  background: var(--green);
+}
+label.switch input:checked + i::after {
+  transform: translateX(18px);
+}
+label.switch input:focus-visible + i {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
 /* ================= overview — network strength now ================= */
 .hero { display:grid; grid-template-columns: 1.25fr 1fr; gap:16px; align-items:stretch; }
 @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
@@ -558,13 +592,29 @@ label.switch input:checked + i::after { transform: translateX(16px); }
 .step .ic { width:20px; height:20px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:10px; border:2px solid #d2d2d7; background:#fff; }
 .step.done { color:var(--ink); font-weight:600; }
 .step.done .ic { background:var(--green); border-color:var(--green); color:#fff; }
-.step.done .ic::after { content:"✓"; font-weight:800; }
+.step.done .ic::after {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") no-repeat center / contain;
+}
 .step.now { color:var(--blue); font-weight:700; }
 .step.now .ic { border-color:var(--blue); }
 .step.now .ic::after { content:""; width:6px; height:6px; border-radius:50%; background:var(--blue); }
 .step.fail { color:var(--red-ink); font-weight:700; }
 .step.fail .ic { background:#e04444; border-color:#e04444; color:#fff; }
-.step.fail .ic::after { content:"✕"; font-weight:800; }
+.step.fail .ic::after {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3C/svg%3E") no-repeat center / contain;
+}
 
 .timer { font-family:"SF Mono", ui-monospace, Menlo, monospace; font-size:34px; font-weight:800; color:var(--ink); }
 .timer .u { font-size:13px; color:var(--muted); font-weight:600; margin-left:4px; }

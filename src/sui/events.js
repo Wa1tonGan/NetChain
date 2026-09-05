@@ -41,6 +41,19 @@ export class EventLedger {
       }
       return;
     }
+    // Truth Agent audit result annotates the commitment the same way — no
+    // lifecycle change, just stash the latest audit for /v1/status/:incident.
+    if (event.type === "CLAIM_VERIFIED") {
+      const state = this.registry.get(event.nonce);
+      if (state) {
+        state.claimAudit = {
+          claimRunId: event.data?.claimRunId ?? null,
+          status: event.data?.status ?? null,
+          verdict: event.data?.verdict ?? null,
+          score: event.data?.score ?? null
+        };
+      }
+    }
     // Only lifecycle events create registry state — VERIFIED alone must not
     // make a nonce look committed (that would block the real commit).
     if (!["COMMITTED", "SETTLED", "REFUNDED", "RECLAIMED"].includes(event.type)) return;
@@ -57,6 +70,9 @@ export class EventLedger {
       state.platformFee = event.data?.platformFee ?? null;
       state.platformAddress = event.data?.platformAddress ?? null;
       state.voucherDigest = event.data?.voucherDigest ?? null;
+      state.capacityMbps = event.data?.capacityMbps ?? null;
+      state.providerClaims = event.data?.providerClaims ?? null;
+      state.timing = event.data?.timing ?? null;
     }
     if (event.type === "SETTLED") {
       state.status = "SETTLED";

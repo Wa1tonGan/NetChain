@@ -129,7 +129,16 @@ export async function processEnvelope(service, envelope, { log = () => {}, simul
   const verify = await service.verifyDelivery(incidentId, {
     promisedCapacity: promised,
     deliveredSamples,
-    sessionStart: selected.activation?.confirmedAtMs ?? null
+    sessionStart: selected.activation?.confirmedAtMs ?? null,
+    // Signed provider claims become the Truth Agent's audit subject; timing
+    // grounds the activation-duration claim (tRecoverMs − tDetectMs).
+    providerClaims: {
+      reliabilityScore: selected.selectedProvider.reliabilityScore,
+      latencyMs: selected.selectedProvider.latencyMs,
+      packetLossPercent: selected.selectedProvider.packetLossPercent,
+      expectedActivationTimeMs: selected.selectedProvider.expectedActivationTimeMs
+    },
+    timing: { tDetectMs: selected.timing?.tDetect ?? null, tRecoverMs: selected.activation?.confirmedAtMs ?? null }
   });
   log("info", `[integration] ${incidentId}: VERIFY verdict=${verify.verdict} penalty=${verify.penaltyAmount} tx=${verify.txDigest}`);
 
