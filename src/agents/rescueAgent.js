@@ -631,7 +631,7 @@ export function createRescueAgent({
       const consensus = await rankWithConsensus(
         deterministicOrder,
         request,
-        gonkaOverrides
+        { logger, ...gonkaOverrides }
       );
 
       if (consensus) {

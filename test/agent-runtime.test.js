@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 
 import { createProviderAgent } from "../src/agents/providerAgent.js";
 import { createRescueAgent } from "../src/agents/rescueAgent.js";
-import { rankWithConsensus } from "../src/a2a/gonkaRanker.js";
+import { rankWithConsensus, parseConfig as parseGonkaConfig } from "../src/a2a/gonkaRanker.js";
+import { parseConfig as parseClaimConfig } from "../src/a2a/claimAgent.js";
 import {
   verifyBuyerSignature,
   verifyOfferSignature
@@ -766,4 +767,27 @@ test("gonkaRanker: budget expiry, missing config and unusable answers all fall b
     }),
     null
   );
+});
+
+test("model configuration: claimAgent uses TRUTH_AGENT_MODELS with fallback to GONKA_MODELS; gonkaRanker uses GONKA_MODELS", () => {
+  const gonka = parseGonkaConfig({
+    env: { GONKA_MODELS: "m1,m2,m3", TRUTH_AGENT_MODELS: "t1,t2" }
+  });
+  assert.deepEqual(gonka.models, ["m1", "m2", "m3"]);
+
+  const claimDedicated = parseClaimConfig({
+    env: { GONKA_MODELS: "m1,m2,m3", TRUTH_AGENT_MODELS: "t1,t2" }
+  });
+  assert.deepEqual(claimDedicated.models, ["t1", "t2"]);
+
+  const claimFallback = parseClaimConfig({
+    env: { GONKA_MODELS: "m1,m2,m3" }
+  });
+  assert.deepEqual(claimFallback.models, ["m1", "m2", "m3"]);
+
+  const claimOverride = parseClaimConfig({
+    models: ["custom"],
+    env: { GONKA_MODELS: "m1,m2,m3", TRUTH_AGENT_MODELS: "t1,t2" }
+  });
+  assert.deepEqual(claimOverride.models, ["custom"]);
 });

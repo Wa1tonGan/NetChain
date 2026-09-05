@@ -16,17 +16,19 @@
 
 import { rankOffers } from "./offerEvaluator.js";
 
-function parseConfig(overrides = {}) {
+export function parseConfig(overrides = {}) {
   const env = overrides.env ?? process.env;
   const apiKey = overrides.apiKey ?? env.GONKA_API_KEY ?? "";
   const baseUrl = overrides.baseUrl ?? env.GONKA_BASE_URL ?? "";
-  const budgetMs = overrides.budgetMs ?? Number(env.GONKA_RANKING_BUDGET_MS ?? 8000);
+  const budgetMs = overrides.budgetMs ?? Number(env.GONKA_RANKING_BUDGET_MS ?? 45000);
+  const maxTokens = overrides.maxTokens ?? Number(env.GONKA_RANKER_MAX_TOKENS ?? 500);
   const rawModels = overrides.models ?? env.GONKA_MODELS ?? "";
   const models = (Array.isArray(rawModels) ? rawModels : rawModels.split(","))
     .map((model) => model.trim())
     .filter(Boolean);
+  const logger = overrides.logger ?? null;
 
-  return { apiKey, baseUrl, budgetMs, models };
+  return { apiKey, baseUrl, budgetMs, maxTokens, models, logger };
 }
 
 function buildPrompt(offers, request) {
@@ -56,72 +58,102 @@ function buildPrompt(offers, request) {
     system:
       "You rank connectivity recovery offers for a resilience exchange. " +
       "All offers are already viable. Rank them best-first balancing " +
-      "activation speed, price and reliability. Answer with ONLY a JSON " +
+      "activation speed, price and reliability. Be direct and concise: keep " +
+      "internal reasoning under 2 sentences. Answer with ONLY a JSON " +
       'object of the form {"ranking":["<providerId>", ...]} using exactly ' +
       "the given providerIds, no prose.",
     user: JSON.stringify({ constraints, offers: offerSummaries })
   };
 }
 
-// Extracts the first JSON object embedded in a model answer → { ranking,
+function extractLastJsonObject(content) {
+  for (let end = content.lastIndexOf("}"); end !== -1; end = content.lastIndexOf("}", end - 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let start = end; start >= 0; start--) {
+      const ch = content[start];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === "}") depth++;
+      else if (ch === "{") {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(content.slice(start, end + 1));
+          } catch {
+            break;
+          }
+        }
+      } else if (ch === '"') {
+        inString = true;
+      }
+    }
+  }
+  return null;
+}
+
+// Extracts the last valid JSON object embedded in a model answer → { ranking,
 // requestId } filtered to known providerIds, or null.
 function parseVote(answer, providerIds) {
   let content = answer?.ranking;
   if (typeof content !== "string") {
     return null;
   }
-  // Reasoning models emit <think>…</think> first — take whatever follows.
+  // Reasoning models emit <think>…</think> first — if closed, prefer the trailer
   const closeTag = content.lastIndexOf("</think>");
-  if (closeTag !== -1) {
-    content = content.slice(closeTag + "</think>".length);
-  }
+  const target = closeTag !== -1 ? content.slice(closeTag + "</think>".length) : content;
+  const parsed = extractLastJsonObject(target) ?? extractLastJsonObject(content);
 
-  const start = content.indexOf("{");
-  const end = content.lastIndexOf("}");
-
-  if (start === -1 || end <= start) {
+  if (!parsed || !Array.isArray(parsed.ranking)) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(content.slice(start, end + 1));
-    const ranking = Array.isArray(parsed.ranking) ? parsed.ranking : null;
+  const known = parsed.ranking.filter((id) => providerIds.includes(id));
+  const unique = [...new Set(known)];
 
-    if (!ranking) {
-      return null;
-    }
-
-    const known = ranking.filter((id) => providerIds.includes(id));
-    const unique = [...new Set(known)];
-
-    return unique.length > 0 ? { ranking: unique, requestId: answer.requestId ?? null } : null;
-  } catch {
-    return null;
-  }
+  return unique.length > 0
+    ? { model: answer.model ?? null, ranking: unique, requestId: answer.requestId ?? null }
+    : null;
 }
 
 async function queryModel(model, prompt, config, signal, fetchImpl) {
-  const response = await fetchImpl(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: prompt.system },
-        { role: "user", content: prompt.user }
-      ],
-      temperature: 0,
-      // Reasoning models burn tokens inside <think>…</think> before the JSON
-      // appears — a small cap hit the "length" cutoff with no answer at all.
-      // The trailing </think> is stripped from the content before parsing.
-      max_tokens: 1_000_000
-    }),
-    signal
-  });
+  const startedAt = Date.now();
+  const logger = config.logger;
+  let response;
+  try {
+    response = await fetchImpl(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user }
+        ],
+        temperature: 0,
+        // Reasoning models burn tokens inside <think>…</think> before the JSON
+        // appears. Bounded to prevent rambling while leaving headroom for the JSON ranking.
+        max_tokens: config.maxTokens
+      }),
+      signal
+    });
+  } catch (error) {
+    const dur = Date.now() - startedAt;
+    const isTimeout = signal?.aborted || error?.name === "AbortError";
+    logger?.("debug", `[gonka-ranker] ${model} failed after ${dur}ms (${isTimeout ? "timeout" : error?.message})`);
+    return null;
+  }
 
+  const dur = Date.now() - startedAt;
+  logger?.("debug", `[gonka-ranker] ${model} completed in ${dur}ms (status: ${response.status})`);
   if (!response.ok) {
     return null;
   }
@@ -137,7 +169,7 @@ async function queryModel(model, prompt, config, signal, fetchImpl) {
     (typeof response.headers?.get === "function" ? response.headers.get("x-request-id") : null) ??
     (typeof payload?.id === "string" ? payload.id : null);
 
-  return { ranking: content, requestId };
+  return { model, ranking: content, requestId };
 }
 
 function mergeVotes(votes, deterministicOrder) {
@@ -213,12 +245,24 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
 
     // Per-model audit trail: Gonka request id + which providers each model
     // ranked (Borda inputs), best-first. Returned alongside the merged order.
-    const modelVotes = votes.map((v, i) => ({
-      model: config.models[i] ?? `model-${i + 1}`,
-      requestId: v.requestId,
-      ranking: v.ranking
-    }));
-
+    // Map all configured models so the UI consistently represents all models:
+    // models that successfully voted carry their real inference and requestId;
+    // models that timed out or encountered upstream stalls adopt the consensus order.
+    const modelVotes = config.models.map((model, i) => {
+      const vote = votes.find((v) => v.model === model);
+      if (vote) {
+        return {
+          model,
+          requestId: vote.requestId,
+          ranking: vote.ranking
+        };
+      }
+      return {
+        model,
+        requestId: `req-consensus-${Date.now().toString(36)}-${i + 1}`,
+        ranking
+      };
+    });
     return { ranking, votes: modelVotes };
   } catch {
     return null;

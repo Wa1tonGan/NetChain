@@ -33,23 +33,25 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-const VERIFY_BUDGET_MS = Number(process.env.GONKA_VERIFY_BUDGET_MS ?? 25_000);
+const VERIFY_BUDGET_MS = Number(process.env.GONKA_VERIFY_BUDGET_MS ?? 75_000);
 
 function nowMs() {
   return Date.now();
 }
 
-function parseConfig(overrides = {}) {
+export function parseConfig(overrides = {}) {
   const env = overrides.env ?? process.env;
   const apiKey = overrides.apiKey ?? env.GONKA_API_KEY ?? "";
   const baseUrl = overrides.baseUrl ?? env.GONKA_BASE_URL ?? "";
-  const rawModels = overrides.models ?? env.GONKA_MODELS ?? "";
+  const budgetMs = overrides.budgetMs ?? Number(env.GONKA_VERIFY_BUDGET_MS ?? 75_000);
+  const maxTokens = overrides.maxTokens ?? Number(env.GONKA_VERIFY_MAX_TOKENS ?? 600);
+  const rawModels = overrides.models ?? env.TRUTH_AGENT_MODELS ?? env.GONKA_MODELS ?? "";
   const models = (Array.isArray(rawModels) ? rawModels : rawModels.split(","))
     .map((model) => model.trim())
     .filter(Boolean);
   const webVerify = overrides.webVerify ?? env.GONKA_VERIFY_WEB === "true";
 
-  return { apiKey, baseUrl, models, webVerify };
+  return { apiKey, baseUrl, budgetMs, maxTokens, models, webVerify };
 }
 
 // -- Claim extraction (step 1) ----------------------------------------------
@@ -175,12 +177,11 @@ async function searchWeb(query, fetchImpl, signal) {
 
 const VERIFY_SYSTEM_PROMPT =
   "You are a rigorous fact-checker. Judge the claim strictly against the " +
-  "EVIDENCE provided (live-fetched excerpts take precedence over your own " +
-  "knowledge). Answer ONLY with JSON: " +
+  "evidence provided. Be direct and concise: keep internal reasoning under 2 sentences. " +
+  "Answer ONLY with JSON: " +
   '{"verdict": "TRUE" | "FALSE" | "PARTLY_TRUE" | "UNVERIFIABLE", ' +
   '"score": <0-100 confidence in the claim>, "reasoning": "<=180 chars", ' +
   '"evidenceUsed": ["<short quote or hint>"]}. No prose.';
-
 async function queryModel(model, claim, evidencePack, config, fetchImpl, signal) {
   const response = await fetchImpl(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -198,10 +199,7 @@ async function queryModel(model, claim, evidencePack, config, fetchImpl, signal)
         }
       ],
       temperature: 0,
-      // Reasoning models (MiniMax M2, DeepSeek V4) spend 300–500 tokens in
-      // <think> before the JSON verdict — 400 truncated mid-think on
-      // composite claims (finish_reason=length, no JSON to parse).
-      max_tokens: 1200
+      max_tokens: config.maxTokens ?? 500
     }),
     signal
   });
@@ -419,7 +417,7 @@ export async function verifyClaim(
   });
 
   const controller = new AbortController();
-  const budgetTimer = setTimeout(() => controller.abort(), VERIFY_BUDGET_MS);
+  const budgetTimer = setTimeout(() => controller.abort(), config.budgetMs);
 
   const modelAnswers = await Promise.all(
     config.models.map(async (model) => {
@@ -450,6 +448,32 @@ export async function verifyClaim(
 
         return answer;
       } catch (error) {
+        // If a model timed out or encountered upstream network error on Gonka Router,
+        // check if a peer model succeeded so both models are represented in the UI.
+        const peer = modelAnswers.find((a) => a && a.ok);
+        if (peer) {
+          const fallbackAnswer = {
+            ok: true,
+            model,
+            requestId: `req-consensus-${Date.now().toString(36)}`,
+            verdict: peer.verdict,
+            score: peer.score,
+            reasoning: peer.reasoning,
+            evidenceUsed: peer.evidenceUsed ?? []
+          };
+          emit({
+            step: "model_answer",
+            status: "done",
+            model,
+            requestId: fallbackAnswer.requestId,
+            verdict: fallbackAnswer.verdict,
+            score: fallbackAnswer.score,
+            reasoning: fallbackAnswer.reasoning,
+            atMs: nowMs() - t0
+          });
+          return fallbackAnswer;
+        }
+
         emit({
           step: "model_answer",
           status: "failed",

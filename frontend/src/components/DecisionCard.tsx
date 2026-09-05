@@ -171,7 +171,7 @@ export default function DecisionCard({
             onClick={() => setShowAgentLogs(!showAgentLogs)}
           >
             <Icon name={showAgentLogs ? "chevron-down" : "chevron-right"} size={12} />
-            <span>{showAgentLogs ? "Hide Agent Reasoning Logs" : "View Agent Reasoning Logs (3 Models)"}</span>
+            <span>{showAgentLogs ? "Hide Agent Reasoning Logs" : `View Agent Reasoning Logs (${agentLogs.length} Models)`}</span>
           </button>
 
           {showAgentLogs && (

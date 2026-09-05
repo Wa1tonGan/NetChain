@@ -301,9 +301,9 @@ on the Activity detail page's Truth Agent audit card (with a deep link to
 
 ### Env vars (see `.env.example`)
 
-`GONKA_BASE_URL` · `GONKA_API_KEY` · `GONKA_MODELS` (≥2 models for
-consensus) · `GONKA_VERIFY_WEB` · `GONKA_VERIFY_BUDGET_MS` ·
-`TRUTH_AGENT_URL` · `TRUTH_LINK_BUDGET_MS`.
+`GONKA_BASE_URL` · `GONKA_API_KEY` · `GONKA_MODELS` (Rescue Agent consensus) ·
+`TRUTH_AGENT_MODELS` (Truth Agent models; falls back to `GONKA_MODELS`) ·
+`GONKA_VERIFY_WEB` · `GONKA_VERIFY_BUDGET_MS` · `TRUTH_AGENT_URL` · `TRUTH_LINK_BUDGET_MS`.
 
 ## Architecture
 
