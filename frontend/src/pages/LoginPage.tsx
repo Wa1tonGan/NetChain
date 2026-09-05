@@ -93,8 +93,12 @@ export default function LoginPage() {
               </span>
 
               <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 16, fontWeight: 800 }}>{zkLogin.name ?? "Sui User"}</div>
-                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{zkLogin.email ?? "Sui Testnet Identity"}</div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>
+                  {zkLogin.name && !["Slush", "Sui Wallet", "Guest", "Connected Sui User", "Custom Sui Account"].includes(zkLogin.name) ? zkLogin.name : "Hotlink"}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
+                  {zkLogin.email ?? "Hotlink · Sui Testnet Identity"}
+                </div>
               </div>
 
               <div

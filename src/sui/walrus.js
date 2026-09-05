@@ -86,6 +86,7 @@ export function buildEvidenceBundle(service, incidentId) {
   return {
     kind: "netchain-evidence-v1",
     incidentId,
+    archiveRunId: "RUN-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 7),
     network: service.config.network,
     packageId: service.config.packageId,
     escrowId: service.config.escrowId,
@@ -112,13 +113,33 @@ export async function archiveEvidence(service, incidentId, { walrus = makeWalrus
   const bundle = buildEvidenceBundle(service, incidentId);
   const bundleHash = evidenceBundleHash(bundle);
   const contents = new TextEncoder().encode(JSON.stringify(bundle, null, 2));
-  // Single raw JSON blob (no quilt) — readBlob returns exactly these bytes.
+  const epochs = Number(process.env.WALRUS_EPOCHS ?? 30);
+  const publisherUrl = process.env.WALRUS_PUBLISHER_URL ?? "https://publisher.walrus-testnet.walrus.space";
+
+  // Fast path: official Walrus publisher HTTP endpoint (completes in ~1 second)
+  try {
+    const res = await fetch(`${publisherUrl}/v1/blobs?epochs=${epochs}`, {
+      method: "PUT",
+      body: contents
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const blobId = data.newlyCreated?.blobObject?.blobId ?? data.alreadyCertified?.blobId;
+      if (blobId) {
+        return { blobId, bundleHash, sizeBytes: contents.byteLength };
+      }
+    }
+  } catch {
+    // proceed to direct node write fallback
+  }
+
+  // Fallback: direct storage node write via WalrusClient
   const { blobId } = await walrus.writeBlob({
     blob: contents,
     signer,
     // Evidence is tamper-evident by design — never deletable.
     deletable: false,
-    epochs: Number(process.env.WALRUS_EPOCHS ?? 1)
+    epochs
   });
   return { blobId, bundleHash, sizeBytes: contents.byteLength };
 }

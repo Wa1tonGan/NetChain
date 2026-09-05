@@ -73,13 +73,12 @@ export default function ProfilePage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const walletSourceLabel = s.zkLogin?.name
-    ? s.zkLogin.name
-    : s.zkLogin?.iss === "sui-extension" || s.zkLogin?.iss === "sui-standard" || s.zkLogin?.iss === "sui-wallet"
-      ? "Sui Wallet Extension"
+  const walletSourceLabel =
+    s.zkLogin?.iss === "sui-extension" || s.zkLogin?.iss === "sui-standard" || s.zkLogin?.iss === "sui-wallet"
+      ? "Slush Wallet"
       : s.zkLogin?.iss === "custom-key"
         ? "Custom Sui Account"
-        : "Sui zkLogin (Google)";
+        : s.zkLogin?.name || "Sui zkLogin (Google)";
 
   const balanceLine = chain?.online
     ? selectedAsset
@@ -88,6 +87,12 @@ export default function ProfilePage() {
     : "—";
 
   const recoveries = s.activity.filter((a) => a.recordId).slice(0, 3);
+
+  const displayName = isWalletConfigured
+    ? (s.zkLogin?.name && !["Slush", "Sui Wallet", "Guest", "Connected Sui User", "Custom Sui Account"].includes(s.zkLogin.name)
+        ? s.zkLogin.name
+        : "Hotlink")
+    : "Guest";
 
   return (
     <div style={{ maxWidth: 940, margin: "0 auto" }}>
@@ -101,11 +106,13 @@ export default function ProfilePage() {
         <div className="pcard">
           <div className="id-row">
             <div className="avatar">
-              {s.zkLogin?.name ? s.zkLogin.name.charAt(0).toUpperCase() : "N"}
+              {displayName.charAt(0).toUpperCase()}
             </div>
             <div className="grow">
-              <div className="id-name">{s.zkLogin?.name ?? (isWalletConfigured ? "Connected Sui User" : "Guest")}</div>
-              <div className="id-mail">{s.zkLogin?.email ?? (isWalletConfigured ? "Sui Testnet Identity" : "No wallet connected")}</div>
+              <div className="id-name">{displayName}</div>
+              <div className="id-mail">
+                {s.zkLogin?.email ?? (isWalletConfigured ? "Hotlink · Sui Testnet Identity" : "No wallet connected")}
+              </div>
             </div>
             {isWalletConfigured ? (
               <button className="link-btn ghost" style={{ marginLeft: "auto" }} onClick={handleLogOut}>
@@ -133,12 +140,14 @@ export default function ProfilePage() {
             )}
             <span className="act-ref">{s.deviceName} · eSIM</span>
           </div>
-          <div className="addr-row">
-            <span className="mono">{walletAddress}</span>
-            <button className="copy" onClick={copyAddress}>
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
+          {isWalletConfigured && walletAddress && (
+            <div className="addr-row">
+              <span className="mono">{walletAddress}</span>
+              <button className="copy" onClick={copyAddress}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Wallet */}

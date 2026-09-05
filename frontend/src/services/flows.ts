@@ -26,9 +26,9 @@ const POST_SMS: Phase[] = [
   ["request_detected", 2800],
   ["provider_selected", 4300],
   ["escrow_locked", 5300],
-  ["activating", 9500],
-  ["verifying", 11000],
-  ["restored", 12600],
+  ["activating", 10000],
+  ["verifying", 12000],
+  ["restored", 14200],
 ];
 
 export interface Flow {

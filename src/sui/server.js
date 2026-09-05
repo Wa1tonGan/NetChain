@@ -101,6 +101,13 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
         });
         return json(res, 200, settleRes);
       }
+      if (req.method === "POST" && url.pathname === "/v1/archive") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        if (!body.incidentId) {
+          return json(res, 422, { code: "INCIDENT_REQUIRED", message: "incidentId is required" });
+        }
+        return json(res, 200, await service.archive(body.incidentId));
+      }
       // Permissionless post-expiry reclaim (escrow::reclaim returns the
       // locked funds to the commitment's buyer regardless of caller).
       if (req.method === "POST" && url.pathname === "/v1/reclaim") {

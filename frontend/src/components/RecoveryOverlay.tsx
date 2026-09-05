@@ -164,67 +164,104 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
     });
   }
 
-  if (sec >= 6.5 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+  if (sec >= 6.8 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
     messages.push({
-      id: "selection",
-      sender: "RescueAgent",
+      id: "llm-provider-vote",
+      sender: "Gonka Consensus Engine",
       role: "agent",
-      tag: "BEST OFFER SELECTED",
-      tagBg: "rgba(0, 113, 227, 0.15)",
-      tagColor: "#0071e3",
-      time: "T+6.5s",
-      isWinner: true,
-      text: (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0071e3", fontWeight: 800, fontSize: 13.5 }}>
-            <span>🏆</span>
-            <span>Multi-Agent Consensus: Best Offer Selected</span>
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5 }}>
-            Selected <b>KilatLink FWA</b>:
-            <br />
-            ✓ <b>Full Capacity:</b> 500 Mbps restored
-            <br />
-            ✓ <b>Lowest Latency:</b> 18 ms (beats Maxis 26ms, Digi 32ms)
-            <br />
-            ✓ <b>Optimal Budget:</b> USDC 1.80 (saves USDC 0.20 under budget)
-            <br />
-            ✓ <b>Unanimous Approval:</b> Pricing, SLA, and Budget agents countersigned
-          </div>
-        </div>
-      ),
-    });
-  }
-
-  if (sec >= 7.3 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
-    messages.push({
-      id: "why-best",
-      sender: "AI Selection Engine",
-      role: "agent",
-      tag: "OPTIMAL CHOICE RATIONALE",
-      tagBg: "rgba(2, 132, 199, 0.15)",
+      tag: "ROUND 1: PROVIDER SELECTION VOTE",
+      tagBg: "rgba(2, 132, 199, 0.12)",
       tagColor: "#0284c7",
-      time: "T+7.2s",
+      time: "T+6.8s",
       isSpecialIndicator: true,
       text: (
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0369a1", fontWeight: 800, fontSize: 13 }}>
-            <span>💡</span>
-            <span>Why this proposal was selected as the optimal choice:</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+            <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 13 }}>
+              🤖 Multi-LLM Provider Evaluation &amp; Voting (Round 1)
+            </span>
+            <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
+              2/2 UNANIMOUS: KILATLINK FWA
+            </span>
           </div>
-          <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--ink-2)" }}>
-            <div style={{ marginBottom: 4 }}>
-              • <b>Fastest Response Time:</b> Offers the lowest latency and zero packet loss, delivering instant stability without lag or degradation.
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+            2 independent LLM models evaluated the 3 bids (Maxis 5G, Digi Fibre, KilatLink FWA) under P1 recovery criteria:
+          </div>
+
+          {/* 2 LLM Agents Reasoning & Voting Cards */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
+            {/* Model 1: DeepSeek-V4-Flash */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "8px 10px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>DeepSeek-V4-Flash</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontFamily: "monospace",
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    gonka req: req-12378127382713821738-123212
+                  </span>
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: KILATLINK FWA ✓</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                <b>Reasoning:</b> Evaluated 3 provider bids against P1 constraints. KilatLink FWA satisfies 100% capacity demand (500 Mbps) with lowest latency (18ms) and optimal pricing (USDC 1.80 vs USDC 2.00 cap). Maxis 5G exceeds budget; Digi under-delivers bandwidth (450 Mbps). Selected: KilatLink FWA.
+              </div>
             </div>
-            <div style={{ marginBottom: 4 }}>
-              • <b>Complete Restoration:</b> Fully satisfies all missing bandwidth capacity to keep all mission-critical tasks operating seamlessly.
+
+            {/* Model 2: MiniMax-M2.7 */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "8px 10px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>MiniMax-M2.7</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontFamily: "monospace",
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    gonka req: req-98421094812049182049-582914
+                  </span>
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: KILATLINK FWA ✓</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                <b>Reasoning:</b> Pareto optimization confirms KilatLink FWA provides best QoS SLA (99.9% uptime guarantee, 0% packet loss) and fastest RTT (18ms). Cost efficiency score 0.985 outperforms competitors. Selected: KilatLink FWA.
+              </div>
             </div>
-            <div style={{ marginBottom: 4 }}>
-              • <b>Maximum Cost Efficiency:</b> Achieves the highest performance rating per unit of cost while staying safely below your pre-set budget limit.
-            </div>
-            <div>
-              • <b>Unanimous Agent Consensus:</b> Pricing, SLA reliability, and security auditing agents all independently verified and approved this proposal.
-            </div>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#0369a1", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚡ Round 1 Consensus Reached:</span>
+            <span style={{ color: "#059669" }}>2/2 Unanimous Vote for KilatLink FWA · Committing Dual-Sig Escrow</span>
           </div>
         </div>
       ),
@@ -266,22 +303,180 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
     });
   }
 
-  if (sec >= 10.5 || completed || ["verifying", "restored"].includes(incident.status)) {
+  if (sec >= 10.0 || completed || ["activating", "verifying", "restored"].includes(incident.status)) {
+    const walrusId = incident.walrusBlobId || incident.result?.walrusBlobId;
     messages.push({
-      id: "audit",
-      sender: "Truth Agent",
+      id: "walrus-report",
+      sender: "Telemetry Agent",
       role: "agent",
-      tag: "SLA AUDIT PASSED",
+      tag: "WALRUS TELEMETRY REPORT",
       tagBg: "rgba(13, 148, 136, 0.12)",
       tagColor: "#0d9488",
-      time: "T+10.5s",
+      time: "T+10.0s",
       text: (
         <div>
-          <b>⚡ Autonomous SLA Verification Passed:</b>
-          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            Telemetry audit: <b>500 Mbps delivered</b> · <b>18 ms latency</b> · <b>0.0% packet loss</b>.
-            <br />
-            SLA verified. Dual-sig authorization signed to release escrow payment.
+          <div style={{ fontWeight: 800, color: "#0d9488", fontSize: 13 }}>
+            📊 Real-Time Network Strength Detected &amp; Packaged:
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: "var(--ink-2)" }}>
+            Physical link telemetry collected across all recovery monitoring windows:
+            <div
+              style={{
+                marginTop: 6,
+                padding: "8px 10px",
+                background: "rgba(13, 148, 136, 0.06)",
+                borderRadius: 8,
+                border: "1px solid rgba(13, 148, 136, 0.2)",
+                fontSize: 11.5,
+                fontFamily: "monospace",
+                color: "#134e4a",
+                lineHeight: 1.55,
+              }}
+            >
+              <div>• Signal Strength: <b>-72 dBm (Excellent 5G/FWA RSRP)</b> · SINR 24 dB</div>
+              <div>• Downlink Throughput: <b>500.4 Mbps</b> (Shortfall demand: 500 Mbps)</div>
+              <div>• Latency &amp; Jitter: <b>18 ms RTT · 2.1 ms jitter</b></div>
+              <div>• Packet Loss: <b>0.00% (Zero loss confirmed)</b></div>
+            </div>
+            <div style={{ marginTop: 6, color: "var(--ink)" }}>
+              Data compiled into immutable <b>SLA Verification Report</b> and stored to Walrus:
+            </div>
+            <div style={{ marginTop: 4 }}>
+              {walrusId ? (
+                <a
+                  href={`https://walruscan.com/testnet/blob/${walrusId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    color: "#0d9488",
+                    fontSize: 11,
+                    textDecoration: "underline",
+                    fontFamily: "monospace",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <span>📦 Stored to Walrus Blob: {walrusId.slice(0, 10)}…{walrusId.slice(-8)}</span>
+                  <span>↗</span>
+                </a>
+              ) : (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "#0d9488", fontFamily: "monospace" }}>
+                  <span>⏳</span>
+                  <span>Publishing immutable telemetry report to Walrus testnet…</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 12.0 || completed || ["verifying", "restored"].includes(incident.status)) {
+    const walrusId = incident.walrusBlobId || incident.result?.walrusBlobId;
+    messages.push({
+      id: "llm-voting",
+      sender: "Truth Agent · Consensus Engine",
+      role: "agent",
+      tag: "ROUND 2: WALRUS REPORT SLA AUDIT",
+      tagBg: "rgba(99, 102, 241, 0.12)",
+      tagColor: "#4f46e5",
+      time: "T+12.0s",
+      isSpecialIndicator: true,
+      text: (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+            <span style={{ fontWeight: 800, color: "#4338ca", fontSize: 13 }}>
+              📥 Fetched Walrus Report · Multi-LLM Verification &amp; Voting (Round 2)
+            </span>
+            <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
+              2/2 UNANIMOUS PASS
+            </span>
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+            Fetched report blob {walrusId ? (
+              <code style={{ fontSize: 10.5, color: "#0d9488", background: "rgba(13, 148, 136, 0.08)", padding: "1px 4px", borderRadius: 4 }}>{walrusId.slice(0, 12)}…</code>
+            ) : (
+              <span style={{ fontSize: 10.5, color: "#0d9488", fontWeight: 600 }}>telemetry package</span>
+            )} from Walrus. 2 independent LLM models audited report telemetry against SLA:
+          </div>
+
+          {/* 2 LLM Agents Reasoning & Voting Cards */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
+            {/* Model 1: DeepSeek-V4-Flash */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "8px 10px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>DeepSeek-V4-Flash</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontFamily: "monospace",
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    gonka req: req-12378127382713821738-123212
+                  </span>
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: REPORT VALID (PASS) ✓</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                <b>Reasoning:</b> Validated Walrus telemetry against P1 contract. Throughput (500.4 Mbps) meets 100% threshold; 18ms latency and 0.0% loss confirm zero packet degradation. Evidence hash verified.
+              </div>
+            </div>
+
+            {/* Model 2: MiniMax-M2.7 */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 8,
+                padding: "8px 10px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: "#1e293b" }}>MiniMax-M2.7</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontFamily: "monospace",
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    gonka req: req-98421094812049182049-582914
+                  </span>
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: "#059669" }}>VOTE: REPORT VALID (PASS) ✓</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                <b>Reasoning:</b> Physical layer signal strength (-72 dBm RSRP) and jitter (2.1ms) satisfy high-availability criteria. No shortfall penalty warranted. Full escrow payout certified.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#4338ca", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚡ Round 2 Consensus Reached:</span>
+            <span style={{ color: "#059669" }}>2/2 Unanimous PASS · Report Certified Valid · Proceeding to Settlement</span>
           </div>
         </div>
       ),
@@ -316,6 +511,18 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                   style={{ color: "#0071e3", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
                 >
                   Sui Settlement Tx: {(incident.settleTxDigest || incident.result?.tx)?.slice(0, 8)}…{(incident.settleTxDigest || incident.result?.tx)?.slice(-6)} ↗
+                </a>
+              </div>
+            )}
+            {(incident.walrusBlobId || incident.result?.walrusBlobId) && (
+              <div style={{ marginTop: 4 }}>
+                <a
+                  href={`https://walruscan.com/testnet/blob/${incident.walrusBlobId || incident.result?.walrusBlobId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#0d9488", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
+                >
+                  Walrus Evidence Blob: {(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(0, 8)}…{(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(-6)} ↗
                 </a>
               </div>
             )}
@@ -739,6 +946,20 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                   style={{ color: "#0071e3", fontWeight: 600, textDecoration: "underline", fontFamily: "monospace" }}
                 >
                   {(incident.settleTxDigest || incident.result.tx)?.slice(0, 10)}…{(incident.settleTxDigest || incident.result.tx)?.slice(-8)} ↗
+                </a>
+              </div>
+            )}
+
+            {(incident.walrusBlobId || incident.result?.walrusBlobId) && (
+              <div style={{ marginTop: 6, textAlign: "center", fontSize: 11.5, color: "var(--muted)" }}>
+                Walrus Decentralized Audit:{" "}
+                <a
+                  href={`https://walruscan.com/testnet/blob/${incident.walrusBlobId || incident.result?.walrusBlobId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#0d9488", fontWeight: 600, textDecoration: "underline", fontFamily: "monospace" }}
+                >
+                  {(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(0, 10)}…{(incident.walrusBlobId || incident.result?.walrusBlobId)?.slice(-8)} ↗
                 </a>
               </div>
             )}

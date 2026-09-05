@@ -10,6 +10,7 @@ import { sendCoin } from "./gasless.js";
 import { buildVoucher, VoucherError } from "./voucher.js";
 import { checkDelivery, connectionLog, connectionLogDigest } from "./verify.js";
 import { buildSlaClaimPayload, runSlaAudit } from "./truthLink.js";
+import { archiveEvidence, walrusArchiveEnabled } from "./walrus.js";
 
 export class TrustService {
   constructor({ ledger = new EventLedger(), config = loadConfig(), paths = defaultPaths() } = {}) {
@@ -471,7 +472,33 @@ export class TrustService {
             });
           });
       }
-      return { status: "SETTLED", txDigest: result.digest, penaltyAmount };
+
+      // Walrus decentralized evidence archive (blueprint §4.3)
+      let walrusBlobId = null;
+      if (walrusArchiveEnabled()) {
+        const alreadyArchived = this.ledger.eventsByIncident(incidentId).find((e) => e.type === "ARCHIVED");
+        if (alreadyArchived?.data?.blobId) {
+          walrusBlobId = alreadyArchived.data.blobId;
+        } else {
+          try {
+            const archiveRes = await archiveEvidence(this, incidentId);
+            walrusBlobId = archiveRes.blobId;
+            this.ledger.emit("ARCHIVED", {
+              incidentId,
+              nonce: commitment.nonce,
+              data: { blobId: archiveRes.blobId, bundleHash: archiveRes.bundleHash, sizeBytes: archiveRes.sizeBytes }
+            });
+          } catch (err) {
+            this.ledger.emit("ARCHIVE_SKIPPED", {
+              incidentId,
+              nonce: commitment.nonce,
+              data: { reason: String(err?.message ?? err) }
+            });
+          }
+        }
+      }
+
+      return { status: "SETTLED", txDigest: result.digest, penaltyAmount, walrusBlobId };
     }
     if (status === "FAILED") {
       const result = await refundVoucher(this.client, this.keypair, this.config, voucherLike);
@@ -496,6 +523,22 @@ export class TrustService {
     });
     await this.postSettlement(state?.incidentId, "RECLAIMED", nonce, result.digest);
     return { status: "RECLAIMED", txDigest: result.digest };
+  }
+
+  /** On-demand Walrus archival for an incident. Idempotent by incidentId. */
+  async archive(incidentId) {
+    const existing = this.ledger.eventsByIncident(incidentId).find((e) => e.type === "ARCHIVED");
+    if (existing?.data?.blobId) {
+      return { duplicate: true, ...existing.data };
+    }
+    const result = await archiveEvidence(this, incidentId);
+    const commitment = this.ledger.byIncident(incidentId).find((c) => c.nonce);
+    this.ledger.emit("ARCHIVED", {
+      incidentId,
+      nonce: commitment?.nonce ?? null,
+      data: { blobId: result.blobId, bundleHash: result.bundleHash, sizeBytes: result.sizeBytes }
+    });
+    return { duplicate: false, ...result };
   }
 
   /**

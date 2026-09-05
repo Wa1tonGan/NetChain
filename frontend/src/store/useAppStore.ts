@@ -256,7 +256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   balance: 65,
   notif: true,
   agentSigning: true,
-  walletAddr: initialZkLogin?.address ?? "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
+  walletAddr: initialZkLogin?.address ?? "",
   zkLogin: initialZkLogin,
 
   capacity: { primary: DEMAND_MBPS, current: DEMAND_MBPS, extra: 0, primaryDown: false },
@@ -332,7 +332,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch {}
     set({
       zkLogin: session,
-      walletAddr: session ? session.address : "0x71F3a9B2c44E5d16820cCb7713a2fF0e999A82C5512",
+      walletAddr: session ? session.address : "",
     });
   },
   setPreferredExplorer: (v) => {
@@ -370,10 +370,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       session: null,
       capacity: { ...st.capacity, current: 0, primaryDown: true, extra: 0 },
     });
-    const seq = st.recoverySeq + 1;
+    const nextSeq = Math.max(st.recoverySeq + 1, Math.floor(Date.now() / 1000) % 90000 + 10000);
+    const incId = "INC-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(100 + Math.random() * 900);
 
     const inc: Incident = {
-      id: "NC-" + seq,
+      id: incId,
       kind: flow.key,
       outcome: flow.outcome,
       pauseAt: "sms",
@@ -392,7 +393,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       shortage,
     };
 
-    set({ incident: inc, recoverySeq: seq, outageSource: st.outageSource ?? "simulated" });
+    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated" });
     scheduleFrom(1);
   },
 
@@ -411,10 +412,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       session: null,
       capacity: { ...st.capacity, current: 0, primaryDown: true, extra: 0 },
     });
-    const seq = st.recoverySeq + 1;
+    const nextSeq = Math.max(st.recoverySeq + 1, Math.floor(Date.now() / 1000) % 90000 + 10000);
+    const incId = "INC-" + Date.now().toString(36).toUpperCase() + "-" + Math.floor(100 + Math.random() * 900);
 
     const inc: Incident = {
-      id: "NC-" + seq,
+      id: incId,
       kind: "live",
       outcome: "ok",
       pauseAt: "sms",
@@ -434,7 +436,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       scenarioKey,
     };
 
-    set({ incident: inc, recoverySeq: seq, outageSource: st.outageSource ?? "simulated" });
+    set({ incident: inc, recoverySeq: nextSeq, outageSource: st.outageSource ?? "simulated" });
     void refreshBrands();
     scheduleFrom(1);
   },
@@ -682,6 +684,37 @@ function advance(status: string) {
           if (cur && cur.id === inc.id) {
             useAppStore.setState({ incident: { ...cur, commitTxDigest: data.txDigest } });
           }
+          // Immediately archive evidence & telemetry report to Walrus for this new incident
+          fetch("/v1/archive", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ incidentId: inc.id }),
+          })
+            .then((ar) => ar.json())
+            .then((archiveData) => {
+              if (archiveData.blobId) {
+                const nowCur = useAppStore.getState().incident;
+                const nowRecords = useAppStore.getState().records;
+                const patch: Partial<AppState> = {};
+                if (nowCur && nowCur.id === inc.id) {
+                  patch.incident = {
+                    ...nowCur,
+                    walrusBlobId: archiveData.blobId,
+                    result: nowCur.result ? { ...nowCur.result, walrusBlobId: archiveData.blobId } : nowCur.result,
+                  };
+                }
+                if (nowRecords[inc.id]) {
+                  patch.records = {
+                    ...nowRecords,
+                    [inc.id]: { ...nowRecords[inc.id], walrusBlobId: archiveData.blobId },
+                  };
+                }
+                if (Object.keys(patch).length > 0) {
+                  useAppStore.setState(patch);
+                }
+              }
+            })
+            .catch((err) => console.warn("Simulation pre-archive error:", err));
         }
       })
       .catch((err) => console.warn("Simulation commit error:", err));
@@ -695,11 +728,35 @@ function advance(status: string) {
     })
       .then((r) => r.json())
       .then((data) => {
-        if (data.txDigest) {
-          const cur = useAppStore.getState().incident;
-          if (cur && cur.id === inc.id) {
-            useAppStore.setState({ incident: { ...cur, settleTxDigest: data.txDigest } });
-          }
+        const cur = useAppStore.getState().incident;
+        const curRecords = useAppStore.getState().records;
+        const patch: Partial<AppState> = {};
+        if (cur && cur.id === inc.id) {
+          patch.incident = {
+            ...cur,
+            settleTxDigest: data.txDigest ?? cur.settleTxDigest,
+            walrusBlobId: data.walrusBlobId ?? cur.walrusBlobId,
+            result: cur.result
+              ? {
+                  ...cur.result,
+                  tx: data.txDigest ?? cur.result.tx,
+                  walrusBlobId: data.walrusBlobId ?? cur.result.walrusBlobId,
+                }
+              : cur.result,
+          };
+        }
+        if (curRecords[inc.id]) {
+          patch.records = {
+            ...curRecords,
+            [inc.id]: {
+              ...curRecords[inc.id],
+              tx: data.txDigest ?? curRecords[inc.id].tx,
+              walrusBlobId: data.walrusBlobId ?? curRecords[inc.id].walrusBlobId,
+            },
+          };
+        }
+        if (Object.keys(patch).length > 0) {
+          useAppStore.setState(patch);
         }
       })
       .catch((err) => console.warn("Simulation settle error:", err));
@@ -822,6 +879,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     platformAddr: split.platformAddress,
     logHash,
     commitTx: inc.commitTxDigest,
+    walrusBlobId: inc.walrusBlobId,
   };
 
   const payments = [...st.payments];
@@ -837,6 +895,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
       refundNote: kind === "failed" ? "reservation refunded" : "",
       state,
       txDigest: inc.settleTxDigest,
+      walrusBlobId: inc.walrusBlobId,
     });
   }
 
@@ -866,7 +925,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     incident: {
       ...inc,
       status: kind === "failed" ? "failed" : "restored",
-      result: { time, charged, refund, state, tx, commitTx: inc.commitTxDigest },
+      result: { time, charged, refund, state, tx, commitTx: inc.commitTxDigest, walrusBlobId: inc.walrusBlobId },
     },
     ...(capacityPatch ? { capacity: { ...st.capacity, ...capacityPatch } } : {}),
   });
@@ -1143,7 +1202,14 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     incident: {
       ...inc,
       status: kind === "ok" ? "restored" : "failed",
-      result: { time, charged, refund, state },
+      result: {
+        time,
+        charged,
+        refund,
+        state,
+        tx: row?.txDigest ?? record.commitTx,
+        walrusBlobId: inc.walrusBlobId,
+      },
     },
   });
 

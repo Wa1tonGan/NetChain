@@ -38,6 +38,7 @@ export interface IncidentResult {
   state: string;
   tx?: string;
   commitTx?: string;
+  walrusBlobId?: string;
 }
 
 export interface Incident {
@@ -61,6 +62,7 @@ export interface Incident {
   scenarioKey?: string;
   commitTxDigest?: string;
   settleTxDigest?: string;
+  walrusBlobId?: string;
 }
 
 export interface RecoveryRecord {
@@ -87,6 +89,7 @@ export interface RecoveryRecord {
   // live-mode additions
   nonce?: string;
   commitTx?: string;
+  walrusBlobId?: string;
   comparison?: { name: string; state: string; sel: boolean; id?: string }[];
   /** Gonka consensus audit trail — one vote per model, each with the
    *  x-request-id needed to audit the inference against the gateway */
@@ -105,6 +108,8 @@ export interface Payment {
   state: string;
   /** real settle digest for LIVE runs — links the row to Suiscan */
   txDigest?: string;
+  /** Walrus evidence blob ID */
+  walrusBlobId?: string;
   /** top-up rows are deposits (money IN), excluded from spend totals */
   kind?: "recovery" | "topup";
 }
