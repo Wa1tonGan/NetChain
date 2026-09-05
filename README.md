@@ -13,7 +13,51 @@ service agreement on **Sui** — with Time-to-Recovery measured, not assumed.
 stablecoin) · Sui Track 02 (AI × SUI — agent-to-agent commerce where the
 on-chain commitment is integral, not an add-on).
 
-## The trust layer (this workstream — Person 3)
+## The problem
+
+**1. Network needs change by activity.**
+Connectivity is not one-size-fits-all — what a connection must deliver depends
+on what the user is doing at that moment. Ordinary browsing and messaging work
+fine on baseline connectivity, but real-time and interactive activities change
+the requirements entirely: gaming needs consistently low latency, livestreaming
+needs sustained uplink bandwidth, video calls need stability and low jitter,
+and crowded events need capacity that the shared cell simply cannot give
+everyone at once. A network provisioned for the average user fails exactly
+when the user's needs spike.
+
+**2. Users do not know when premium network capabilities are useful.**
+Telecom operators already have the tools — QoS enforcement, programmable
+network slices, on-demand boosts — but these capabilities are invisible to the
+people who could benefit from them. A user sitting in a congested stadium has
+no way to know that a boost exists, whether it would actually fix their
+experience, or whether it is worth paying for. The capability is available but
+never offered at the right time, so it goes unused: lost revenue for the
+operator, degraded experience for the customer.
+
+**3. Premium network services are not context-aware.**
+Existing premium add-ons are static products — "buy a 24-hour speed boost"
+regardless of whether you need it for 20 minutes or not at all. They are not
+tied to what the user is doing, what the network can actually deliver, or
+whether the user is likely to benefit. NetChain flips this: the platform uses
+provider-supplied user and network context to understand what the customer is
+trying to do and what the current connection cannot sustain, and generates a
+purchase offer **only when the customer is likely to actually benefit** —
+sized to the need, priced for the moment.
+
+**4. Multi-provider sessions are difficult to manage and settle.**
+If the provider serving a session can no longer meet the required service
+level, the session should continue through another provider instead of dying —
+but that creates hard problems: the customer bought from one place, and now
+two or more providers served parts of the same session. NetChain keeps it as
+**one customer purchase** (a single escrowed payment for the whole session),
+hands the session to a backup provider mid-flight, and splits the payment
+fairly between the parties at settlement — with independent verification of
+delivered capacity so an under-delivering provider is penalized and the buyer
+is made whole, automatically.
+
+## How the system works
+
+### The trust layer (this workstream — Person 3)
 
 Trust is prepared **before** any incident (blueprint §4.1): a scoped spending
 authority (`AuthorityCap`), a pre-funded escrow holding the configured
@@ -50,7 +94,7 @@ all three; flip one env var, no code changes):
 
 - `npm run integrate:sui` — ONE AI-driven incident end-to-end: submit intent →
   A2A race → commit → verify → split settle → settlement callback to the
-  gateway (proven on testnet, digests below).
+  gateway.
 - `SUI_INTEGRATION_MODE=full npm run trust:server` — the server polls the
   gateway and auto-commits/verifies/settles **every** resolved incident
   (`POST /v1/verify` also accepts real delivered samples from a monitor).
@@ -61,65 +105,10 @@ log + split) can be archived to **Walrus** (`npm run walrus:proof`) and
 retrieved by blob ID — `sha256(readback) == sha256(archived)`, so a
 customer/provider/judge re-checks the verdict without trusting this server.
 
-## Sui objects & addresses (testnet) — TWO-TRACK BUILD (Buyer 1)
-
-Live on Sui **testnet** (refreshed 2026-09-03): the escrow holds **real Circle
-USDC** (Sui Track 01 — Payments & Stablecoins); the A2A agent commerce +
-verification layer serves Track 02 (AI × SUI). Signed by **Buyer 1** — a real
-self-custody buyer wallet (`SUI_BUYER_SECRET`, gitignored). Verifiable on
-[SuiScan](https://suiscan.xyz/testnet). Re-deploying is normal during the
-build (regenesis/faucet/refunding) — `.sui/config.testnet.json` is always the
-source of truth for the current addresses:
-
-| Object | ID |
-| --- | --- |
-| Package (`netchain`) | `0x531c16cde1a45391ab90f21c9f1e3f06ae3d2965965caee5c3de608a5ed50170` |
-| USDC coin type (Circle, gasless-allowlisted) | `0xa1ec7fc00a6f40db9693ad1415d0c193ad3906494428cf252621037bd7117e29::usdc::USDC` |
-| Shared `Escrow<USDC>` pool (Buyer 1-funded, 12 USDC) | `0x9c4c5958a942daba695b1a6cfceeec7bf522ed25bc7d55fc5f4d2d828c2a6a63` |
-| `AuthorityCap` (max 12 USDC / voucher) | `0x25f8b7990966f30ecf4864e74033f6e67cc22394a7708bc51a1d920990a339bf` |
-| TreasuryCap<MYRC> (demo-coin treasury; supply 0 on testnet) | `0x76afeb422db6b64212ea82d706a2f5d8c7838f0edfba90bf0970af38f69922cf` |
-| Buyer 1 (testnet buyer) | `0x016dcf7419dcd6561a7f00ad0a7487fa73a67e336f618d032078282722409e24` |
-| Platform fee wallet | `0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4` |
-
-Recent proof txs (2026-09-03 session, USDC-native small-budget offers):
-LOCK `YQ3yeXgActwaNfHpjJgqrgehvv` (1.47 USDC = 1.40 + 0.07 fee) ·
-COMPLETE `HGbrda3TGoF4YXzPwr1ZbyD9SR` (split settlement, penalty 0).
-
-### Proof transactions — every use case, once (blueprint §12 + Sui tracks)
-
-| Use case | Tx digest | Proof |
-| --- | --- | --- |
-| Readiness: USDC pool + authority, 1 PTB (Buyer 1 signs) | `9HNDNsGRQ7RTHhVu1W8DcYfdp9CxLXRfgkop2kG3QPcK` | §4.1 trust prepared before incidents |
-| LOCK: commit (dual on-chain sig verify, 3.15 USDC = 3 + 0.15 fee) | `9mgQJcM6e1QjeExiirPNFtBvAJZ9cHwSSj1g1aMhjTtD` | nonce `INC-S2:PROVIDER-B:001` |
-| Duplicate replay blocked (0 new txs) | — (registry short-circuit) | §6.1 idempotency |
-| VERIFY: within tolerance → OK, connection log on-chain | `E3pYifDG6q9tD3bENFPM6TxmRBasj4dyhxhmQpx5MLEj` | §4.3/§12 verdict evidence |
-| COMPLETE: split settlement (3 → provider · 0.15 → platform) | `GYPMXV2oHrHwwaPXroM4CtRJr3ZYmCVBPvx8s3Ja2MYT` | §12 split-settlement row |
-| REFUND (provider failed → pool replenished) | `8h3BiJTay2QB2XbjfN4XoxZNw6vVqEQFBpFkXeJdRmTr` | §6-F graceful refund |
-| FAILOVER commit (A down → B) + under-delivery VERIFY (240/300 → PENALTY) | `ETu5ryi7Nxqro2yoshBq9Tbd6TnQvcpcmNYZqCfeyX6K` / `CBCXf54pLKHcf7T2qyUZ3xF9EevLB2fLGarYs2ENqGHc` | §6.1 failover + §4.3 |
-| Penalized settlement (4.465 → provider · 0.525 → buyer · 0.26 → platform) | `3BYdP1nD5Raey2xXC3jkpm1dwgCFBFLFyLvayZetdwGs` | §12 verification-proof row |
-| **GASLESS**: sender held ZERO SUI — gas charged 0 | `CFjZH6Qo8jAfr1XwY4n83HoxwAUdTMJ3chRYmdH25173` | Track-01 gasless-stablecoin feature |
-| **SPONSORED**: customer signed, platform paid gas, into shared pool | `5Nu3krsqjqSvDfBYVBFePqmALPikL2M2WRSxqDMz4LvV` | Track-01/02 sponsored feature |
-| **LIVE AI↔Sui loop** (`npm run integrate:sui`): Rescue Agent's real A2A offer → commit → verify → settle, P2 settlement callback | `6MJk8arxYHAtfWfwXiLEBCvfZB2swrPFa3aLsGVAar4p` · `228SdkMAhTeHJCLPREqx6dNB45gALH4kYMx2ibSFtszD` · `6Jswa4NvuSY3rcs4nFabGc8bM2eWR8CHxV2eNZiGAfFV` | Track-02: AI × SUI, "Sui is integral" — live (incident `INC-S2-Imthcxrdw`, 1.965 USDC = 1.875 + 0.09 fee) |
-| **WALRUS evidence archive**: voucher + connection log + settlement split on Walrus, sha256(readback) == sha256(archived) | blob `sz4tjxunYifIVN327CFRlXTIdxVHtqKO1E2-0OHLJcM` (incident `INC-S2-Imthdxag1`; settle tx `GCKGwMvvrJPLB7zMBs131rvrpjCoZ1sMco9JCAEjAnoX`) | §4.3 evidence independently retrievable: walruscan.com/testnet/blob/… |
-
-Reliability harness: **13/13 checks on testnet with real USDC** (incl.
-on-chain event read-back: ledger `voucherDigest` ↔ `Committed` event
-byte-for-byte; Verified verdicts with penalties readable from the node).
-Offline suite: **19/19 Move tests, 89/89 repo tests** (Persons 1+2+3).
-Live integration: `npm run integrate:sui` (one AI-driven loop) or
-`SUI_INTEGRATION_MODE=full npm run trust:server` (auto-settle every incident;
-`SUI_INTEGRATION_MODE` = `standalone | one-loop | full` — see
-`documents/person3/person3-implementation-guide.md`).
-Provider profiles are natively priced in affordable USDC-scale amounts —
-typical recovery offers quote 1–5 USDC, the same money the user's SMS budget
-offers — so no scale-down happens anywhere in the flow. To shrink quotes for
-a tiny escrow pool instead, set `SUI_TESTNET_PRICE_SCALE` < 1 (quote-time
-scaling; the fixture generator honors the same env). Localnet runs the
-identical contracts on the MYRC demo coin (2 decimals).
-
-`fixtures/sui/` is gitignored (per-run generated, 5-min TTL — the generator
-is the single source of truth); `fixtures/selected/` + `fixtures/providers/`
-stay committed. Localnet addresses: `.sui/config.localnet.json`.
+On-chain state is verifiable on [SuiScan](https://suiscan.xyz/testnet); the
+current package, escrow pool, authority and fee-wallet addresses always live
+in `.sui/config.<network>.json` — the single source of truth, never copied
+into docs.
 
 ## Quick start
 
@@ -128,34 +117,30 @@ Prereqs: Node ≥ 20, [Sui CLI](https://docs.sui.io/guides/developer/getting-sta
 ### Full UI demo — TESTNET (agent market + zkLogin + Sui escrow)
 
 Everything below runs against **Sui testnet with real Circle USDC** — the
-default demo mode. Four terminals, copy-paste as-is:
+default demo mode. One command brings up the whole stack:
 
 ```bash
-# One-time (fresh clone): deps + demo signing keys + publish contracts &
-# fund the shared escrow pool with 12 real USDC on testnet.
 npm install
 npm run provision
-SUI_NETWORK=testnet npm run sui:setup
+SUI_NETWORK=testnet npm run sui:setup   # one-time: publish contracts & fund the shared escrow pool
+npm run dev                             # agent market + trust server + zkLogin bridge + frontend
 ```
+
+Or run the four services in separate terminals:
 
 ```bash
 # Terminal 1 — agent market: 3 provider agents (:8101-8103)
 #   + rescue gateway (:8082) + claim agent (:8105). Quotes in USD.
 SUI_NETWORK=testnet node scripts/start-all.mjs
-```
 
-```bash
-# Terminal 2 — Sui trust server (:8200): /v1/commit, /v1/activation,
-#   /v1/fund, SSE /v1/events — settles in REAL USDC on testnet.
+# Terminal 2 — Sui trust server (:8200): /v1/commit, /v1/commit/confirm,
+#   /v1/activation, /v1/fund, /v1/verify, /v1/status/:id, SSE /v1/events —
+#   settles in REAL USDC on testnet.
 SUI_NETWORK=testnet npm run trust:server
-```
 
-```bash
 # Terminal 3 — zkLogin bridge (:8787): Google sign-in, salt, zk proofs.
 npm run zklogin:server
-```
 
-```bash
 # Terminal 4 — frontend (:5173)
 cd frontend && npm run dev
 ```
@@ -169,7 +154,7 @@ Then open `http://localhost:5173`:
    curl -X POST http://127.0.0.1:8200/v1/fund -H 'content-type: application/json' \
      -d '{"address":"<YOUR_ZK_ADDRESS>","stableBase":3000000,"suiMist":50000000}'
    ```
-3. **`/dev`** → pick scenario **S2** → run LIVE → reply `60 min, USDC 5` →
+3. **`/dev`** → pick a scenario (e.g. **S2**) → run LIVE → reply with a budget →
    providers quote (USD) → the browser zk-signs the commit → verify →
    split settlement, both tx digests land in Activity + SuiScan.
 
@@ -188,16 +173,10 @@ the package, restart the trust server so it reloads `.sui/config.testnet.json`
 offline rehearsal: drop the env prefix and run `sui start --with-faucet`.
 
 ```bash
-npm install
-
-# One-time (fresh clones): generate signing keys locally.
-# Private keys are gitignored on purpose — never commit them again.
-npm run provision
-
 # Persons 1+2 contracts + Person 3 offline tests
 npm test
 
-# Move unit tests (19): idempotent commit, replay abort, bad signature,
+# Move unit tests: idempotent commit, replay abort, bad signature,
 # expiry, settle-twice, refund (joins pool), permissionless reclaim, authority limits,
 # fee-split settlement, fee guards, verification verdict + penalty splits
 sui move test --path move
@@ -215,7 +194,7 @@ SUI_NETWORK=testnet npm run sui:setup
 SUI_NETWORK=testnet npm run demo:sui
 SUI_NETWORK=testnet npm run harness:sui
 
-# LIVE AI→Sui loop on testnet (the Track-02 headline, digests below):
+# LIVE AI→Sui loop on testnet (the Track-02 headline):
 # terminal 1+2: the live agent stack, terminal 3: one integrated settlement
 SUI_NETWORK=testnet node scripts/start-all.mjs
 SUI_NETWORK=testnet SUI_INTEGRATION_MODE=one-loop npm run integrate:sui
@@ -226,7 +205,7 @@ WALRUS_ARCHIVE=true SUI_NETWORK=testnet npm run walrus:proof
 ```
 
 Trust CLI: `npm run trust -- commit <selected-offer.json> | activation <id> AVAILABLE|FAILED | reclaim <nonce> | status <id>`.
-Optional HTTP face: `npm run trust:server` (port 8200, SSE at `/v1/events`,
+Optional HTTP face: `npm run trust:server` (SSE at `/v1/events`,
 `POST /v1/verify` for delivered samples; `SUI_INTEGRATION_MODE=full` also
 starts the gateway poller).
 
@@ -234,8 +213,10 @@ starts the gateway poller).
 
 ```bash
 node scripts/start-all.mjs        # 3 provider agents (8101–8103) + rescue gateway (8082)
+                                  # + claim agent (8105); a fresh dynamic provider market is rolled on launch
 
-# trigger the S1/S2 stadium scenario through the full pipeline:
+# trigger a scenario through the full pipeline (S0–S8: normal, primary-down,
+# backup-insufficient, high-latency, packet-loss, demand-surge, emergency, …):
 curl -s -X POST http://127.0.0.1:8082/recovery/intents \
   -H 'content-type: application/json' \
   -d @scenarios/s2-primary-down-backup-insufficient.json
@@ -259,12 +240,11 @@ naming); without a key everything runs on the deterministic path.
 ## Gonka Router integration (AI for Society track)
 
 All AI reasoning in NetChain runs on the Gonka Network via the official
-inference gateway (`GONKA_BASE_URL=https://api.gonkarouter.io/v1` in
-`.env`). Two independent consumers share the same integration pattern —
-every configured model in `GONKA_MODELS` answers independently, answers
-are kept raw with their **Gonka Request ID** (`x-request-id` response
-header, falling back to the response body `id`), and slow/failed models
-are honestly reported, never hidden:
+inference gateway (`GONKA_BASE_URL` in `.env`). Two independent consumers
+share the same integration pattern — every configured model in `GONKA_MODELS`
+answers independently, answers are kept raw with their **Gonka Request ID**
+(`x-request-id` response header, falling back to the response body `id`), and
+slow/failed models are honestly reported, never hidden:
 
 | Consumer | File | Role | Multi-model consensus |
 | --- | --- | --- | --- |
