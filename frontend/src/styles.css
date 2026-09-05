@@ -773,6 +773,12 @@ label.switch input:focus-visible + i {
 .wide-left { grid-column: 1; }
 .highlight { box-shadow: 0 0 0 2px var(--blue), var(--sh); }
 
+/* subscriber user list styles */
+.subscriber-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+}
+
 /* accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }

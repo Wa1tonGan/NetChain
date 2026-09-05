@@ -195,7 +195,7 @@ export default function LoginPage() {
                 </button>
 
                 <button className="btn subtle" onClick={handleGuestLogin}>
-                  Continue as Demo Guest
+                  Continue as Guest
                 </button>
               </div>
 

@@ -40,17 +40,17 @@ export interface Flow {
 
 export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
-  auto: { key: "auto", outcome: "ok", autoSend: "30 min, USDC 14", phases: [...PRE_SMS, ...POST_SMS] },
+  auto: { key: "auto", outcome: "ok", autoSend: "500 Mbps, USDC 14", phases: [...PRE_SMS, ...POST_SMS] },
   under: {
     key: "under",
     outcome: "under",
-    autoSend: "30 min, USDC 14",
+    autoSend: "500 Mbps, USDC 14",
     phases: [...PRE_SMS, ...POST_SMS],
   },
   failed: {
     key: "failed",
     outcome: "failed",
-    autoSend: "30 min, USDC 14",
+    autoSend: "500 Mbps, USDC 14",
     phases: [
       ...PRE_SMS,
       ["request_detected", 2800],

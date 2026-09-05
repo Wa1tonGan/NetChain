@@ -93,7 +93,7 @@ function IncidentFlow({ record }: { record: RecoveryRecord }) {
           digest={r.commitTx ? `tx ${r.commitTx.slice(0, 10)}…${r.commitTx.slice(-4)}` : `tx ${r.tx}`}
           amount={rm(r.charged)}
           amountSub="locked in escrow"
-          status={r.commitTx ? "Finalized" : "Demo"}
+          status={r.commitTx ? "Finalized" : "Simulated"}
           defaultOpen={!isFailed}
         >
           <div className="split-visual">

@@ -61,14 +61,15 @@ export interface ParsedSms {
   budget: number;
 }
 
-/** Parse SMS reply like "30 min, USDC 14" into duration + budget.
+/** Parse SMS reply like "500 Mbps, USDC 14" into duration + budget.
     Accepts USDC-both-ways ("USDC 14", "14 usdc") and the legacy "RM 14". */
 export function parseSms(text: string, defaultBudget: number): ParsedSms | null {
+  const mbpsMatch = /(\d+)\s*(?:mbps|mb)\b/i.exec(text || "");
   const m = /(\d+)\s*(?:m\b|min\b|mins\b|minute|minutes)\b/i.exec(text || "");
   const b =
     /(?:usdc|rm)\s*(\d+(?:\.\d{1,2})?)\b/i.exec(text || "") ??
     /(\d+(?:\.\d{1,2})?)\s*usdc\b/i.exec(text || "");
-  if (!m && !b) return null;
+  if (!m && !b && !mbpsMatch) return null;
   return {
     min: m ? Math.max(5, parseInt(m[1], 10)) : 30,
     budget: b ? parseFloat(b[1]) : defaultBudget,

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useAppStore } from "../store/useAppStore";
 import { rm } from "../services/pricing";
-import { ESCROW_DEPLOY } from "../services/live";
 import ProtectionModal from "../components/ProtectionModal";
 import TopUpModal from "../components/TopUpModal";
-import Icon, { TextWithIcons } from "../components/Icon";
-import { getExplorerAddressUrl, getExplorerName } from "../services/explorer";
+import { TextWithIcons } from "../components/Icon";
+import { DUMMY_USERS, type DummyUser } from "../data/dummyUsers";
+
 function useTicker(active: boolean, ms = 1000) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -71,24 +71,81 @@ function SessionCard() {
 }
 
 export default function HomePage() {
+  const { userId } = useParams<{ userId?: string }>();
+  const user: DummyUser = DUMMY_USERS.find((u) => u.id === userId) ?? DUMMY_USERS[0];
+
   const s = useAppStore();
   const state = s.protectionState;
-  const isDegraded = state === "attention" || state === "recovering" || s.capacity.primaryDown;
-  const isRecovered = s.capacity.extra > 0;
+  const isStoreDegraded = state === "attention" || state === "recovering" || s.capacity.primaryDown;
+  const isRecovered =
+    s.capacity.extra > 0 ||
+    Boolean(s.session && !s.session.ended) ||
+    s.incident?.result?.state === "Settled" ||
+    (s.incident?.status === "restored" && Boolean(s.incident?.result));
   const [modalOpen, setModalOpen] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
 
-  const walletConnected = Boolean(s.zkLogin);
+  // --- Relocation Simulation (User 1: KL -> Penang) ---
+  const isSimulationUser = Boolean(user.isSimulationUser || user.id === "user-1");
+  const [hasRelocated, setHasRelocated] = useState(false);
+  const [relocating, setRelocating] = useState(false);
 
-  const currentMbps = isDegraded && !isRecovered ? 0 : isRecovered ? s.capacity.current : s.capacity.primary;
-  const latency = isDegraded && !isRecovered ? 142 : Math.round(s.netSample?.rttMs ?? 19);
-  const loss = isDegraded && !isRecovered ? 4.2 : s.netSample?.lossPct ?? 0.0;
+  const activeLocation = hasRelocated
+    ? { city: "George Town", state: "Penang" }
+    : { city: user.city, state: user.state };
+
+  const handleRunSimulation = () => {
+    if (s.running) return;
+    s.resetSim();
+    setRelocating(true);
+    setHasRelocated(true);
+
+    // Update location to Penang & drop speed to 15 Mbps, then trigger recovery modal
+    setTimeout(() => {
+      setRelocating(false);
+      s.startRecovery("auto", 500);
+    }, 650);
+  };
+
+  const handleReset = () => {
+    s.resetSim();
+    setHasRelocated(false);
+    setRelocating(false);
+  };
+
+  // Determine current metrics based on simulation vs store vs static user data
+  let currentMbps: number;
+  let latency: number;
+  let loss: number;
+  let isDegraded: boolean;
+
+  if (isRecovered) {
+    currentMbps = Math.max(s.capacity.current, 500);
+    latency = 18;
+    loss = 0.0;
+    isDegraded = false;
+  } else if (hasRelocated) {
+    currentMbps = 15;
+    latency = 142;
+    loss = 4.2;
+    isDegraded = true;
+  } else if (isStoreDegraded) {
+    currentMbps = 0;
+    latency = 142;
+    loss = 4.2;
+    isDegraded = true;
+  } else {
+    currentMbps = user.speedMbps;
+    latency = user.latencyMs;
+    loss = user.packetLossPct;
+    isDegraded = user.status === "low";
+  }
 
   const heroChip =
     isRecovered ? (
       <span className="chip good">
         <span className="dot" />
-        Recovered · Backup active
+        Good · Protected (Escrow Settled)
       </span>
     ) : isDegraded ? (
       <span className="chip amber">
@@ -126,7 +183,7 @@ export default function HomePage() {
       time: "T+7.2s",
       title: "RescueAgent · A2A broadcast",
       type: "sui",
-      desc: "Queried 3 provider agents — 500 Mbps · 30 min · ≤ USDC 14.",
+      desc: "Queried 3 provider agents — 500 Mbps · ≤ USDC 14.",
     },
     {
       time: "T+11.1s",
@@ -150,33 +207,95 @@ export default function HomePage() {
 
   return (
     <div>
+      {/* Back to User List Navigation */}
+      <div style={{ marginBottom: 14 }}>
+        <Link
+          to="/home"
+          className="link-btn ghost"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12.5,
+            fontWeight: 600,
+            padding: "5px 12px",
+            borderRadius: 16,
+            textDecoration: "none",
+            color: "var(--ink-2)",
+            background: "var(--panel)",
+            border: "1px solid var(--line)",
+          }}
+        >
+          <span>←</span>
+          <span>Back to All Subscribers</span>
+        </Link>
+      </div>
+
+      {/* Page Header with Subscriber Info & Location Label */}
       <div
         className="page-head"
-        style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}
+        style={{ display: "flex", alignItems: "flex-start", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}
       >
         <div>
-          <h2>Your network, right now</h2>
-          <p>Live strength of the line you are paying for — protected by autonomous agents.</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <h2>{user.name}'s Network</h2>
+            <span
+              className="chip neutral"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                padding: "3px 10px",
+                background: "var(--panel)",
+                border: "1px solid var(--line)",
+              }}
+            >
+              📍 {activeLocation.city}, {activeLocation.state}
+            </span>
+          </div>
+          <p style={{ marginTop: 4 }}>
+            <b>Location:</b> {activeLocation.city}, {activeLocation.state} · <b>Device:</b> {user.device} · <b>ISP:</b> {hasRelocated ? "Penang Wireless / FWA" : user.isp}
+          </p>
         </div>
-        <span className="chip live">
-          <span className="dot" />
-          MONITORING · 1s interval
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="chip live">
+            <span className="dot" />
+            MONITORING · 1s interval
+          </span>
+          {hasRelocated && (
+            <button
+              type="button"
+              className="btn sm subtle"
+              onClick={handleReset}
+              disabled={s.running}
+              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 16 }}
+              title="Reset location to Kuala Lumpur"
+            >
+              ↺ Reset to Kuala Lumpur
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="hero">
         <div className="card net-hero">
           <div className="net-status-row">
             {heroChip}
-            {isRecovered && <span className="chip neutral" style={{ marginLeft: "auto" }}>Escrow settled</span>}
+            <span className="chip neutral" style={{ fontSize: 11, fontWeight: 700 }}>
+              📍 {activeLocation.city}, {activeLocation.state}
+            </span>
+            {isRecovered && (
+              <span className="chip good" style={{ marginLeft: "auto", fontWeight: 700 }}>
+                <span className="dot" /> Escrow Settled
+              </span>
+            )}
           </div>
-          <div className="net-big">
+          <div className="net-big" style={{ color: isRecovered ? "var(--green-ink)" : undefined }}>
             {currentMbps}
             <small> Mbps</small>
           </div>
           <div className="net-sub">
             {isRecovered
-              ? `Primary fiber suppressed — you are running on a ${s.session?.agreed ?? s.capacity.extra} Mbps backup slice, bought and attached by your agent.`
+              ? "Network restored to healthy state (500 Mbps) — high-speed backup active, escrow settled autonomously on Sui."
               : isDegraded
               ? "Primary fiber suppressed — your RescueAgent is acquiring replacement capacity right now."
               : "Primary fiber link healthy. Agents are standing by on a 1-second monitoring interval."}
@@ -186,7 +305,7 @@ export default function HomePage() {
               <line x1="0" x2="280" y1="10" y2="10" stroke="#e5e5ea" strokeDasharray="4 3" />
               <polyline
                 fill="none"
-                stroke="#0071e3"
+                stroke={isRecovered ? "#34c759" : "#0071e3"}
                 strokeWidth="2"
                 strokeLinejoin="round"
                 points={
@@ -207,8 +326,8 @@ export default function HomePage() {
                   </>
                 )}
               </g>
-              <text x="2" y="7" fontSize="8" fill="#aeaeb2">
-                {isDegraded && !isRecovered ? "primary suppressed →" : "backup attached →"}
+              <text x="2" y="7" fontSize="8" fill={isRecovered ? "#34c759" : "#aeaeb2"}>
+                {isDegraded && !isRecovered ? "primary suppressed →" : "link healthy · good →"}
               </text>
             </svg>
             <div className="net-foot">
@@ -216,7 +335,7 @@ export default function HomePage() {
                 last 60s · <b>{isDegraded && !isRecovered ? 0 : 100}</b>% of expected strength
               </span>
               <span>
-                next check <b>1s</b>
+                status · <b>{isRecovered ? "Good (Escrow Settled)" : isDegraded ? "Degraded" : "Nominal"}</b>
               </span>
             </div>
           </div>
@@ -226,25 +345,25 @@ export default function HomePage() {
           <div className="tile-row">
             <div className="tile">
               <div className="k">Primary</div>
-              <div className={`v ${isDegraded && !isRecovered ? "bad" : ""}`}>
-                {isDegraded && !isRecovered ? "0 Mbps" : `${s.capacity.primary} Mbps`}
+              <div className={`v ${isDegraded && !isRecovered ? "bad" : "good"}`}>
+                {isDegraded && !isRecovered ? "0 Mbps" : `${s.capacity.primary || 500} Mbps`}
               </div>
               <div className="s">{isDegraded && !isRecovered ? "suppressed" : "fiber · nominal"}</div>
             </div>
             <div className="tile">
               <div className="k">Backup</div>
-              <div className={`v ${isRecovered ? "good" : ""}`}>{isRecovered ? `+${s.capacity.extra}` : "—"}</div>
-              <div className="s">{isRecovered ? "KilatLink FWA" : "standby"}</div>
+              <div className={`v ${isRecovered ? "good" : ""}`}>{isRecovered ? `+${s.capacity.extra || 500} Mbps` : "—"}</div>
+              <div className="s">{isRecovered ? "KilatLink FWA · active" : "standby"}</div>
             </div>
             <div className="tile">
               <div className="k">Latency</div>
-              <div className={`v ${isDegraded && !isRecovered ? "bad" : ""}`}>{latency} ms</div>
-              <div className="s">{isDegraded && !isRecovered ? "was 18 ms" : "rtt · live probe"}</div>
+              <div className={`v ${isDegraded && !isRecovered ? "bad" : "good"}`}>{latency} ms</div>
+              <div className="s">{isDegraded && !isRecovered ? "was 18 ms" : "18 ms · nominal"}</div>
             </div>
             <div className="tile">
               <div className="k">Loss</div>
               <div className={`v ${isDegraded && !isRecovered ? "bad" : "good"}`}>{loss.toFixed(1)}%</div>
-              <div className="s">last 5 probes</div>
+              <div className="s">{isRecovered ? "0.0% · nominal" : "last 5 probes"}</div>
             </div>
           </div>
           {s.session && !s.session.ended ? (
@@ -283,51 +402,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Recovery controls */}
-      <div className="card-title">Recovery controls</div>
-      <div className="card">
-        <div className="pad" style={{ display: "grid", gap: 8 }}>
-          <button
-            className="btn primary"
-            onClick={() => s.startLiveRecovery("s2")}
-            disabled={s.running}
-            title="Broadcast your intent to the agent market and settle escrow on Sui"
-          >
-            Run recovery
-          </button>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <button className="btn subtle" onClick={s.resetSim} disabled={s.running}>
-              Reset to normal link
-            </button>
-            <button
-              className="btn subtle"
-              onClick={() => setTopUpOpen(true)}
-              disabled={!walletConnected}
-              title={walletConnected ? "Add USDC to the escrow pool" : "Connect a wallet first"}
-            >
-              Top up pool
-            </button>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 4, borderTop: "1px solid var(--line)" }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".07em" }}>
-              Escrow operator
-            </span>
-            <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>
-              {ESCROW_DEPLOY.platformOperator.slice(0, 10)}…{ESCROW_DEPLOY.platformOperator.slice(-8)}
-            </span>
-            <a
-              className="link-btn ghost"
-              style={{ padding: "2px 8px", fontSize: 10.5, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}
-              href={getExplorerAddressUrl(ESCROW_DEPLOY.platformOperator, s.preferredExplorer)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span>{getExplorerName(s.preferredExplorer)}</span>
-              <Icon name="external-link" size={10} />
-            </a>
-          </div>
-        </div>
-      </div>
       {/* Agent interaction feed */}
       <div className="card-title">
         Agent activity
@@ -356,6 +430,42 @@ export default function HomePage() {
       {modalOpen && <ProtectionModal onClose={() => setModalOpen(false)} />}
       {topUpOpen && s.zkLogin && (
         <TopUpModal session={s.zkLogin} onClose={() => setTopUpOpen(false)} />
+      )}
+
+      {/* Bottom-left Run Simulation Button for User 1 */}
+      {isSimulationUser && (
+        <div style={{ position: "fixed", left: 24, bottom: 84, zIndex: 45 }}>
+          <button
+            className="btn primary"
+            onClick={handleRunSimulation}
+            disabled={s.running || relocating}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "11px 20px",
+              borderRadius: 26,
+              background: "linear-gradient(135deg, #0071e3, #0056b3)",
+              boxShadow: "0 6px 20px rgba(0, 113, 227, 0.4)",
+              fontSize: 13.5,
+              fontWeight: 700,
+              color: "#ffffff",
+              border: "none",
+              cursor: s.running || relocating ? "not-allowed" : "pointer",
+            }}
+          >
+            <span style={{ fontSize: 16 }}>📍</span>
+            <span>
+              {relocating
+                ? "Switching to Penang..."
+                : s.running
+                ? "Autonomous Recovery Active..."
+                : hasRelocated
+                ? "Re-Run Relocation (KL → Penang)"
+                : "Run Simulation (Relocate KL → Penang)"}
+            </span>
+          </button>
+        </div>
       )}
     </div>
   );

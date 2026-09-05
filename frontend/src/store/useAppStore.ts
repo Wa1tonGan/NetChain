@@ -6,7 +6,6 @@ import {
   DEMAND_MBPS,
   parseSms,
   rm,
-  rm0,
   UNDER_DELIVERY_RATIO,
 } from "../services/pricing";
 import { EVENT_LABELS, FLOWS } from "../services/flows";
@@ -469,7 +468,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         incident: {
           ...inc,
-          thread: [...inc.thread, { from: "err", text: `Couldn't read that. Try: “${inc.kind === "live" ? "60 min, USDC 5" : "30 min, USDC 14"}”.` }],
+          thread: [...inc.thread, { from: "err", text: `Couldn't read that. Try: “${inc.kind === "live" ? "500 Mbps, USDC 5" : "500 Mbps, USDC 14"}”.` }],
         },
       });
       return;
@@ -490,11 +489,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         from: "sys" as const,
         text:
           inc.kind === "live"
-            ? `Intent accepted — ${inc.shortage} Mbps · ${plan.min} min · budget ${rm0(p.budget)} — agents will quote within it.`
-            : `Intent accepted — ${inc.shortage} Mbps · ${plan.min} min · ${rm(plan.cost)}` +
-              (plan.adjusted
-                ? ` (closest option within your ${rm0(p.budget)} budget)`
-                : ` (within your ${rm0(p.budget)} budget ✓)`),
+            ? `Intent accepted — ${inc.shortage} Mbps · budget USDC ${p.budget.toFixed(0)} — agents quoting now.`
+            : `Intent accepted — ${inc.shortage} Mbps · budget USDC ${p.budget.toFixed(0)} ✓`,
       },
     ];
     set({
@@ -703,7 +699,7 @@ function pauseForSms() {
           from: "net",
           text:
             `Line degraded · Shortage: ${inc.shortage} Mbps. ` +
-            `Reply with duration & budget — e.g. “${inc.kind === "live" ? "60 min, USDC 5" : "30 min, USDC 14"}”.`,
+            `Reply with bandwidth & budget — e.g. “500 Mbps, USDC 14”.`,
         },
       ],
     },
@@ -1261,7 +1257,7 @@ async function adoptSelectedOffer(incidentId: string) {
       sysBubble(`✓ On-chain commitment ${walletRes.digest ? `tx ${walletRes.digest.slice(0, 10)}… ` : ""}recorded (wallet)`);
       live.closers.push(openChainStream(onChainRow));
     } else {
-      sysBubble("ℹ️ Demo signing mode (no zk proof) — server-cap commit path", { event: false });
+      sysBubble("ℹ️ Autonomous signing mode (no zk proof) — server-cap commit path", { event: false });
       const res = await commitSelected(offer);
       if (!live || live.finished) return;
       live.committed = true;
@@ -1450,7 +1446,7 @@ async function beginLive(req: RecoveryRequest, smsText: string) {
     },
   };
 
-  sysBubble(`Live mode — broadcasting your intent (${req.min} min · ${"USDC " + req.budget.toFixed(0)}) to the agent market…`);
+  sysBubble(`Live mode — broadcasting your intent (${inc.shortage} Mbps · ${"USDC " + req.budget.toFixed(0)}) to the agent market…`);
 
   try {
     const ack = await submitIntent(intent);

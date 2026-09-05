@@ -166,7 +166,7 @@ export default function ActivityDetailPage() {
               digest={r.commitTx ? `tx ${r.commitTx.slice(0, 10)}…${r.commitTx.slice(-4)}` : `tx ${r.tx}`}
               amount={rm(r.charged)}
               amountSub="locked in escrow"
-              status={r.commitTx ? "Finalized" : "Demo"}
+              status={r.commitTx ? "Finalized" : "Simulated"}
               defaultOpen={!isFailed}
             >
               <div className="split-visual">
@@ -402,7 +402,7 @@ export default function ActivityDetailPage() {
                     </div>
                   </div>
                   <div className="tech-item">
-                    <span className="tk">Sui Transaction {r.commitTx ? "(on-chain digest)" : "(demo)"}</span>
+                    <span className="tk">Sui Transaction {r.commitTx ? "(on-chain digest)" : "(simulated)"}</span>
                     <div className="tv">
                       <a
                         className="txlink"

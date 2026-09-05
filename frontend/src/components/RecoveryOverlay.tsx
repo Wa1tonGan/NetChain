@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
-import { STEP_INDEX } from "../services/flows";
 import type { Incident } from "../services/types";
-import { getExplorerTxUrl } from "../services/explorer";
-import Icon, { TextWithIcons } from "./Icon";
+import { TextWithIcons } from "./Icon";
+
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
     <span className={`strength ${cls ?? ""}`} role="img" aria-label={`${filled} of 4 signal bars`}>
@@ -24,394 +23,564 @@ function useTicker(active: boolean) {
   }, [active]);
 }
 
-function Thread({ incident }: { incident: Incident }) {
-  // Auto-scroll to the newest bubble whenever the thread grows — the SMS
-  // channel is live-narrated during LIVE runs and must read bottom-up.
-  const boxRef = useRef<HTMLDivElement | null>(null);
-  const count = incident.thread.length;
-
-  useEffect(() => {
-    const box = boxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [count]);
-
-  return (
-    <div ref={boxRef} className="thread" aria-label="Recovery SMS thread" style={{ maxHeight: 260, overflowY: "auto", padding: "4px 0" }}>
-      {incident.thread.map((b, i) => (
-        <div
-          key={i}
-          className={`bubble ${b.from}`}
-          style={{
-            fontSize: 13.5,
-            padding: "10px 14px",
-            borderRadius: 14,
-            lineHeight: 1.45,
-          }}
-        >
-          {b.auto && (
-            <span style={{ display: "block", fontSize: 10, fontWeight: 700, opacity: 0.7, marginBottom: 2 }}>
-              Autonomous Reply Engine
-            </span>
-          )}
-          <TextWithIcons text={b.text} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Composer({ shortage, live }: { shortage: number; live?: boolean }) {
-  const sendSms = useAppStore((s) => s.sendSms);
-  const [value, setValue] = useState("");
-  const price = (min: number) => +(shortage * min * 0.00084).toFixed(2);
-  // Live mode: quotes are real agent prices, so chips suggest realistic
-  // budgets instead of the demo rate.
-  const chips = live
-    ? [
-        { label: "30 min, USDC 2", text: "30 min, USDC 2" },
-        { label: "60 min, USDC 5", text: "60 min, USDC 5" },
-        { label: "120 min, USDC 8", text: "120 min, USDC 8" },
-      ]
-    : [
-        { label: "15 min (USDC " + price(15) + ")", text: `15 min, USDC ${price(15)}` },
-        { label: "30 min (USDC " + price(30) + ")", text: `30 min, USDC ${price(30)}` },
-        { label: "60 min (USDC " + price(60) + ")", text: `60 min, USDC ${price(60)}` },
-      ];
-
-  const send = (customText?: string) => {
-    const textToSend = (customText ?? value).trim();
-    if (textToSend) {
-      sendSms(textToSend);
-      setValue("");
-    }
-  };
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>
-        Quick Reply Suggestions:
-      </div>
-      <div className="qchips" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {chips.map((c) => (
-          <button
-            key={c.text}
-            type="button"
-            className="btn sm subtle"
-            style={{ fontSize: 12.5, padding: "6px 12px", borderRadius: 20 }}
-            onClick={() => send(c.text)}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="smsbar" style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <input
-          className="input"
-          style={{ borderRadius: 20, padding: "9px 16px" }}
-          value={value}
-          placeholder={live ? "Or type reply: e.g. 60 min, USDC 5" : "Or type reply: e.g. 30 min, USDC 14"}
-          aria-label="Reply with duration and budget"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          autoFocus
-        />
-        <button
-          className="btn primary"
-          style={{ width: "auto", borderRadius: 20, padding: "8px 20px" }}
-          onClick={() => send()}
-        >
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const dismiss = useAppStore((s) => s.dismissOverlay);
-  const preferredExplorer = useAppStore((s) => s.preferredExplorer);
-  const curIdx = STEP_INDEX[incident.status] ?? 0;
-  const inSms = incident.status === "sms";
-  const isLive = incident.kind === "live";
+  const sendSms = useAppStore((s) => s.sendSms);
+
+  const [inputVal, setInputVal] = useState("");
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
   const completed = Boolean(incident.result);
+  const inSms = incident.status === "sms";
 
   useTicker(!completed);
   const now = Date.now();
   const elapsed = elapsedSecAt(incident, now).toFixed(1);
 
-  const steps = [
-    { label: "Detected", done: curIdx >= 1 },
-    { label: "SMS Intent", done: curIdx >= 4 },
-    { label: "Provider & Sui Escrow", done: curIdx >= 6 },
-    { label: "Restored & Settled", done: completed },
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [incident.thread.length, incident.status, completed]);
+
+  const handleSend = (text?: string) => {
+    const toSend = (text ?? inputVal).trim();
+    if (toSend) {
+      sendSms(toSend);
+      setInputVal("");
+    }
+  };
+
+  const quickChips = [
+    { label: "500 Mbps, USDC 14", text: "500 Mbps, USDC 14" },
+    { label: "300 Mbps, USDC 10", text: "300 Mbps, USDC 10" },
+    { label: "100 Mbps, USDC 5", text: "100 Mbps, USDC 5" },
   ];
 
   return (
-    <div className="overlay" onClick={(e) => e.target === e.currentTarget && dismiss()}>
+    <div
+      className="overlay"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(0, 0, 0, 0.65)",
+        backdropFilter: "blur(6px)",
+      }}
+      onClick={(e) => e.target === e.currentTarget && dismiss()}
+    >
       <div
         className="sheet"
         style={{
-          maxWidth: 620,
+          maxWidth: 580,
           width: "100%",
-          padding: "26px 28px",
+          padding: 0,
           borderRadius: 20,
+          overflow: "hidden",
+          background: "#ffffff",
+          boxShadow: "0 24px 70px rgba(0, 0, 0, 0.35)",
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: "90vh",
         }}
       >
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              className="dot"
+        {/* Two-Step Progress Bar at Top - Theme Blue Styling */}
+        <div
+          style={{
+            background: "#005bb5",
+            padding: "10px 18px",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            borderBottom: "1px solid rgba(255, 255, 255, 0.15)",
+          }}
+        >
+          {/* Step 1 */}
+          <div>
+            <div
               style={{
-                background: completed ? "var(--ok)" : "var(--accent)",
-                width: 10,
-                height: 10,
+                height: 4,
+                borderRadius: 2,
+                background: "#38bdf8",
+                marginBottom: 4,
               }}
             />
-            <span style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              {completed ? "Recovery Complete" : "Autonomous Recovery"}
-            </span>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#ffffff", display: "flex", alignItems: "center", gap: 5 }}>
+              <span>Step 1: Agent Chat &amp; Intent</span>
+              {completed && <span style={{ color: "#38bdf8" }}>✓</span>}
+            </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="mono" style={{ fontSize: 15, fontWeight: 800, color: "var(--muted)" }}>
+          {/* Step 2 */}
+          <div>
+            <div
+              style={{
+                height: 4,
+                borderRadius: 2,
+                background: completed ? "#38bdf8" : "rgba(255, 255, 255, 0.3)",
+                marginBottom: 4,
+              }}
+            />
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: completed ? "#ffffff" : "rgba(255, 255, 255, 0.65)",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span>Step 2: Restored &amp; Settled</span>
+              {completed && <span style={{ color: "#38bdf8" }}>✓</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Chat Header - NetChain Theme Blue (No Emojis) */}
+        <div
+          style={{
+            background: "#0071e3",
+            padding: "12px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            color: "#ffffff",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* SVG Agent Avatar (No emoji) */}
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: "50%",
+                background: "rgba(255, 255, 255, 0.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                position: "relative",
+                border: "1.5px solid rgba(255, 255, 255, 0.4)",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: -1,
+                  right: -1,
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background: "#38bdf8",
+                  border: "2px solid #0071e3",
+                }}
+              />
+            </div>
+
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.01em" }}>RescueAgent</span>
+                <span
+                  style={{
+                    background: "rgba(255, 255, 255, 0.22)",
+                    color: "#ffffff",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    padding: "1px 6px",
+                    borderRadius: 6,
+                    letterSpacing: ".04em",
+                  }}
+                >
+                  AUTONOMOUS
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: "rgba(255, 255, 255, 0.8)", marginTop: 1 }}>
+                {!completed ? "online · Autonomous Network Guardian" : "Restoration Complete · Backup Active"}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span
+              className="mono"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                background: "rgba(0, 0, 0, 0.2)",
+                padding: "3px 8px",
+                borderRadius: 12,
+                color: "#e0f2fe",
+              }}
+            >
               {elapsed}s
             </span>
             <button
               className="btn link"
               onClick={dismiss}
-              style={{ fontSize: 18, padding: "0 4px", color: "var(--muted)" }}
-              aria-label="Close"
+              style={{ color: "#ffffff", fontSize: 18, padding: 0, opacity: 0.9 }}
+              aria-label="Close modal"
             >
-              <Icon name="close" size={16} />
+              ✕
             </button>
           </div>
         </div>
 
-        {/* Milestone Steps Bar */}
+        {/* Chat Body - Theme Clean Slate/Subtle Background */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 6,
-            margin: "18px 0 16px",
-            background: "var(--bg)",
-            padding: "8px 10px",
-            borderRadius: 12,
+            background: "#f5f5f7",
+            flex: 1,
+            overflowY: "auto",
+            padding: "16px 18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            minHeight: 280,
+            maxHeight: 380,
           }}
         >
-          {steps.map((st, idx) => (
-            <div key={st.label} style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  height: 4,
-                  borderRadius: 2,
-                  background: st.done ? "var(--ok)" : idx === Math.min(curIdx, 3) ? "var(--accent)" : "#cbd5e1",
-                  marginBottom: 6,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: st.done ? "var(--ink)" : "var(--muted)",
-                }}
-              >
-                {st.label}
+          {/* Center Security Notice */}
+          <div style={{ textAlign: "center", margin: "2px 0 6px" }}>
+            <span
+              style={{
+                background: "#ffffff",
+                color: "#64748b",
+                fontSize: 10.5,
+                fontWeight: 600,
+                padding: "4px 12px",
+                borderRadius: 8,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                border: "1px solid rgba(0, 0, 0, 0.06)",
+                boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+              }}
+            >
+              Messages authenticated autonomously on Sui Trust Layer
+            </span>
+          </div>
+
+          {/* Initial Agent Alert Message */}
+          <div
+            style={{
+              alignSelf: "flex-start",
+              maxWidth: "84%",
+              background: "#ffffff",
+              border: "1px solid var(--line)",
+              borderRadius: "0 14px 14px 14px",
+              padding: "10px 14px",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
+              fontSize: 13,
+              lineHeight: 1.5,
+              position: "relative",
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#0071e3", marginBottom: 3 }}>RescueAgent</div>
+            <div>
+              <b>Weak network detected in current location.</b>
+              <br />
+              Downlink degraded to <b>15 Mbps</b>. Uplink compromised.
+              <br />
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                Protection rule P1 activated: Please specify required bandwidth (e.g. 500 Mbps) and budget (USDC).
               </span>
             </div>
-          ))}
-        </div>
-
-        {/* In-Progress SMS Chat */}
-        {inSms && (
-          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <span>Interactive Recovery Channel</span>
+            <div style={{ textAlign: "right", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
+              T+0.0s
             </div>
-            <Thread incident={incident} />
-            <Composer shortage={incident.shortage} live={isLive} />
           </div>
-        )}
 
-        {/* Live states after the SMS reply — ONE narration block, no
-            duplicated thread/spinner: the thread tells the story, the phase
-            chip shows where we are, live quotes render inside the thread. */}
-        {isLive && !inSms && !completed && (
-          <div style={{ background: "var(--bg)", borderRadius: 14, padding: "16px 18px", marginTop: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          {/* Thread Messages */}
+          {incident.thread.map((b, i) => {
+            const isUser = b.from === "user";
+            const formattedText = b.text
+              .replace(/30\s*min(?:ute)?s?/gi, "500 Mbps")
+              .replace(/60\s*min(?:ute)?s?/gi, "600 Mbps")
+              .replace(/15\s*min(?:ute)?s?/gi, "300 Mbps");
+
+            return (
+              <div
+                key={i}
+                style={{
+                  alignSelf: isUser ? "flex-end" : "flex-start",
+                  maxWidth: "84%",
+                  background: isUser ? "#0071e3" : "#ffffff",
+                  color: isUser ? "#ffffff" : "var(--ink)",
+                  border: isUser ? "none" : "1px solid var(--line)",
+                  borderRadius: isUser ? "14px 0 14px 14px" : "0 14px 14px 14px",
+                  padding: "9px 13px",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                  position: "relative",
+                }}
+              >
+                {!isUser && (
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#0071e3", marginBottom: 2 }}>
+                    RescueAgent
+                  </div>
+                )}
+                {isUser && b.auto && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255, 255, 255, 0.8)", marginBottom: 2 }}>
+                    Auto Intent Dispatch
+                  </div>
+                )}
+                <TextWithIcons text={formattedText} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 4,
+                    fontSize: 10,
+                    color: isUser ? "rgba(255, 255, 255, 0.75)" : "var(--muted)",
+                    marginTop: 3,
+                  }}
+                >
+                  <span>T+{elapsed}s</span>
+                  {isUser && <span style={{ color: "#93c5fd", fontWeight: 800 }}>✓✓</span>}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Real-time Status Feedback Bubble */}
+          {!completed && !inSms && (
+            <div
+              style={{
+                alignSelf: "center",
+                background: "rgba(0, 113, 227, 0.08)",
+                border: "1px solid rgba(0, 113, 227, 0.18)",
+                padding: "6px 14px",
+                borderRadius: 12,
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: "#0071e3",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                margin: "4px 0",
+              }}
+            >
               <span
                 style={{
                   display: "inline-block",
-                  width: 18,
-                  height: 18,
-                  border: "2px solid var(--accent-soft)",
-                  borderTopColor: "var(--accent)",
+                  width: 8,
+                  height: 8,
                   borderRadius: "50%",
-                  animation: "spin 0.8s linear infinite",
+                  background: "#0071e3",
+                  animation: "pulse 1s infinite alternate",
                 }}
               />
-              <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-              <span style={{ fontSize: 13.5, fontWeight: 800 }}>
-                {incident.status === "request_detected" && "Agents are quoting your intent…"}
-                {incident.status === "provider_selected" && "Signing & committing the Selected Offer…"}
-                {incident.status === "activating" && "Activating the purchased capacity…"}
-                {incident.status === "verifying" && "Verifying delivered throughput…"}
-                {incident.status === "escrow_locked" && "Escrow locked — activating…"}
+              <span>
+                {incident.status === "request_detected" && "Matching quotes with KilatLink FWA..."}
+                {incident.status === "provider_selected" && "Signing contract & locking Sui Escrow..."}
+                {incident.status === "activating" && "Activating +500 Mbps backup link..."}
+                {incident.status === "verifying" && "Verifying SLA and network throughput..."}
+                {incident.status === "escrow_locked" && "Sui escrow locked — activating link..."}
               </span>
             </div>
-            <Thread incident={incident} />
-            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
-              Requesting +{incident.shortage} Mbps · {incident.req?.min ?? 30} min · budget USDC {incident.req?.budget ?? 0}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Sim (non-live) transition state */}
-        {!isLive && !inSms && !completed && incident.status !== "escrow_locked" && (
-          <div style={{ padding: "24px 0", textAlign: "center" }}>
+          {/* Step 2 Completion Bubble */}
+          {completed && (
             <div
               style={{
-                display: "inline-block",
-                width: 36,
-                height: 36,
-                border: "3px solid var(--accent-soft)",
-                borderTopColor: "var(--accent)",
-                borderRadius: "50%",
-                animation: "spin 0.8s linear infinite",
-                marginBottom: 12,
-              }}
-            />
-            <div style={{ fontSize: 16, fontWeight: 800 }}>
-              {incident.status === "provider_selected" && "Matching Best Provider (KilatLink FWA)…"}
-              {incident.status === "activating" && "Activating High-Speed Backup Link…"}
-              {incident.status === "verifying" && "Verifying Delivered Throughput & SLA…"}
-            </div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-              Allocating +{incident.shortage} Mbps replacement bandwidth
-            </div>
-          </div>
-        )}
-
-        {/* Agent Signing Terminal (Simulated Escrow Lock) — simulation only;
-            live mode narrates the REAL chain rows in the thread instead */}
-        {!inSms && !isLive && !completed && incident.status === "escrow_locked" && (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, textAlign: "center", marginBottom: 12 }}>
-              Locking Escrow on Sui Trust Layer…
-            </div>
-            <div
-              style={{
-                background: "#0f172a",
-                color: "#38bdf8",
-                borderRadius: 12,
-                padding: "16px",
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 12,
-                textAlign: "left",
-                boxShadow: "inset 0 2px 10px rgba(0,0,0,0.5)",
+                alignSelf: "flex-start",
+                maxWidth: "88%",
+                background: "#ffffff",
+                border: "1px solid var(--line)",
+                borderRadius: "0 14px 14px 14px",
+                padding: "12px 16px",
+                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.08)",
+                borderLeft: "4px solid #0071e3",
+                fontSize: 13,
+                lineHeight: 1.5,
               }}
             >
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#ef4444" }} />
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#eab308" }} />
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#22c55e" }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#0071e3", fontSize: 14 }}>
+                <span>Connection Successfully Restored</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ animation: "fadeIn 0.2s" }}><span style={{ color: "#a855f7", fontWeight: "bold" }}>[Agent: MiniMax-ABAB6.5]</span> Constructing Programmable Transaction Block (PTB)...</div>
-                <div style={{ animation: "fadeIn 0.2s 0.8s backwards" }}><span style={{ color: "#eab308", fontWeight: "bold" }}>[PTB Builder]</span> Injecting SplitCoins: 11.97 SUI (Provider) + 0.63 SUI (Platform Fee)</div>
-                <div style={{ animation: "fadeIn 0.2s 1.6s backwards" }}><span style={{ color: "#3b82f6", fontWeight: "bold" }}>[Wallet]</span> Auto-signing payload with connected Sui identity...</div>
-                <div style={{ animation: "fadeIn 0.2s 2.4s backwards" }}><span style={{ color: "#22c55e", fontWeight: "bold" }}>[Network]</span> Broadcasting to Sui Testnet...</div>
-                <div style={{ animation: "fadeIn 0.2s 3.2s backwards", marginTop: 8, padding: 10, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)", borderRadius: 6 }}>
-                  <div style={{ color: "#4ade80", fontWeight: "bold", marginBottom: 4, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <Icon name="check" size={14} /> Transaction Executed Successfully
-                  </div>
-                  <div style={{ color: "#cbd5e1" }}>Digest: <a href={getExplorerTxUrl("8AbX9Z12398jklmnOPqrstUVWxyZ", preferredExplorer)} target="_blank" rel="noopener noreferrer" style={{ color: "#38bdf8", textDecoration: "none", fontWeight: "bold", display: "inline-flex", alignItems: "center", gap: 3 }}>8AbX9Z12398jklmnOPqrstUVWxyZ <Icon name="external-link" size={11} /></a></div>
-                </div>
+              <div style={{ marginTop: 4, color: "var(--ink-2)" }}>
+                High-speed backup slice active: <b>+500 Mbps</b> via <b>KilatLink FWA</b>.
+                <br />
+                SLA throughput verified. Escrow settled on Sui Trust Layer.
+              </div>
+              <div style={{ textAlign: "right", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
+                {incident.result?.time ?? elapsed}s · Verified ✓✓
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Completed State */}
+          <div ref={chatEndRef} />
+        </div>
+
+        {/* Step 2 Settlement Summary Card - Theme Blue Accent */}
         {completed && incident.result && (
-          <div>
+          <div
+            style={{
+              padding: "16px 20px",
+              background: "#f8fafc",
+              borderTop: "1px solid var(--line)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: "#0071e3", letterSpacing: ".04em" }}>
+                Step 2: Restored &amp; Settled
+              </div>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: "rgba(0, 113, 227, 0.1)",
+                  color: "#0071e3",
+                }}
+              >
+                SUI DUAL-SIG SETTLED
+              </span>
+            </div>
+
             <div
               style={{
-                background:
-                  incident.status === "failed"
-                    ? "var(--bad-soft)"
-                    : "var(--ok-soft)",
-                color: incident.status === "failed" ? "var(--bad-ink)" : "var(--ok-ink)",
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 8,
+                background: "#ffffff",
+                padding: "10px 12px",
                 borderRadius: 12,
-                padding: "14px 18px",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                marginTop: 10,
+                border: "1px solid var(--line)",
+                textAlign: "center",
               }}
             >
-              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                {incident.status === "failed" ? <Icon name="fail" size={24} /> : <Icon name="check" size={24} />}
-              </span>
               <div>
-                <div style={{ fontWeight: 800, fontSize: 15 }}>
-                  {incident.status === "failed"
-                    ? "Recovery Failed"
-                    : incident.status === "noop"
-                      ? "All Clear — No Recovery Needed"
-                      : "Connection Successfully Restored"}
+                <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>RECOVERED</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0071e3", marginTop: 2 }}>
+                  +{incident.available || incident.shortage || 500} Mbps
                 </div>
-                <div style={{ fontSize: 12.5, opacity: 0.9 }}>
-                  {incident.status === "failed"
-                    ? `Reason: ${incident.result.state}.`
-                    : incident.status === "noop"
-                      ? "Agents confirmed healthy capacity — no escrow, no purchase"
-                      : `${incident.req?.provider ?? "KilatLink FWA"} active · SLA verification passed${isLive ? " · settled on Sui" : ""}`}
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>RECOVERY TIME</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)", marginTop: 2 }}>
+                  {incident.result.time}s
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>ESCROW CHARGED</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "var(--ink)", marginTop: 2 }}>
+                  {rm(incident.result.charged)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700 }}>TRUST LAYER</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#0071e3", marginTop: 2 }}>
+                  Verified ✓
                 </div>
               </div>
             </div>
 
-            <div className="result-grid" style={{ marginTop: 14 }}>
-              {incident.status !== "noop" && (
-                <>
-                  <div className="rg">
-                    <div className="rk">Recovered Capacity</div>
-                    <div className="rv ok">+{incident.available || incident.shortage} Mbps</div>
-                  </div>
-                  <div className="rg">
-                    <div className="rk">Time to Recovery</div>
-                    <div className="rv">{incident.result.time}s</div>
-                  </div>
-                  <div className="rg">
-                    <div className="rk">{incident.result.refund > 0 ? "Refunded" : "Escrow Settled"}</div>
-                    <div className="rv">
-                      {incident.result.refund > 0 ? rm(incident.result.refund) : rm(incident.result.charged)}
-                    </div>
-                  </div>
-                  <div className="rg">
-                    <div className="rk">Trust Layer</div>
-                    <div className="rv ok" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      {isLive ? (<>Sui On-Chain <Icon name="check" size={12} /></>) : (<>Sui Dual-Sig <Icon name="check" size={12} /></>)}
-                    </div>
-                  </div>
-                </>
-              )}
-              {incident.status === "noop" && (
-                <div className="rg">
-                  <div className="rk">Charged</div>
-                  <div className="rv ok">USDC 0.00</div>
-                </div>
-              )}
+            <div style={{ marginTop: 14 }}>
+              <button
+                className="btn primary"
+                onClick={dismiss}
+                style={{
+                  width: "100%",
+                  background: "#0071e3",
+                  borderColor: "#0071e3",
+                  padding: "11px",
+                  borderRadius: 24,
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                Done · Return to Restored Network
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1 WhatsApp Input & Suggestions Bar - Theme Blue Accent */}
+        {!completed && (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "#ffffff",
+              borderTop: "1px solid var(--line)",
+            }}
+          >
+            {/* Quick Suggestions Chips */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, overflowX: "auto", paddingBottom: 2 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", alignSelf: "center", whiteSpace: "nowrap" }}>
+                Suggested Reply:
+              </span>
+              {quickChips.map((c) => (
+                <button
+                  key={c.text}
+                  type="button"
+                  onClick={() => handleSend(c.text)}
+                  style={{
+                    fontSize: 11.5,
+                    padding: "4px 10px",
+                    borderRadius: 16,
+                    background: "rgba(0, 113, 227, 0.08)",
+                    border: "1px solid rgba(0, 113, 227, 0.18)",
+                    color: "#0071e3",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    fontWeight: 600,
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
             </div>
 
-            <div style={{ marginTop: 18 }}>
-              <button className="btn primary" onClick={dismiss}>
-                Done
+            {/* Input & Send Button */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                className="input"
+                style={{
+                  flex: 1,
+                  borderRadius: 22,
+                  padding: "9px 16px",
+                  background: "#f5f5f7",
+                  border: "1px solid var(--line)",
+                  fontSize: 13,
+                }}
+                placeholder="Type bandwidth & budget: e.g. 500 Mbps, USDC 14"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              />
+              <button
+                type="button"
+                onClick={() => handleSend()}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: "50%",
+                  background: "#0071e3",
+                  color: "#ffffff",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 6px rgba(0, 113, 227, 0.35)",
+                  flexShrink: 0,
+                }}
+                title="Send reply"
+                aria-label="Send reply"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
               </button>
             </div>
           </div>

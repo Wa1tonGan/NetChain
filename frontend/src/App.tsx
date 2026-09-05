@@ -4,6 +4,7 @@ import { useAppStore } from "./store/useAppStore";
 import Shell from "./components/Shell";
 import RecoveryOverlay from "./components/RecoveryOverlay";
 import DevPage from "./pages/DevPage";
+import UserListPage from "./pages/UserListPage";
 import HomePage from "./pages/HomePage";
 import ServicesPage from "./pages/ServicesPage";
 import ActivityPage from "./pages/ActivityPage";
@@ -39,7 +40,10 @@ export default function App() {
       <Shell>
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
-          <Route path="/home" element={<HomePage />} />
+          <Route path="/home" element={<UserListPage />} />
+          <Route path="/network" element={<HomePage />} />
+          <Route path="/network/:userId" element={<HomePage />} />
+          <Route path="/user/:userId" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/activity" element={<ActivityPage />} />

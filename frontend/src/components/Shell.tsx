@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { fetchEscrowPoolBalance } from "../services/wallet";
@@ -79,6 +79,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const zkLogin = useAppStore((s) => s.zkLogin);
   const isWalletConfigured = Boolean(zkLogin);
   const incidentCount = useAppStore((s) => s.activity.filter((a) => a.recordId).length);
+  const location = useLocation();
 
   // Dock pill = the escrow pool (the prepaid balance agents actually spend),
   // not the raw wallet — that's the number that matters during a demo.
@@ -112,13 +113,25 @@ export default function Shell({ children }: { children: ReactNode }) {
           N
         </NavLink>
         <div className="nav-links">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-item${isActive ? " on" : ""}`}>
-              {navIcon(n.icon)}
-              <span className="nav-label">{n.label}</span>
-              {n.to === "/activity" && incidentCount > 0 && <span className="n-badge">{incidentCount}</span>}
-            </NavLink>
-          ))}
+          {NAV.map((n) => {
+            const isHomeActive =
+              n.to === "/home" &&
+              (location.pathname === "/home" ||
+                location.pathname.startsWith("/network") ||
+                location.pathname.startsWith("/user"));
+
+            return (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                className={({ isActive }) => `nav-item${isActive || isHomeActive ? " on" : ""}`}
+              >
+                {navIcon(n.icon)}
+                <span className="nav-label">{n.label}</span>
+                {n.to === "/activity" && incidentCount > 0 && <span className="n-badge">{incidentCount}</span>}
+              </NavLink>
+            );
+          })}
         </div>
         <div className="dock-sep" />
         <div className="dock-right">
