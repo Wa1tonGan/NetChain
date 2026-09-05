@@ -20,7 +20,7 @@ export function parseConfig(overrides = {}) {
   const env = overrides.env ?? process.env;
   const apiKey = overrides.apiKey ?? env.GONKA_API_KEY ?? "";
   const baseUrl = overrides.baseUrl ?? env.GONKA_BASE_URL ?? "";
-  const budgetMs = overrides.budgetMs ?? Number(env.GONKA_RANKING_BUDGET_MS ?? 45000);
+  const budgetMs = overrides.budgetMs ?? Number(env.GONKA_RANKING_BUDGET_MS ?? 60000);
   const maxTokens = overrides.maxTokens ?? Number(env.GONKA_RANKER_MAX_TOKENS ?? 500);
   const rawModels = overrides.models ?? env.GONKA_MODELS ?? "";
   const models = (Array.isArray(rawModels) ? rawModels : rawModels.split(","))
@@ -36,32 +36,23 @@ function buildPrompt(offers, request) {
     providerId: offer.providerId,
     capacityMbps: offer.capacityMbps,
     price: offer.price,
-    currency: offer.currency,
-    expectedActivationTimeMs: offer.expectedActivationTimeMs,
-    expectedActivationClass: offer.expectedActivationClass,
-    reliabilityScore: offer.reliabilityScore,
-    latencyMs: offer.latencyMs,
-    packetLossPercent: offer.packetLossPercent
+    activationMs: offer.expectedActivationTimeMs,
+    reliabilityPct: Number(((offer.reliabilityScore ?? 0.99) * 100).toFixed(2))
   }));
 
   const constraints = {
     requestedCapacityMbps: request.requestedCapacityMbps,
-    maxLatencyMs: request.requiredProfile.maxLatencyMs,
-    maxPacketLossPercent: request.requiredProfile.maxPacketLossPercent,
-    minReliability: request.requiredProfile.minReliability,
     maxBudget: request.maxBudget,
-    targetActivationTimeMs: request.targetActivationTimeMs,
-    durationMinutes: request.durationMinutes
+    targetActivationTimeMs: request.targetActivationTimeMs
   };
 
   return {
     system:
       "You rank connectivity recovery offers for a resilience exchange. " +
       "All offers are already viable. Rank them best-first balancing " +
-      "activation speed, price and reliability. Be direct and concise: keep " +
-      "internal reasoning under 2 sentences. Answer with ONLY a JSON " +
-      'object of the form {"ranking":["<providerId>", ...]} using exactly ' +
-      "the given providerIds, no prose.",
+      "activation speed, price and reliability. Priority: fastest activation, then lowest price, then highest reliability. " +
+      "Output ONLY valid JSON of the form " +
+      '{"ranking":["<providerId>", ...]} using exactly the given providerIds. No commentary.',
     user: JSON.stringify({ constraints, offers: offerSummaries })
   };
 }
@@ -113,9 +104,11 @@ function parseVote(answer, providerIds) {
     return null;
   }
 
-  const known = parsed.ranking.filter((id) => providerIds.includes(id));
+  const idMap = new Map(providerIds.map((id) => [id.toUpperCase().trim(), id]));
+  const known = parsed.ranking
+    .map((r) => (typeof r === "string" ? idMap.get(r.toUpperCase().trim()) : null))
+    .filter(Boolean);
   const unique = [...new Set(known)];
-
   return unique.length > 0
     ? { model: answer.model ?? null, ranking: unique, requestId: answer.requestId ?? null }
     : null;
@@ -245,24 +238,12 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
 
     // Per-model audit trail: Gonka request id + which providers each model
     // ranked (Borda inputs), best-first. Returned alongside the merged order.
-    // Map all configured models so the UI consistently represents all models:
-    // models that successfully voted carry their real inference and requestId;
-    // models that timed out or encountered upstream stalls adopt the consensus order.
-    const modelVotes = config.models.map((model, i) => {
-      const vote = votes.find((v) => v.model === model);
-      if (vote) {
-        return {
-          model,
-          requestId: vote.requestId,
-          ranking: vote.ranking
-        };
-      }
-      return {
-        model,
-        requestId: `req-consensus-${Date.now().toString(36)}-${i + 1}`,
-        ranking
-      };
-    });
+    const modelVotes = votes.map((v) => ({
+      model: v.model,
+      requestId: v.requestId,
+      ranking: v.ranking
+    }));
+
     return { ranking, votes: modelVotes };
   } catch {
     return null;

@@ -974,32 +974,52 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
   const reqMin = inc.req?.min ?? 30;
   const delivered = kind === "ok" ? (offer?.selectedProvider.capacityMbps ?? inc.shortage) : 0;
 
-  const comparison = [
-    ...(offer
-      ? [
-          {
-            name: `${providerName} (winner)`,
-            state: `selected · ${offer.selectedProvider.capacityMbps} Mbps · USDC ${escrow.toFixed(2)} escrowed`,
-            sel: true,
-            id: offer.selectedProvider.providerId,
-          },
-        ]
-      : []),
-    ...snapshot.arrivals
-      .filter((a) => a.providerId !== offer?.selectedProvider.providerId)
-      .map((a) => ({
+  const seenProviders = new Set<string>();
+  const comparison: { name: string; state: string; sel: boolean; id: string }[] = [];
+
+  if (offer) {
+    seenProviders.add(offer.selectedProvider.providerId);
+    comparison.push({
+      name: `${providerName} (winner)`,
+      state: `selected · ${offer.selectedProvider.capacityMbps} Mbps · USDC ${escrow.toFixed(2)} escrowed`,
+      sel: true,
+      id: offer.selectedProvider.providerId,
+    });
+  }
+
+  const rejectionByProvider = new Map(snapshot.rejections.map((r) => [r.providerId, r]));
+
+  for (const a of snapshot.arrivals) {
+    if (seenProviders.has(a.providerId)) continue;
+    seenProviders.add(a.providerId);
+    const rej = rejectionByProvider.get(a.providerId);
+    if (rej) {
+      comparison.push({
+        name: `${liveBrand(rej.providerId)} (${rej.providerId})`,
+        state: `✗ ${reasonLabel(rej.reason)}${rej.detail ? ` — ${rej.detail}` : ""}`,
+        sel: false,
+        id: rej.providerId,
+      });
+    } else {
+      comparison.push({
         name: `${liveBrand(a.providerId)} (${a.providerId})`,
         state: `quoted in ${((a.receivedAtMs ?? 0) / 1000).toFixed(1)}s — ranked below the winner`,
         sel: false,
         id: a.providerId,
-      })),
-    ...snapshot.rejections.map((r) => ({
+      });
+    }
+  }
+
+  for (const r of snapshot.rejections) {
+    if (seenProviders.has(r.providerId)) continue;
+    seenProviders.add(r.providerId);
+    comparison.push({
       name: `${liveBrand(r.providerId)} (${r.providerId})`,
       state: `✗ ${reasonLabel(r.reason)}${r.detail ? ` — ${r.detail}` : ""}`,
       sel: false,
       id: r.providerId,
-    })),
-  ];
+    });
+  }
 
   const charged = kind === "ok" ? escrow : 0;
   const refund = kind === "failed" ? (snapshot.committed ? escrow : 0) : 0;
@@ -1345,7 +1365,9 @@ function onGatewayEvent(ev: GatewayEvent) {
     }
     case "arrival": {
       if (live && ev.providerId && typeof ev.receivedAtMs === "number") {
-        live.arrivals.push({ providerId: ev.providerId, receivedAtMs: ev.receivedAtMs });
+        if (!live.arrivals.some((a) => a.providerId === ev.providerId)) {
+          live.arrivals.push({ providerId: ev.providerId, receivedAtMs: ev.receivedAtMs });
+        }
         sysBubble(
           `${liveBrand(ev.providerId)} quoted in ${(ev.receivedAtMs / 1000).toFixed(1)}s` +
             (typeof ev.pitch === "string" && ev.pitch ? ` — “${ev.pitch}”` : "")
@@ -1355,8 +1377,9 @@ function onGatewayEvent(ev: GatewayEvent) {
     }
     case "rejection": {
       if (live && ev.providerId && typeof ev.reason === "string") {
-        live.rejections.push({ providerId: ev.providerId, reason: ev.reason, detail: ev.detail });
-        sysBubble(`✗ ${liveBrand(ev.providerId)} rejected: ${reasonLabel(ev.reason)}`);  // event → AgentSteps
+        if (!live.rejections.some((r) => r.providerId === ev.providerId)) {
+          live.rejections.push({ providerId: ev.providerId, reason: ev.reason, detail: ev.detail });
+        }
       }
       break;
     }

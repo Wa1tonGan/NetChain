@@ -57,8 +57,7 @@ export function parseConfig(overrides = {}) {
 // -- Claim extraction (step 1) ----------------------------------------------
 
 function detectSourceType(input) {
-  const trimmed = input.trim();
-
+  const trimmed = typeof input === "string" ? input.trim() : "";
   if (/^https?:\/\//i.test(trimmed)) {
     return "url";
   }
@@ -306,13 +305,14 @@ function mergeVerdicts(modelAnswers) {
 // -- Orchestrator: runs the whole verification for one claim ------------------
 
 export async function verifyClaim(
-  { input, sourceType, claims = null, evidencePack = null, meta = null },
+  { input = "", sourceType, claims = null, evidencePack = null, evidence = null, meta = null },
   config,
   fetchImpl,
   emit
 ) {
   const t0 = nowMs();
-  const resolvedType = sourceType && sourceType !== "auto" ? sourceType : detectSourceType(input);
+  const rawInput = typeof input === "string" ? input : "";
+  const resolvedType = sourceType && sourceType !== "auto" ? sourceType : detectSourceType(rawInput);
 
   emit({ step: "received", status: "done", detail: `source type: ${resolvedType}`, atMs: nowMs() - t0 });
 
@@ -359,7 +359,7 @@ export async function verifyClaim(
   // Step 2 — live data (best-effort, never load-bearing). Caller-supplied
   // evidence (signed SLA probes) replaces the web pass entirely — no fetches.
   const evidenceNotes = [];
-  let liveEvidence = evidencePack;
+  let liveEvidence = Array.isArray(evidencePack) ? evidencePack : (Array.isArray(evidence) ? evidence : null);
 
   if (Array.isArray(liveEvidence) && liveEvidence.length > 0) {
     evidenceNotes.push(`evidence provided by caller (${liveEvidence.length} items)`);
@@ -448,32 +448,6 @@ export async function verifyClaim(
 
         return answer;
       } catch (error) {
-        // If a model timed out or encountered upstream network error on Gonka Router,
-        // check if a peer model succeeded so both models are represented in the UI.
-        const peer = modelAnswers.find((a) => a && a.ok);
-        if (peer) {
-          const fallbackAnswer = {
-            ok: true,
-            model,
-            requestId: `req-consensus-${Date.now().toString(36)}`,
-            verdict: peer.verdict,
-            score: peer.score,
-            reasoning: peer.reasoning,
-            evidenceUsed: peer.evidenceUsed ?? []
-          };
-          emit({
-            step: "model_answer",
-            status: "done",
-            model,
-            requestId: fallbackAnswer.requestId,
-            verdict: fallbackAnswer.verdict,
-            score: fallbackAnswer.score,
-            reasoning: fallbackAnswer.reasoning,
-            atMs: nowMs() - t0
-          });
-          return fallbackAnswer;
-        }
-
         emit({
           step: "model_answer",
           status: "failed",
