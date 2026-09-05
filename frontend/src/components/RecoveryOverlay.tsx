@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore, elapsedSecAt } from "../store/useAppStore";
 import { rm } from "../services/pricing";
 import type { Incident } from "../services/types";
-import { TextWithIcons } from "./Icon";
 
 export function StrengthBars({ filled, cls }: { filled: number; cls?: string }) {
   return (
@@ -23,38 +22,284 @@ function useTicker(active: boolean) {
   }, [active]);
 }
 
+interface ChatMsg {
+  id: string;
+  sender: string;
+  role: "agent" | "user";
+  tag: string;
+  tagBg: string;
+  tagColor: string;
+  text: React.ReactNode;
+  time: string;
+  isWinner?: boolean;
+  isEscrow?: boolean;
+  isSpecialIndicator?: boolean;
+}
+
 export default function RecoveryOverlay({ incident }: { incident: Incident }) {
   const dismiss = useAppStore((s) => s.dismissOverlay);
-  const sendSms = useAppStore((s) => s.sendSms);
-
-  const [inputVal, setInputVal] = useState("");
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const completed = Boolean(incident.result);
-  const inSms = incident.status === "sms";
 
   useTicker(!completed);
   const now = Date.now();
   const elapsed = elapsedSecAt(incident, now).toFixed(1);
+  const sec = completed ? 999 : parseFloat(elapsed);
 
-  // Auto-scroll chat to bottom
+  // Auto-scroll chat to bottom as conversation progresses
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [incident.thread.length, incident.status, completed]);
+  }, [incident.status, completed, elapsed]);
 
-  const handleSend = (text?: string) => {
-    const toSend = (text ?? inputVal).trim();
-    if (toSend) {
-      sendSms(toSend);
-      setInputVal("");
-    }
-  };
-
-  const quickChips = [
-    { label: "500 Mbps, USDC 14", text: "500 Mbps, USDC 14" },
-    { label: "300 Mbps, USDC 10", text: "300 Mbps, USDC 10" },
-    { label: "100 Mbps, USDC 5", text: "100 Mbps, USDC 5" },
+  const messages: ChatMsg[] = [
+    {
+      id: "alert",
+      sender: "RescueAgent",
+      role: "agent",
+      tag: "AUTONOMOUS GUARDIAN",
+      tagBg: "rgba(0, 113, 227, 0.12)",
+      tagColor: "#0071e3",
+      time: "T+0.0s",
+      text: (
+        <div>
+          <b>Weak network detected in George Town, Penang.</b>
+          <br />
+          Downlink degraded to <b>15 Mbps</b>. Uplink compromised.
+          <br />
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            Protection rule P1 activated: Auto-broadcasting recovery intent for <b>500 Mbps</b> backup link (budget ≤ <b>USDC 14.00</b>).
+          </span>
+        </div>
+      ),
+    },
   ];
+
+  if (sec >= 1.0 || completed || incident.thread.some((t) => t.from === "user")) {
+    messages.push({
+      id: "intent",
+      sender: "Subscriber Proxy",
+      role: "user",
+      tag: "AUTO INTENT DISPATCH",
+      tagBg: "rgba(255, 255, 255, 0.2)",
+      tagColor: "#ffffff",
+      time: "T+1.0s",
+      text: (
+        <div>
+          <div style={{ fontSize: 14.5, fontWeight: 700 }}>500 Mbps, USDC 14</div>
+          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+            Dual-Sig pre-authorized · 500 Mbps shortfall replacement
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 2.5 || completed || ["request_detected", "provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "maxis",
+      sender: "Maxis Agent",
+      role: "agent",
+      tag: "TELCO 5G BID",
+      tagBg: "rgba(2, 132, 199, 0.12)",
+      tagColor: "#0284c7",
+      time: "T+2.5s",
+      text: (
+        <div>
+          <b>📡 Maxis 5G Ultra Bid Submitted:</b>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+            • Bandwidth: <b>500 Mbps</b><br />
+            • Latency: <b>26 ms</b> RTT (Jitter 4 ms)<br />
+            • Offer Price: <b>USDC 13.80</b><br />
+            • SLA: 99.8% availability guarantee
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 3.8 || completed || ["request_detected", "provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "digi",
+      sender: "Digi Agent",
+      role: "agent",
+      tag: "FIBRE AIR BID",
+      tagBg: "rgba(217, 119, 6, 0.12)",
+      tagColor: "#d97706",
+      time: "T+3.8s",
+      text: (
+        <div>
+          <b>📡 Digi Fibre Air Bid Submitted:</b>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+            • Bandwidth: <b>450 Mbps</b><br />
+            • Latency: <b>32 ms</b> RTT (Jitter 5 ms)<br />
+            • Offer Price: <b>USDC 12.00</b><br />
+            • SLA: 99.5% availability guarantee
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 5.0 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "kilatlink",
+      sender: "KilatLink Agent",
+      role: "agent",
+      tag: "KILATLINK FWA BID",
+      tagBg: "rgba(99, 102, 241, 0.12)",
+      tagColor: "#6366f1",
+      time: "T+5.0s",
+      text: (
+        <div>
+          <b>📡 KilatLink FWA Bid Submitted:</b>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+            • Bandwidth: <b>500 Mbps</b> (Full shortfall demand)<br />
+            • Latency: <b>18 ms</b> RTT (Lowest latency route)<br />
+            • Offer Price: <b>USDC 12.60</b><br />
+            • SLA: 99.9% uptime · 0% packet loss direct peering
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 6.5 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "selection",
+      sender: "RescueAgent",
+      role: "agent",
+      tag: "BEST OFFER SELECTED",
+      tagBg: "rgba(0, 113, 227, 0.15)",
+      tagColor: "#0071e3",
+      time: "T+6.5s",
+      isWinner: true,
+      text: (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0071e3", fontWeight: 800, fontSize: 13.5 }}>
+            <span>🏆</span>
+            <span>Multi-Agent Consensus: Best Offer Selected</span>
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5 }}>
+            Selected <b>KilatLink FWA</b>:
+            <br />
+            ✓ <b>Full Capacity:</b> 500 Mbps restored
+            <br />
+            ✓ <b>Lowest Latency:</b> 18 ms (beats Maxis 26ms, Digi 32ms)
+            <br />
+            ✓ <b>Optimal Budget:</b> USDC 12.60 (saves USDC 1.40 under budget)
+            <br />
+            ✓ <b>Unanimous Approval:</b> Pricing, SLA, and Budget agents countersigned
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 7.3 || completed || ["provider_selected", "escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "why-best",
+      sender: "AI Selection Engine",
+      role: "agent",
+      tag: "OPTIMAL CHOICE RATIONALE",
+      tagBg: "rgba(2, 132, 199, 0.15)",
+      tagColor: "#0284c7",
+      time: "T+7.2s",
+      isSpecialIndicator: true,
+      text: (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#0369a1", fontWeight: 800, fontSize: 13 }}>
+            <span>💡</span>
+            <span>Why this proposal was selected as the optimal choice:</span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--ink-2)" }}>
+            <div style={{ marginBottom: 4 }}>
+              • <b>Fastest Response Time:</b> Offers the lowest latency and zero packet loss, delivering instant stability without lag or degradation.
+            </div>
+            <div style={{ marginBottom: 4 }}>
+              • <b>Complete Restoration:</b> Fully satisfies all missing bandwidth capacity to keep all mission-critical tasks operating seamlessly.
+            </div>
+            <div style={{ marginBottom: 4 }}>
+              • <b>Maximum Cost Efficiency:</b> Achieves the highest performance rating per unit of cost while staying safely below your pre-set budget limit.
+            </div>
+            <div>
+              • <b>Unanimous Agent Consensus:</b> Pricing, SLA reliability, and security auditing agents all independently verified and approved this proposal.
+            </div>
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 8.5 || completed || ["escrow_locked", "activating", "verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "escrow",
+      sender: "Sui Trust Layer",
+      role: "agent",
+      tag: "DUAL-SIG ESCROW",
+      tagBg: "rgba(79, 70, 229, 0.12)",
+      tagColor: "#4f46e5",
+      time: "T+8.5s",
+      isEscrow: true,
+      text: (
+        <div>
+          <b>🔒 Sui Dual-Sig Escrow Locked:</b>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+            Locked <b>USDC 12.60</b> into Escrow Contract (<span className="mono" style={{ fontSize: 11 }}>0x3b91...7603</span>).
+            <br />
+            Funds secured on-chain. Activating KilatLink FWA backup slice...
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (sec >= 10.5 || completed || ["verifying", "restored"].includes(incident.status)) {
+    messages.push({
+      id: "audit",
+      sender: "Truth Agent",
+      role: "agent",
+      tag: "SLA AUDIT PASSED",
+      tagBg: "rgba(13, 148, 136, 0.12)",
+      tagColor: "#0d9488",
+      time: "T+10.5s",
+      text: (
+        <div>
+          <b>⚡ Autonomous SLA Verification Passed:</b>
+          <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
+            Telemetry audit: <b>500 Mbps delivered</b> · <b>18 ms latency</b> · <b>0.0% packet loss</b>.
+            <br />
+            SLA verified. Dual-sig authorization signed to release escrow payment.
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  if (completed || incident.status === "restored") {
+    messages.push({
+      id: "restored",
+      sender: "RescueAgent",
+      role: "agent",
+      tag: "RESTORED & SETTLED",
+      tagBg: "rgba(0, 113, 227, 0.15)",
+      tagColor: "#0071e3",
+      time: `${incident.result?.time ?? "12.6"}s`,
+      isWinner: true,
+      text: (
+        <div>
+          <div style={{ fontWeight: 800, color: "#0071e3", fontSize: 13.5 }}>
+            Connection Successfully Restored &amp; Settled
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-2)" }}>
+            High-speed backup slice active: <b>+500 Mbps</b> via <b>KilatLink FWA</b>.
+            <br />
+            SLA throughput verified. Escrow settled autonomously on Sui Trust Layer.
+          </div>
+        </div>
+      ),
+    });
+  }
 
   return (
     <div
@@ -149,7 +394,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* SVG Agent Avatar (No emoji) */}
+            {/* SVG Agent Avatar */}
             <div
               style={{
                 width: 38,
@@ -229,7 +474,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </div>
         </div>
 
-        {/* Chat Body - Theme Clean Slate/Subtle Background */}
+        {/* Chat Body - Theme Clean Slate Background */}
         <div
           style={{
             background: "#f5f5f7",
@@ -239,8 +484,8 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            minHeight: 280,
-            maxHeight: 380,
+            minHeight: 300,
+            maxHeight: 400,
           }}
         >
           {/* Center Security Notice */}
@@ -260,76 +505,81 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
               }}
             >
-              Messages authenticated autonomously on Sui Trust Layer
+              Autonomous A2A protocol · Verified on Sui Trust Layer
             </span>
           </div>
 
-          {/* Initial Agent Alert Message */}
-          <div
-            style={{
-              alignSelf: "flex-start",
-              maxWidth: "84%",
-              background: "#ffffff",
-              border: "1px solid var(--line)",
-              borderRadius: "0 14px 14px 14px",
-              padding: "10px 14px",
-              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.05)",
-              fontSize: 13,
-              lineHeight: 1.5,
-              position: "relative",
-            }}
-          >
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#0071e3", marginBottom: 3 }}>RescueAgent</div>
-            <div>
-              <b>Weak network detected in current location.</b>
-              <br />
-              Downlink degraded to <b>15 Mbps</b>. Uplink compromised.
-              <br />
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                Protection rule P1 activated: Please specify required bandwidth (e.g. 500 Mbps) and budget (USDC).
-              </span>
-            </div>
-            <div style={{ textAlign: "right", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
-              T+0.0s
-            </div>
-          </div>
-
-          {/* Thread Messages */}
-          {incident.thread.map((b, i) => {
-            const isUser = b.from === "user";
-            const formattedText = b.text
-              .replace(/30\s*min(?:ute)?s?/gi, "500 Mbps")
-              .replace(/60\s*min(?:ute)?s?/gi, "600 Mbps")
-              .replace(/15\s*min(?:ute)?s?/gi, "300 Mbps");
-
+          {/* Render Multi-Agent Conversation Messages */}
+          {messages.map((m) => {
+            const isUser = m.role === "user";
             return (
               <div
-                key={i}
+                key={m.id}
                 style={{
                   alignSelf: isUser ? "flex-end" : "flex-start",
-                  maxWidth: "84%",
-                  background: isUser ? "#0071e3" : "#ffffff",
+                  maxWidth: isUser ? "78%" : m.isSpecialIndicator ? "92%" : "86%",
+                  background: isUser
+                    ? "#0071e3"
+                    : m.isSpecialIndicator
+                    ? "linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%)"
+                    : "#ffffff",
                   color: isUser ? "#ffffff" : "var(--ink)",
-                  border: isUser ? "none" : "1px solid var(--line)",
+                  border: isUser
+                    ? "none"
+                    : m.isSpecialIndicator
+                    ? "1.5px solid #38bdf8"
+                    : m.isWinner
+                    ? "1.5px solid #0071e3"
+                    : m.isEscrow
+                    ? "1.5px solid #6366f1"
+                    : "1px solid var(--line)",
                   borderRadius: isUser ? "14px 0 14px 14px" : "0 14px 14px 14px",
-                  padding: "9px 13px",
-                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+                  padding: m.isSpecialIndicator ? "12px 16px" : "10px 14px",
+                  boxShadow: m.isSpecialIndicator
+                    ? "0 4px 16px rgba(2, 132, 199, 0.12)"
+                    : m.isWinner
+                    ? "0 3px 12px rgba(0, 113, 227, 0.15)"
+                    : "0 1px 3px rgba(0, 0, 0, 0.06)",
                   fontSize: 13,
                   lineHeight: 1.45,
                   position: "relative",
                 }}
               >
-                {!isUser && (
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#0071e3", marginBottom: 2 }}>
-                    RescueAgent
-                  </div>
-                )}
-                {isUser && b.auto && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(255, 255, 255, 0.8)", marginBottom: 2 }}>
-                    Auto Intent Dispatch
-                  </div>
-                )}
-                <TextWithIcons text={formattedText} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    marginBottom: 4,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      color: isUser ? "#ffffff" : m.tagColor || "#0071e3",
+                    }}
+                  >
+                    {m.sender}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      padding: "1.5px 6px",
+                      borderRadius: 6,
+                      background: m.tagBg,
+                      color: m.tagColor,
+                      letterSpacing: ".04em",
+                    }}
+                  >
+                    {m.tag}
+                  </span>
+                </div>
+
+                {m.text}
+
                 <div
                   style={{
                     display: "flex",
@@ -338,10 +588,10 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                     gap: 4,
                     fontSize: 10,
                     color: isUser ? "rgba(255, 255, 255, 0.75)" : "var(--muted)",
-                    marginTop: 3,
+                    marginTop: 4,
                   }}
                 >
-                  <span>T+{elapsed}s</span>
+                  <span>{m.time}</span>
                   {isUser && <span style={{ color: "#93c5fd", fontWeight: 800 }}>✓✓</span>}
                 </div>
               </div>
@@ -349,7 +599,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           })}
 
           {/* Real-time Status Feedback Bubble */}
-          {!completed && !inSms && (
+          {!completed && (
             <div
               style={{
                 alignSelf: "center",
@@ -378,42 +628,12 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 }}
               />
               <span>
-                {incident.status === "request_detected" && "Matching quotes with KilatLink FWA..."}
-                {incident.status === "provider_selected" && "Signing contract & locking Sui Escrow..."}
-                {incident.status === "activating" && "Activating +500 Mbps backup link..."}
-                {incident.status === "verifying" && "Verifying SLA and network throughput..."}
-                {incident.status === "escrow_locked" && "Sui escrow locked — activating link..."}
+                {sec < 2.5 && "Broadcasting recovery intent to Malaysian provider agents..."}
+                {sec >= 2.5 && sec < 6.5 && "Receiving provider bids (Maxis, Digi, KilatLink)..."}
+                {sec >= 6.5 && sec < 8.2 && "Evaluating bids & selecting optimal provider..."}
+                {sec >= 8.2 && sec < 10.5 && "Locking Sui dual-sig escrow & attaching backup slice..."}
+                {sec >= 10.5 && "Verifying delivered bandwidth & settling escrow on Sui..."}
               </span>
-            </div>
-          )}
-
-          {/* Step 2 Completion Bubble */}
-          {completed && (
-            <div
-              style={{
-                alignSelf: "flex-start",
-                maxWidth: "88%",
-                background: "#ffffff",
-                border: "1px solid var(--line)",
-                borderRadius: "0 14px 14px 14px",
-                padding: "12px 16px",
-                boxShadow: "0 2px 6px rgba(0, 0, 0, 0.08)",
-                borderLeft: "4px solid #0071e3",
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, color: "#0071e3", fontSize: 14 }}>
-                <span>Connection Successfully Restored</span>
-              </div>
-              <div style={{ marginTop: 4, color: "var(--ink-2)" }}>
-                High-speed backup slice active: <b>+500 Mbps</b> via <b>KilatLink FWA</b>.
-                <br />
-                SLA throughput verified. Escrow settled on Sui Trust Layer.
-              </div>
-              <div style={{ textAlign: "right", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
-                {incident.result?.time ?? elapsed}s · Verified ✓✓
-              </div>
             </div>
           )}
 
@@ -505,84 +725,51 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </div>
         )}
 
-        {/* Step 1 WhatsApp Input & Suggestions Bar - Theme Blue Accent */}
+        {/* Autonomous Autopilot Status Footer when negotiating (No input box) */}
         {!completed && (
           <div
             style={{
-              padding: "10px 14px",
+              padding: "12px 18px",
               background: "#ffffff",
               borderTop: "1px solid var(--line)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
             }}
           >
-            {/* Quick Suggestions Chips */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 8, overflowX: "auto", paddingBottom: 2 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", alignSelf: "center", whiteSpace: "nowrap" }}>
-                Suggested Reply:
-              </span>
-              {quickChips.map((c) => (
-                <button
-                  key={c.text}
-                  type="button"
-                  onClick={() => handleSend(c.text)}
-                  style={{
-                    fontSize: 11.5,
-                    padding: "4px 10px",
-                    borderRadius: 16,
-                    background: "rgba(0, 113, 227, 0.08)",
-                    border: "1px solid rgba(0, 113, 227, 0.18)",
-                    color: "#0071e3",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    fontWeight: 600,
-                  }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Input & Send Button */}
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                className="input"
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
                 style={{
-                  flex: 1,
-                  borderRadius: 22,
-                  padding: "9px 16px",
-                  background: "#f5f5f7",
-                  border: "1px solid var(--line)",
-                  fontSize: 13,
-                }}
-                placeholder="Type bandwidth & budget: e.g. 500 Mbps, USDC 14"
-                value={inputVal}
-                onChange={(e) => setInputVal(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              />
-              <button
-                type="button"
-                onClick={() => handleSend()}
-                style={{
-                  width: 38,
-                  height: 38,
+                  width: 9,
+                  height: 9,
                   borderRadius: "50%",
                   background: "#0071e3",
-                  color: "#ffffff",
-                  border: "none",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  boxShadow: "0 2px 6px rgba(0, 113, 227, 0.35)",
-                  flexShrink: 0,
+                  boxShadow: "0 0 0 3px rgba(0, 113, 227, 0.2)",
+                  animation: "pulse 1.2s infinite alternate",
                 }}
-                title="Send reply"
-                aria-label="Send reply"
-              >
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                </svg>
-              </button>
+              />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0071e3" }}>
+                  Autonomous A2A Negotiation Active
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                  Zero-touch recovery · Agents negotiating &amp; verifying SLA autonomously
+                </div>
+              </div>
             </div>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                color: "#0071e3",
+                background: "rgba(0, 113, 227, 0.08)",
+                padding: "3px 9px",
+                borderRadius: 12,
+                border: "1px solid rgba(0, 113, 227, 0.18)",
+              }}
+            >
+              AUTOPILOT
+            </span>
           </div>
         )}
       </div>
