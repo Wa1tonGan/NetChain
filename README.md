@@ -57,7 +57,7 @@ is made whole, automatically.
 
 ## How the system works
 
-### The trust layer (this workstream — Person 3)
+### The trust layer
 
 Trust is prepared **before** any incident (blueprint §4.1): a scoped spending
 authority (`AuthorityCap`), a pre-funded escrow holding the configured
@@ -173,7 +173,7 @@ the package, restart the trust server so it reloads `.sui/config.testnet.json`
 offline rehearsal: drop the env prefix and run `sui start --with-faucet`.
 
 ```bash
-# Persons 1+2 contracts + Person 3 offline tests
+# Contracts + offline test suite
 npm test
 
 # Move unit tests: idempotent commit, replay abort, bad signature,
@@ -209,7 +209,7 @@ Optional HTTP face: `npm run trust:server` (SSE at `/v1/events`,
 `POST /v1/verify` for delivered samples; `SUI_INTEGRATION_MODE=full` also
 starts the gateway poller).
 
-## Agent market quickstart (Person 2)
+## Agent market quickstart
 
 ```bash
 node scripts/start-all.mjs        # 3 provider agents (8101–8103) + rescue gateway (8082)
@@ -224,14 +224,14 @@ curl -s -X POST http://127.0.0.1:8082/recovery/intents \
 # watch the provider race / decisions live (SSE):
 curl -N http://127.0.0.1:8082/incidents/INC-S2/events
 
-# pull the signed Selected Offer (Person 3's input — the envelope embeds the
-# original signed offer, so the trust service needs no fixture files):
+# pull the signed Selected Offer (the trust service's input — the envelope
+# embeds the original signed offer, so no fixture files are needed):
 curl -s http://127.0.0.1:8082/incidents/INC-S2/result
 
 # kill a provider live and re-run — the fallback demo:
 curl -X POST http://127.0.0.1:8102/admin/mode -d '{"mode":"down"}'
 
-npm run generate:fixtures         # regenerate signed fixtures for Person 3
+npm run generate:fixtures         # regenerate signed fixtures for the trust layer
 ```
 
 Gonka ranking/pitch enrichment is read from `.env` (see `.env.example`
@@ -288,7 +288,7 @@ on the Activity detail page's Truth Agent audit card (with a deep link to
 ## Architecture
 
 ```
-Person 1                    Person 2                         Person 3 (Sui Trust Layer)
+Scenarios & Edge            Agent & Provider Market          Sui Trust Layer
 ─────────                   ─────────                        ──────────────────────────
 scenarios (RecoveryIntent)
       │
@@ -312,7 +312,7 @@ buildProviderRequest() → A2A parallel broadcast → offers
 
 Details: [`documents/person3-trust-contract.md`](documents/person3-trust-contract.md) ·
 [`documents/person2-a2a-contract.md`](documents/person2-a2a-contract.md) · blueprint in
-[`documents/blueprint.md`](documents/blueprint.md) · Person 3 deep dives:
+[`documents/blueprint.md`](documents/blueprint.md) · deep dives:
 [`documents/person3/person3-integration-guide.md`](documents/person3/person3-integration-guide.md)
 (live loop + Walrus, with diagrams) ·
 [`documents/person3/sui-tracks-status.md`](documents/person3/sui-tracks-status.md)
@@ -332,16 +332,3 @@ Details: [`documents/person3-trust-contract.md`](documents/person3-trust-contrac
 - **Programmable transaction blocks:** readiness (mint + fund + authority)
   is a single setup transaction before any incident exists.
 
-## Team
-
-| Member | Workstream |
-| --- | --- |
-| Person 1 | Client & Edge — portals, gateway, watcher, priority controller |
-| Person 2 | Agent & Provider Market — Rescue Agent, 3 provider agents, A2A contracts |
-| Person 3 | Sui & Reliability Execution — Move trust layer, split settlement, idempotency, TTR instrumentation, fallback harness, live agent-runtime integration, Walrus evidence archive |
-
-## AI tools declaration
-
-Built with AI coding assistance (ZCode / GLM). All contracts, fixtures and
-test vectors are generated within the hacking period; commit history reflects
-the full build.
