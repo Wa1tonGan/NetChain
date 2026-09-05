@@ -183,13 +183,13 @@ export default function HomePage() {
       time: "T+7.2s",
       title: "RescueAgent · A2A broadcast",
       type: "sui",
-      desc: "Queried 3 provider agents — 500 Mbps · ≤ USDC 14.",
+      desc: "Queried 3 provider agents — 500 Mbps · ≤ USDC 2.00.",
     },
     {
       time: "T+11.1s",
       title: "KilatLink FWA · offer selected",
       type: "ok",
-      desc: "500 Mbps · 18 ms · USDC 12.60 · activation 8 s · 0% loss route.",
+      desc: "500 Mbps · 18 ms · USDC 1.80 · activation 8 s · 0% loss route.",
     },
     {
       time: "T+12.9s",
@@ -201,7 +201,7 @@ export default function HomePage() {
       time: "T+20.2s",
       title: "RescueAgent · signed & paid",
       type: "sui",
-      desc: "Built the PTB, signed with its own keypair, locked USDC 12.60 — no human approval.",
+      desc: "Built the PTB, signed with its own keypair, locked USDC 1.80 — no human approval.",
     },
   ];
 

@@ -68,7 +68,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           Downlink degraded to <b>15 Mbps</b>. Uplink compromised.
           <br />
           <span style={{ fontSize: 12, color: "var(--muted)" }}>
-            Protection rule P1 activated: Auto-broadcasting recovery intent for <b>500 Mbps</b> backup link (budget ≤ <b>USDC 14.00</b>).
+            Protection rule P1 activated: Auto-broadcasting recovery intent for <b>500 Mbps</b> backup link (budget ≤ <b>USDC 2.00</b>).
           </span>
         </div>
       ),
@@ -86,7 +86,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
       time: "T+1.0s",
       text: (
         <div>
-          <div style={{ fontSize: 14.5, fontWeight: 700 }}>500 Mbps, USDC 14</div>
+          <div style={{ fontSize: 14.5, fontWeight: 700 }}>500 Mbps, USDC 2</div>
           <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
             Dual-Sig pre-authorized · 500 Mbps shortfall replacement
           </div>
@@ -110,7 +110,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
             • Bandwidth: <b>500 Mbps</b><br />
             • Latency: <b>26 ms</b> RTT (Jitter 4 ms)<br />
-            • Offer Price: <b>USDC 13.80</b><br />
+            • Offer Price: <b>USDC 2.20</b><br />
             • SLA: 99.8% availability guarantee
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
             • Bandwidth: <b>450 Mbps</b><br />
             • Latency: <b>32 ms</b> RTT (Jitter 5 ms)<br />
-            • Offer Price: <b>USDC 12.00</b><br />
+            • Offer Price: <b>USDC 1.95</b><br />
             • SLA: 99.5% availability guarantee
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
             • Bandwidth: <b>500 Mbps</b> (Full shortfall demand)<br />
             • Latency: <b>18 ms</b> RTT (Lowest latency route)<br />
-            • Offer Price: <b>USDC 12.60</b><br />
+            • Offer Price: <b>USDC 1.80</b><br />
             • SLA: 99.9% uptime · 0% packet loss direct peering
           </div>
         </div>
@@ -187,7 +187,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             <br />
             ✓ <b>Lowest Latency:</b> 18 ms (beats Maxis 26ms, Digi 32ms)
             <br />
-            ✓ <b>Optimal Budget:</b> USDC 12.60 (saves USDC 1.40 under budget)
+            ✓ <b>Optimal Budget:</b> USDC 1.80 (saves USDC 0.20 under budget)
             <br />
             ✓ <b>Unanimous Approval:</b> Pricing, SLA, and Budget agents countersigned
           </div>
@@ -245,9 +245,21 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
         <div>
           <b>🔒 Sui Dual-Sig Escrow Locked:</b>
           <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
-            Locked <b>USDC 12.60</b> into Escrow Contract (<span className="mono" style={{ fontSize: 11 }}>0x3b91...7603</span>).
+            Locked <b>USDC 1.80</b> into Escrow Contract (<span className="mono" style={{ fontSize: 11 }}>0x9c4c...a6a63</span>).
             <br />
             Funds secured on-chain. Activating KilatLink FWA backup slice...
+            {incident.commitTxDigest && (
+              <div style={{ marginTop: 4 }}>
+                <a
+                  href={`https://suiscan.xyz/testnet/tx/${incident.commitTxDigest}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#4f46e5", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
+                >
+                  Sui Escrow Tx: {incident.commitTxDigest.slice(0, 8)}…{incident.commitTxDigest.slice(-6)} ↗
+                </a>
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -295,6 +307,18 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             High-speed backup slice active: <b>+500 Mbps</b> via <b>KilatLink FWA</b>.
             <br />
             SLA throughput verified. Escrow settled autonomously on Sui Trust Layer.
+            {(incident.settleTxDigest || incident.result?.tx) && (
+              <div style={{ marginTop: 4 }}>
+                <a
+                  href={`https://suiscan.xyz/testnet/tx/${incident.settleTxDigest || incident.result?.tx}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#0071e3", fontSize: 11, textDecoration: "underline", fontFamily: "monospace" }}
+                >
+                  Sui Settlement Tx: {(incident.settleTxDigest || incident.result?.tx)?.slice(0, 8)}…{(incident.settleTxDigest || incident.result?.tx)?.slice(-6)} ↗
+                </a>
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -704,6 +728,20 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                 </div>
               </div>
             </div>
+
+            {(incident.settleTxDigest || incident.result.tx) && (
+              <div style={{ marginTop: 10, textAlign: "center", fontSize: 11.5, color: "var(--muted)" }}>
+                Sui On-Chain Settlement:{" "}
+                <a
+                  href={`https://suiscan.xyz/testnet/tx/${incident.settleTxDigest || incident.result.tx}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#0071e3", fontWeight: 600, textDecoration: "underline", fontFamily: "monospace" }}
+                >
+                  {(incident.settleTxDigest || incident.result.tx)?.slice(0, 10)}…{(incident.settleTxDigest || incident.result.tx)?.slice(-8)} ↗
+                </a>
+              </div>
+            )}
 
             <div style={{ marginTop: 14 }}>
               <button

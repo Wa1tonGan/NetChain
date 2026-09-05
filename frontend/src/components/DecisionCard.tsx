@@ -82,7 +82,7 @@ export default function DecisionCard({
           score: "0.96",
           vote: "KilatLink FWA",
           requestId: null,
-          reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 18.50) and OrbitSat GO (satellite 65ms @ USDC 24.00).`,
+          reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 2.20) and OrbitSat GO (satellite 65ms @ USDC 2.50).`,
         },
         {
           name: "Kimi-k1.5",

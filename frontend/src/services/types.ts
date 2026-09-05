@@ -36,6 +36,8 @@ export interface IncidentResult {
   charged: number;
   refund: number;
   state: string;
+  tx?: string;
+  commitTx?: string;
 }
 
 export interface Incident {
@@ -57,6 +59,8 @@ export interface Incident {
   available: number;
   shortage: number;
   scenarioKey?: string;
+  commitTxDigest?: string;
+  settleTxDigest?: string;
 }
 
 export interface RecoveryRecord {

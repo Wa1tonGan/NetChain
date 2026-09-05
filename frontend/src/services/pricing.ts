@@ -1,9 +1,9 @@
 /* Money & SMS-request pricing rules.
    Simple, transparent pricing: pay-as-you-go per recovery. */
 
-export const RATE = 0.00084;
+export const RATE = 0.00012;
 export const PLATFORM_FEE_PERCENT = 5; // 5%
-export const PLATFORM_FEE = 0.30; // Min USDC 0.30
+export const PLATFORM_FEE = 0.09; // Min USDC 0.09
 export const DEMAND_MBPS = 500;
 export const UNDER_DELIVERY_RATIO = 0.9;
 
@@ -34,8 +34,8 @@ export const calcSplitSettlement = (totalCost: number): SplitBreakdown => {
     planPrice: plan,
     platformFee: fee,
     totalEscrow: totalCost,
-    providerAddress: "0x3b91a78824f923b01a88b1cc92487e419823ad760334",
-    platformAddress: "0x71f3a9b2c44e5d16820ccb7713a2ff0e999a82c5512",
+    providerAddress: "0xca82dde2ce904a798ec5eb1f9c3b458238b964399a41763d9d089362a2812825",
+    platformAddress: "0xabc67fa394146947b426d6b9ed95cac2bddf4fa0b33593667c3603941002c8f4",
   };
 };
 

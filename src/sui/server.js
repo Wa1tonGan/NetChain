@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import { statSync, openSync, readSync, readFileSync, existsSync } from "node:fs";
 import { TrustService } from "./service.js";
 import { integrationMode, startPolling } from "./integration.js";
+import { createDemoOffer } from "./demoOffer.js";
 
 const PORT = Number(process.env.TRUST_PORT ?? 8200);
 
@@ -64,6 +65,17 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
         }
         return json(res, 200, await service.commit(selected));
       }
+      if (req.method === "POST" && url.pathname === "/v1/demo/commit") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const selected = createDemoOffer({
+          incidentId: body.incidentId,
+          price: body.price ?? 1.8,
+          capacityMbps: body.capacityMbps ?? 500,
+          rootDir: process.cwd()
+        });
+        const commitRes = await service.commit(selected);
+        return json(res, 200, { ...commitRes, selectedOffer: selected });
+      }
       if (req.method === "POST" && url.pathname === "/v1/commit/confirm") {
         return json(res, 200, await service.confirmZkCommit(JSON.parse(await readBody(req))));
       }
@@ -79,6 +91,15 @@ export function startServer({ service = new TrustService(), port = PORT, mode = 
       }
       if (req.method === "POST" && url.pathname === "/v1/activation") {
         return json(res, 200, await service.activation(JSON.parse(await readBody(req))));
+      }
+      if (req.method === "POST" && url.pathname === "/v1/demo/settle") {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const settleRes = await service.activation({
+          incidentId: body.incidentId,
+          status: "AVAILABLE",
+          recoveredCapacityMbps: body.recoveredCapacityMbps ?? 500
+        });
+        return json(res, 200, settleRes);
       }
       // Permissionless post-expiry reclaim (escrow::reclaim returns the
       // locked funds to the commitment's buyer regardless of caller).

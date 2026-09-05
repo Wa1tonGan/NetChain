@@ -669,6 +669,42 @@ function advance(status: string) {
     },
   });
 
+  if (status === "escrow_locked") {
+    fetch("/v1/demo/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ incidentId: inc.id, price: 1.8 }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.txDigest) {
+          const cur = useAppStore.getState().incident;
+          if (cur && cur.id === inc.id) {
+            useAppStore.setState({ incident: { ...cur, commitTxDigest: data.txDigest } });
+          }
+        }
+      })
+      .catch((err) => console.warn("Simulation commit error:", err));
+  }
+
+  if (status === "verifying") {
+    fetch("/v1/demo/settle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ incidentId: inc.id, status: "AVAILABLE", recoveredCapacityMbps: inc.shortage }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.txDigest) {
+          const cur = useAppStore.getState().incident;
+          if (cur && cur.id === inc.id) {
+            useAppStore.setState({ incident: { ...cur, settleTxDigest: data.txDigest } });
+          }
+        }
+      })
+      .catch((err) => console.warn("Simulation settle error:", err));
+  }
+
   const cap = useAppStore.getState().capacity;
   if ((status === "verifying" || status === "restored") && inc.outcome !== "failed") {
     const delivered = inc.outcome === "under" ? Math.round(inc.shortage * UNDER_DELIVERY_RATIO) : inc.shortage;
@@ -699,7 +735,7 @@ function pauseForSms() {
           from: "net",
           text:
             `Line degraded · Shortage: ${inc.shortage} Mbps. ` +
-            `Reply with bandwidth & budget — e.g. “500 Mbps, USDC 14”.`,
+            `Reply with bandwidth & budget — e.g. “500 Mbps, USDC 2”.`,
         },
       ],
     },
@@ -760,7 +796,8 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
   }
 
   const timeline = inc.events.map((e) => ({ time: fmtClock(e.at), label: e.label, at: e.at }));
-  const tx = "0x" + Math.random().toString(16).slice(2, 6) + "…" + Math.random().toString(16).slice(2, 6);
+  const liveTx = inc.settleTxDigest;
+  const tx = liveTx || ("0x" + Math.random().toString(16).slice(2, 6) + "…" + Math.random().toString(16).slice(2, 6));
   const logHash = "0x" + Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
 
   const record: RecoveryRecord = {
@@ -772,7 +809,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     cap: inc.shortage,
     min: reqMin,
     smsText: inc.req?.text ?? "",
-    budget: inc.req?.budget ?? 0,
+    budget: inc.req?.budget ?? 2,
     cost,
     charged,
     refund,
@@ -784,6 +821,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
     providerAddr: split.providerAddress,
     platformAddr: split.platformAddress,
     logHash,
+    commitTx: inc.commitTxDigest,
   };
 
   const payments = [...st.payments];
@@ -798,7 +836,7 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
       refund: refund > 0 && kind !== "failed" ? refund : kind === "failed" ? cost : 0,
       refundNote: kind === "failed" ? "reservation refunded" : "",
       state,
-      txDigest: undefined,
+      txDigest: inc.settleTxDigest,
     });
   }
 
@@ -825,7 +863,11 @@ function finishRecovery(kind: "ok" | "under" | "failed") {
       ...st.activity,
     ],
     payments,
-    incident: { ...inc, result: { time, charged, refund, state } },
+    incident: {
+      ...inc,
+      status: kind === "failed" ? "failed" : "restored",
+      result: { time, charged, refund, state, tx, commitTx: inc.commitTxDigest },
+    },
     ...(capacityPatch ? { capacity: { ...st.capacity, ...capacityPatch } } : {}),
   });
 }

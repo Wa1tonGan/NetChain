@@ -40,17 +40,17 @@ export interface Flow {
 
 export const FLOWS: Record<RecoveryKind, Flow> = {
   main: { key: "main", outcome: "ok", phases: [...PRE_SMS, ...POST_SMS] },
-  auto: { key: "auto", outcome: "ok", autoSend: "500 Mbps, USDC 14", phases: [...PRE_SMS, ...POST_SMS] },
+  auto: { key: "auto", outcome: "ok", autoSend: "500 Mbps, USDC 2", phases: [...PRE_SMS, ...POST_SMS] },
   under: {
     key: "under",
     outcome: "under",
-    autoSend: "500 Mbps, USDC 14",
+    autoSend: "500 Mbps, USDC 2",
     phases: [...PRE_SMS, ...POST_SMS],
   },
   failed: {
     key: "failed",
     outcome: "failed",
-    autoSend: "500 Mbps, USDC 14",
+    autoSend: "500 Mbps, USDC 2",
     phases: [
       ...PRE_SMS,
       ["request_detected", 2800],
@@ -112,7 +112,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
     type: "5G Slice (CAMARA QoD)",
     capacityMbps: 500,
     latencyMs: 25,
-    cost: 18.5,
+    cost: 2.2,
     state: "High Latency / Congested",
     selected: false,
     score: 0.68,
@@ -124,7 +124,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
     type: "Fixed Wireless Access",
     capacityMbps: 300,
     latencyMs: 18,
-    cost: 12.6,
+    cost: 1.8,
     state: "Available now · fastest path",
     selected: true,
     score: 0.96,
@@ -136,7 +136,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
     type: "LEO Satellite",
     capacityMbps: 150,
     latencyMs: 65,
-    cost: 24.0,
+    cost: 2.5,
     state: "Available · higher latency",
     selected: false,
     score: 0.74,

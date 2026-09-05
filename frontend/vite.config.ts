@@ -12,6 +12,11 @@ export default defineConfig({
         target: "http://127.0.0.1:8787",
         changeOrigin: true,
       },
+      // Trust Service (Sui backend on port 8200)
+      "/v1": {
+        target: "http://127.0.0.1:8200",
+        changeOrigin: true,
+      },
       // Truth Agent (claim verification service, src/a2a/claimAgent.js)
       "/claims": {
         target: "http://127.0.0.1:8105",
