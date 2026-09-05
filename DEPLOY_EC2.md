@@ -90,14 +90,15 @@ machine**, not the box:
 
 ```bash
 scp -i netchain-demo.pem .env ubuntu@<EC2_PUBLIC_IP>:~/netchain/.env
-ssh -i netchain-demo.pem ubuntu@<EC2_PUBLIC_IP> "mkdir -p ~/.sui"
-scp -i netchain-demo.pem .sui/config.testnet.json ubuntu@<EC2_PUBLIC_IP>:~/.sui/
+ssh -i netchain-demo.pem ubuntu@<EC2_PUBLIC_IP> "mkdir -p ~/netchain/.sui"
+scp -i netchain-demo.pem .sui/config.testnet.json ubuntu@<EC2_PUBLIC_IP>:~/netchain/.sui/
 ```
 
 - `.env` carries `PLATFORM_SECRET` — **must be the same key** that owns the
   testnet escrow, or commits/settlements will fail signature checks.
 - `.sui/config.testnet.json` carries the deployed package/escrow/treasury ids —
-  the trust server refuses to start without it.
+  the trust server refuses to start without it. Note the destination is
+  `~/netchain/.sui/` (the repo folder docker-compose bind-mounts), not `~/.sui/`.
 
 ---
 
