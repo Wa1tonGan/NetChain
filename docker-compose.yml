@@ -62,7 +62,10 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      # repo-root context: the frontend imports the scenario JSONs from the
+      # repo root, so the build needs files outside frontend/
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         # baked into the JS bundle at BUILD time — after changing PUBLIC_IP
         # run:  docker compose build frontend && docker compose up -d frontend

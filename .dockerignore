@@ -1,6 +1,7 @@
-# Backend image build context (repo root) — keep it lean and secret-free.
-node_modules
-frontend
+# Docker build context (repo root) — used by BOTH the backend image and the
+# frontend image (frontend/Dockerfile). Keep it lean and secret-free.
+**/node_modules
+frontend/dist
 .git
 .zcode
 .playwright-mcp
@@ -16,5 +17,4 @@ events
 fixtures/sui
 fixtures/providers/dynamic.json
 move/build
-frontend/dist
 *.png
