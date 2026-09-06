@@ -109,6 +109,7 @@ import type {
   ActivityItem,
   Capacity,
   Incident,
+  IncidentResult,
   Payment,
   ProtectionState,
   RecoveryKind,
@@ -379,6 +380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   startSimRecovery: (kind, customShortage, opts) => {
     if (get().running) return;
     clearMachine();
+    cancelPendingRestore();
     const flow = FLOWS[kind];
     const st = get();
     const shortage = customShortage ?? st.demand;
@@ -435,6 +437,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   startLiveRecovery: (scenarioKey, opts) => {
     if (get().running) return;
     clearMachine();
+    cancelPendingRestore();
     const st = get();
     const scenarioIntent = scenarioKey ? getScenario(scenarioKey) : null;
     const scenarioShortfall = scenarioIntent ? scenarioShortage(scenarioIntent) : 0;
@@ -587,6 +590,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resetSim: () => {
     clearMachine();
+    cancelPendingRestore();
     const st = get();
     set({
       incident: null,
@@ -775,6 +779,45 @@ function absorbRunRow(row: ChainRow) {
   if (row.type === "SETTLED" && row.txDigest && !inc.settleTxDigest) {
     useAppStore.setState({ incident: { ...inc, settleTxDigest: row.txDigest } });
   }
+
+  // The Round-2 audit card must appear BEFORE the "Restored & Settled" bubble,
+  // so the restored state is held until the audit row lands (finishLive
+  // stashes it; see pendingRestore below).
+  if (row.type === "CLAIM_VERIFIED" && pendingRestore) {
+    flushPendingRestore();
+  }
+}
+
+/** Restored state deferred until the Round-2 Truth-Agent audit arrives.
+ *  `result` is applied verbatim except walrusBlobId, re-read at flush time
+ *  because the ARCHIVED row often lands during the wait. */
+let pendingRestore: {
+  incidentId: string;
+  result: IncidentResult;
+  timer: ReturnType<typeof setTimeout>;
+} | null = null;
+
+const AUDIT_WAIT_GRACE_MS = 100_000; // > Truth-Agent budget; then show restored anyway
+
+function flushPendingRestore() {
+  const p = pendingRestore;
+  if (!p) return;
+  pendingRestore = null;
+  clearTimeout(p.timer);
+  const cur = useAppStore.getState();
+  if (cur.incident?.id !== p.incidentId || cur.incident.result) return;
+  useAppStore.setState({
+    incident: {
+      ...cur.incident,
+      status: "restored",
+      result: { ...p.result, walrusBlobId: cur.incident.walrusBlobId ?? p.result.walrusBlobId },
+    },
+  });
+}
+
+function cancelPendingRestore() {
+  if (pendingRestore) clearTimeout(pendingRestore.timer);
+  pendingRestore = null;
 }
 
 function scheduleFrom(fromIdx: number) {
@@ -1348,6 +1391,16 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     platformAddr: "platform-treasury",
   };
 
+  // Round-2 ordering: the "Restored & Settled" bubble must wait for the
+  // Truth-Agent audit card. If no audit has landed yet, hold the result back
+  // (status stays "verifying") until the CLAIM_VERIFIED row arrives — or the
+  // grace timer runs out, in which case restored shows anyway and the audit
+  // card appends late (honest fallback; the on-chain settle is already done).
+  const auditLanded = inc.gatewayIncidentId
+    ? Boolean(useAppStore.getState().claimAudits[inc.gatewayIncidentId])
+    : true;
+  const waitAudit = kind === "ok" && !snapshot.chainOffline && !auditLanded;
+
   useAppStore.setState({
     running: false,
     locked: 0,
@@ -1399,18 +1452,31 @@ function finishLive(kind: "ok" | "failed", row?: ChainRow, stateLabel?: string) 
     ],
     incident: {
       ...inc,
-      status: kind === "ok" ? "restored" : "failed",
       settleTxDigest: row?.txDigest ?? inc.settleTxDigest,
-      result: {
-        time,
-        charged,
-        refund,
-        state,
-        tx: row?.txDigest ?? record.commitTx,
-        walrusBlobId: inc.walrusBlobId,
-      },
+      status: waitAudit ? "verifying" : kind === "ok" ? "restored" : "failed",
+      ...(waitAudit
+        ? {}
+        : {
+            result: {
+              time,
+              charged,
+              refund,
+              state,
+              tx: row?.txDigest ?? record.commitTx,
+              walrusBlobId: inc.walrusBlobId,
+            },
+          }),
     },
   });
+
+  if (waitAudit) {
+    cancelPendingRestore();
+    pendingRestore = {
+      incidentId: inc.id,
+      result: { time, charged, refund, state, tx: row?.txDigest ?? record.commitTx, walrusBlobId: inc.walrusBlobId },
+      timer: setTimeout(flushPendingRestore, AUDIT_WAIT_GRACE_MS),
+    };
+  }
 
   // Late-fill: the Gonka audit trail can lose the race against settlement
   // (60s model budget vs a fast market). If this record carries no consensus,
