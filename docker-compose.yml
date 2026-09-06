@@ -25,6 +25,10 @@ services:
       TRUTH_AGENT_URL: http://agents:8105
       SUI_P2_URL: http://agents:8082
       P2_CALLBACK_URL: http://agents:8082/callbacks/settlement
+      # the gateway + claim agent default to a 127.0.0.1 bind (local dev);
+      # inside containers they must listen on all interfaces
+      GATEWAY_BIND: 0.0.0.0
+      CLAIM_BIND: 0.0.0.0
     ports:
       - "8082:8082"
     volumes:

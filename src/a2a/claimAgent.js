@@ -692,7 +692,9 @@ export function createClaimAgentServer({ port } = {}) {
     server,
     listen(explicitPort) {
       return new Promise((resolve) => {
-        server.listen(explicitPort ?? port ?? 8105, "127.0.0.1", () => {
+        // 127.0.0.1 by default (local dev); containers set CLAIM_BIND=0.0.0.0
+        // so the trust container can reach the audit endpoint.
+        server.listen(explicitPort ?? port ?? 8105, process.env.CLAIM_BIND ?? "127.0.0.1", () => {
           resolve(server.address().port);
         });
       });

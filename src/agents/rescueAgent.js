@@ -999,7 +999,9 @@ export function createRescueAgent({
     server,
     listen(port) {
       return new Promise((resolve) => {
-        server.listen(port, "127.0.0.1", () => {
+        // 127.0.0.1 by default (local dev); containers set GATEWAY_BIND=0.0.0.0
+        // so the docker port mapping can reach the server.
+        server.listen(port, process.env.GATEWAY_BIND ?? "127.0.0.1", () => {
           resolve(server.address().port);
         });
       });
