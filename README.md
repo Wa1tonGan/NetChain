@@ -1,5 +1,10 @@
 # NetChain — Autonomous Connectivity Resilience Exchange
 
+> **🌐 Live Demo: http://3.87.80.38/#/home** — running on AWS EC2 (Docker): real
+> agent market, real Sui testnet escrow. Click any subscriber → **Run Simulation
+> (Relocate KL → Penang)** to watch an autonomous recovery settle on-chain.
+> Deploy your own: see [DEPLOY_EC2.md](DEPLOY_EC2.md).
+
 > Detect → Protect → Find → Activate → Verify → Settle.
 
 When traditional failover has already happened but the remaining network is
