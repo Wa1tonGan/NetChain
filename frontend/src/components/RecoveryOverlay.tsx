@@ -184,7 +184,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           text: (
             <div>
               <b>
-                📡 {entry.brand} Bid Submitted:
+                {entry.brand} Bid Submitted:
                 {entry.winner && <span style={{ color: "#059669" }}> ✓ SELECTED</span>}
               </b>
               <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
@@ -246,7 +246,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
                 <span style={{ fontWeight: 800, color: "#0369a1", fontSize: 13 }}>
-                  🤖 Multi-LLM Provider Evaluation &amp; Voting (Round 1)
+                  Multi-LLM Provider Evaluation &amp; Voting (Round 1)
                 </span>
                 <span style={{ fontSize: 10, background: "#ecfdf5", color: "#059669", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
                   {unanimous
@@ -279,16 +279,21 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                           VOTE: {topBrand} {top === entry.winnerProviderId ? "✓" : "≠"}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
-                        <b>Ranking:</b> {v.ranking.map((pid) => entry.brands[pid] ?? pid).join(" › ")}
-                      </div>
+              <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                <b>Ranking:</b> {v.ranking.map((pid) => entry.brands[pid] ?? pid).join(" › ")}
+              </div>
+              {v.reason && (
+                <div style={{ fontSize: 11.5, color: "#334155", lineHeight: 1.45 }}>
+                  <b>Reasoning:</b> {v.reason}
+                </div>
+              )}
                     </div>
                   );
                 })}
               </div>
 
               <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#0369a1", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>⚡ Round 1 Consensus Reached:</span>
+                <span>Round 1 Consensus Reached:</span>
                 <span style={{ color: "#059669" }}>
                   {unanimous
                     ? `${total}/${total} Unanimous Vote for ${winnerBrand} · Committing Dual-Sig Escrow`
@@ -313,7 +318,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           isEscrow: true,
           text: (
             <div>
-              <b>🔒 Sui Dual-Sig Escrow Locked:</b>
+              <b>Sui Dual-Sig Escrow Locked:</b>
               <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.5 }}>
                 Locked <b>{rm(entry.amountUsdc)}</b> into Escrow Contract (
                 <span className="mono" style={{ fontSize: 11 }}>
@@ -347,7 +352,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           text: (
             <div>
               <div style={{ fontWeight: 800, color: "#0d9488", fontSize: 13 }}>
-                📊 Delivered Bandwidth Verified &amp; Packaged:
+                Delivered Bandwidth Verified &amp; Packaged:
               </div>
               <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5, color: "var(--ink-2)" }}>
                 Recovery-window telemetry measured against the contracted SLA:
@@ -402,7 +407,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
                           gap: 4,
                         }}
                       >
-                        <span>📦 Stored to Walrus Blob: {shortId(walrusId)}</span>
+                        <span>Stored to Walrus Blob: {shortId(walrusId)}</span>
                         <span>↗</span>
                       </a>
                     </div>
@@ -438,7 +443,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
             <span style={{ fontWeight: 800, color: "#4338ca", fontSize: 13 }}>
-              📥 Fetched Report · Multi-LLM Verification &amp; Voting (Round 2)
+              Fetched Report · Multi-LLM Verification &amp; Voting (Round 2)
             </span>
             <span style={{ fontSize: 10, background: auditDone && okCount === total ? "#ecfdf5" : "#fff7ed", color: auditDone && okCount === total ? "#059669" : "#b45309", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>
               {auditDone
@@ -489,7 +494,7 @@ export default function RecoveryOverlay({ incident }: { incident: Incident }) {
           </div>
 
           <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#4338ca", display: "flex", alignItems: "center", gap: 6 }}>
-            <span>⚡ Round 2 Consensus:</span>
+            <span>Round 2 Consensus:</span>
             <span style={{ color: auditDone ? "#059669" : "#b45309" }}>
               {auditDone
                 ? `${audit.score ?? "?"}/100 ${audit.verdict ?? ""} · ${audit.agree ?? "?"} models agree · Settlement executed`

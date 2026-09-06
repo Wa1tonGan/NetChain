@@ -201,6 +201,8 @@ export interface ConsensusVote {
   model: string;
   requestId: string | null;
   ranking: string[];
+  /** the model's own one-sentence rationale for the top pick (optional) */
+  reason?: string | null;
 }
 
 export interface SelectedOffer {

@@ -217,6 +217,8 @@ export interface RunConsensusVote {
   model: string;
   requestId: string | null;
   ranking: string[];
+  /** the model's own rationale for the top pick (when the vote carries one) */
+  reason?: string | null;
 }
 
 export interface RunConsensus extends RunEntryBase {

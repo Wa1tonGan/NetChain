@@ -52,7 +52,8 @@ function buildPrompt(offers, request) {
       "All offers are already viable. Rank them best-first balancing " +
       "activation speed, price and reliability. Priority: fastest activation, then lowest price, then highest reliability. " +
       "Output ONLY valid JSON of the form " +
-      '{"ranking":["<providerId>", ...]} using exactly the given providerIds. No commentary.',
+      '{"ranking":["<providerId>", ...],"reason":"<one short sentence explaining why the top pick wins>"} ' +
+      "using exactly the given providerIds. No commentary outside the JSON.",
     user: JSON.stringify({ constraints, offers: offerSummaries })
   };
 }
@@ -110,7 +111,17 @@ function parseVote(answer, providerIds) {
     .filter(Boolean);
   const unique = [...new Set(known)];
   return unique.length > 0
-    ? { model: answer.model ?? null, ranking: unique, requestId: answer.requestId ?? null }
+    ? {
+        model: answer.model ?? null,
+        ranking: unique,
+        requestId: answer.requestId ?? null,
+        // The model's own rationale for the top pick (best-effort; optional
+        // in the answer contract so older prompts still parse).
+        reason:
+          typeof parsed.reason === "string" && parsed.reason.trim()
+            ? parsed.reason.trim().slice(0, 280)
+            : null
+      }
     : null;
 }
 
@@ -237,11 +248,13 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
     );
 
     // Per-model audit trail: Gonka request id + which providers each model
-    // ranked (Borda inputs), best-first. Returned alongside the merged order.
+    // ranked (Borda inputs), best-first, plus the model's own rationale.
+    // Returned alongside the merged order.
     const modelVotes = votes.map((v) => ({
       model: v.model,
       requestId: v.requestId,
-      ranking: v.ranking
+      ranking: v.ranking,
+      reason: v.reason ?? null
     }));
 
     return { ranking, votes: modelVotes };

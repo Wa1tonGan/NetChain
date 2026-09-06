@@ -4,7 +4,7 @@ import Icon from "./Icon";
 export default function ProtectionModal({ onClose }: { onClose: () => void }) {
   const s = useAppStore();
 
-  const perRecoveryOptions = [10, 20, 50];
+  const perRecoveryOptions = [2, 5, 10, 20, 50];
   const monthlyOptions = [50, 100, 200];
 
   return (

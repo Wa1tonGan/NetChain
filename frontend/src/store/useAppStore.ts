@@ -262,7 +262,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deviceName: "Pixel 9 Pro",
   auto: true,
   autoBelow: 14,
-  maxPerRecovery: 20,
+  maxPerRecovery: 2,
   monthlyLimit: 100,
   minSpeed: 100,
   maxDuration: 60,
