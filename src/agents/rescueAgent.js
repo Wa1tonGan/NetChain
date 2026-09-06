@@ -660,10 +660,18 @@ export function createRescueAgent({
     let consensusVotes = null;
 
     if (!request.emergencyOverride && deterministicOrder.length >= 2) {
+      // Give the models the public brand names so their rationale reads the
+      // way the dashboard labels the offers.
+      const brands = new Map(
+        deterministicOrder.map((entry) => {
+          const persona = profileFor(profilesById.get(entry.offer.providerId), incidentId);
+          return [entry.offer.providerId, persona.brand ?? entry.offer.providerId];
+        })
+      );
       const consensus = await rankWithConsensus(
         deterministicOrder,
         request,
-        { logger, ...gonkaOverrides }
+        { logger, ...gonkaOverrides, brands }
       );
 
       if (consensus) {

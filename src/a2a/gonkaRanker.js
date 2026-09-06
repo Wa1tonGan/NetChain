@@ -27,13 +27,19 @@ export function parseConfig(overrides = {}) {
     .map((model) => model.trim())
     .filter(Boolean);
   const logger = overrides.logger ?? null;
+  // providerId → public brand name (Map) so models reason in brand terms and
+  // their rationale reads the same way the dashboard labels the offers.
+  const brands = overrides.brands instanceof Map ? overrides.brands : null;
 
-  return { apiKey, baseUrl, budgetMs, maxTokens, models, logger };
+  return { apiKey, baseUrl, budgetMs, maxTokens, models, logger, brands };
 }
 
-function buildPrompt(offers, request) {
+const brandOf = (brands, providerId) => brands?.get(providerId) ?? providerId;
+
+function buildPrompt(offers, request, brands) {
   const offerSummaries = offers.map((offer) => ({
     providerId: offer.providerId,
+    brand: brandOf(brands, offer.providerId),
     capacityMbps: offer.capacityMbps,
     price: offer.price,
     activationMs: offer.expectedActivationTimeMs,
@@ -53,7 +59,8 @@ function buildPrompt(offers, request) {
       "activation speed, price and reliability. Priority: fastest activation, then lowest price, then highest reliability. " +
       "Output ONLY valid JSON of the form " +
       '{"ranking":["<providerId>", ...],"reason":"<one short sentence explaining why the top pick wins>"} ' +
-      "using exactly the given providerIds. No commentary outside the JSON.",
+      "using exactly the given providerIds for ranking, but refer to providers " +
+      "by their brand name inside the reason. No commentary outside the JSON.",
     user: JSON.stringify({ constraints, offers: offerSummaries })
   };
 }
@@ -222,9 +229,24 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
   const deterministicOrder = rankOffers(viableArrivals).map(
     (arrival) => arrival.offer.providerId
   );
-  const prompt = buildPrompt(offers, request);
+  const prompt = buildPrompt(offers, request, config.brands);
   const controller = new AbortController();
   const budgetTimer = setTimeout(() => controller.abort(), config.budgetMs);
+
+  // Defensive rewrite: models that ignore the brand instruction still reason
+  // in providerIds — swap every id back to its brand before display.
+  const deIdReason = (reason) => {
+    if (!reason) return reason;
+    let out = reason;
+    for (const providerId of deterministicOrder) {
+      const brand = brandOf(config.brands, providerId);
+      if (brand !== providerId) {
+        out = out.split(providerId).join(brand);
+        out = out.split(providerId.toLowerCase()).join(brand);
+      }
+    }
+    return out;
+  };
 
   try {
     const answers = await Promise.allSettled(
@@ -254,7 +276,7 @@ export async function rankWithConsensus(viableArrivals, request, overrides = {})
       model: v.model,
       requestId: v.requestId,
       ranking: v.ranking,
-      reason: v.reason ?? null
+      reason: deIdReason(v.reason) ?? null
     }));
 
     return { ranking, votes: modelVotes };
