@@ -96,7 +96,7 @@ function providerReasons(envelope) {
   );
 }
 
-test("S2 normal mode: parallel A2A selects KilatLink, activation result attached", async () => {
+test("S2 normal mode: parallel A2A selects Digi Fibre Air, activation result attached", async () => {
   const { rescue, cleanup } = await startStack();
   const buyerPublicKeyPem = await readFile(
     path.join(projectRoot, "fixtures", "keys", "buyer.public.pem"),
@@ -111,7 +111,7 @@ test("S2 normal mode: parallel A2A selects KilatLink, activation result attached
     assert.equal(envelope.status, "SELECTED");
     assert.equal(envelope.selectedOffer.selectionMode, "NORMAL");
     assert.equal(envelope.selectedOffer.selectedProvider.providerId, "PROVIDER-B");
-    assert.equal(envelope.selectedOffer.selectedProvider.brand, "KilatLink FWA");
+    assert.equal(envelope.selectedOffer.selectedProvider.brand, "Digi Fibre Air");
     assert.equal(envelope.selectedOffer.activation.status, "AVAILABLE");
     assert.equal(envelope.selectedOffer.activation.recoveredCapacityMbps, 300);
 
@@ -232,7 +232,7 @@ test("unresponsive provider: fail-fast deadline records the miss without stallin
     assert.equal(envelope.status, "SELECTED");
     assert.equal(envelope.selectedOffer.selectedProvider.providerId, "PROVIDER-B");
     // The bid deadline (1000 ms) caps the bidding wait; the rest of the
-    // elapsed time is KilatLink's own 1500 ms activation, not provider A's hang.
+    // elapsed time is the winner's own 1500 ms activation, not provider A's hang.
     assert.ok(elapsedMs < 4000, `recovery took ${elapsedMs} ms, deadline not enforced`);
 
     assert.equal(providerReasons(envelope.selectedOffer)["PROVIDER-A"].reason, "RESPONSE_TIMEOUT");
@@ -686,7 +686,7 @@ test("fee engine: plan price + 5% platform fee, split fields handed to Person 3"
     );
     const agreement = envelope.selectedOffer.agreement;
 
-    // KilatLink plan price is 1.8 USDC-scale (§1.3 worked example at a
+    // Digi Fibre Air plan price is 1.8 USDC-scale (§1.3 worked example at a
     // different base): fee is computed on the plan price only and added on top.
     assert.equal(agreement.planPrice, 1.8);
     assert.equal(agreement.platformFeePercent, 5);

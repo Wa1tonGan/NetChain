@@ -26,6 +26,16 @@ const BRAND_STEMS = [
   "BinaFibre", "OrbitMy", "CeriaNet", "PantasLink", "RimbaNet"
 ];
 
+// Fixed Malaysian telco identities per slot — the demo always races the same
+// three operators. The category suffix still attaches per roll (e.g. "Maxis
+// 5G", "Digi Fibre Air", "U Mobile Orbit") because slots keep shuffling
+// tiers, so characteristics (capacity/price/latency) still vary every run.
+const SLOT_BRANDS = {
+  "PROVIDER-A": "Maxis",
+  "PROVIDER-B": "Digi",
+  "PROVIDER-C": "U Mobile"
+};
+
 const CATEGORY_DRESS = {
   TELCO_5G_QOD: {
     suffix: "5G",
@@ -167,10 +177,12 @@ export function rollDynamicProviders(baseProfiles, { seed } = {}) {
     const tier = tiers[index % tiers.length];
     const dress = CATEGORY_DRESS[tier.category];
 
-    let stem = pick(rng, stems);
-    while (usedBrands.has(stem) && stems.length > usedBrands.size) {
-      stem = pick(rng, stems);
-    }
+    // Fixed identity when the slot has one; extra slots (none today) fall
+    // back to an unused stem.
+    const unusedStems = stems.filter((s) => !usedBrands.has(s));
+    const stem =
+      SLOT_BRANDS[providerId] ??
+      (unusedStems.length > 0 ? pick(rng, unusedStems) : pick(rng, stems));
     usedBrands.add(stem);
 
     const brand = `${stem} ${dress.suffix}`;

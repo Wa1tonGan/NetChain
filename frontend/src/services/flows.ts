@@ -75,7 +75,7 @@ export const EVENT_LABELS: Record<string, string> = {
   searching: "A2A query broadcast to 3 providers",
   sms: "Degradation SMS sent to client",
   request_detected: "Client SMS reply parsed",
-  provider_selected: "Gonka selected KilatLink FWA",
+  provider_selected: "Gonka selected Digi Fibre Air",
   escrow_locked: "Sui escrow locked (plan + platform fee)",
   activating: "CAMARA QoD session active",
   verifying: "Bandwidth & latency verified",
@@ -101,7 +101,7 @@ export const STEP_INDEX: Record<string, number> = {
 export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
   {
     id: "PROV-A",
-    name: "Provider A (NusaNet 5G)",
+    name: "Provider A (Maxis 5G)",
     type: "5G Slice (CAMARA QoD)",
     capacityMbps: 500,
     latencyMs: 25,
@@ -113,7 +113,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
   },
   {
     id: "PROV-B",
-    name: "Provider B (KilatLink FWA)",
+    name: "Provider B (Digi Fibre Air)",
     type: "Fixed Wireless Access",
     capacityMbps: 300,
     latencyMs: 18,
@@ -125,7 +125,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
   },
   {
     id: "PROV-C",
-    name: "Provider C (OrbitSat GO)",
+    name: "Provider C (U Mobile Orbit)",
     type: "LEO Satellite",
     capacityMbps: 150,
     latencyMs: 65,
@@ -138,7 +138,7 @@ export const BLUEPRINT_PROVIDERS: ProviderQuote[] = [
 ];
 
 export const COMPARISON: { name: string; state: string; sel: boolean; id?: string }[] = [
-  { name: "Provider A (NusaNet 5G)", state: "Congested / High Latency", sel: false },
-  { name: "Provider B (KilatLink FWA)", state: "Available now · fastest path", sel: true },
-  { name: "Provider C (OrbitSat GO)", state: "Available · slower activation", sel: false },
+  { name: "Provider A (Maxis 5G)", state: "Congested / High Latency", sel: false },
+  { name: "Provider B (Digi Fibre Air)", state: "Available now · fastest path", sel: true },
+  { name: "Provider C (U Mobile Orbit)", state: "Available · slower activation", sel: false },
 ];

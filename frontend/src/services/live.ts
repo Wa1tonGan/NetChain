@@ -116,9 +116,9 @@ export function scenarioShortage(intent: Record<string, unknown>): number {
 // Fallback brands only; the live source of truth is the gateway /readiness
 // snapshot refreshed into LIVE_BRANDS by refreshBrands().
 export const BRANDS: Record<string, string> = {
-  "PROVIDER-A": "NusaNet 5G",
-  "PROVIDER-B": "KilatLink FWA",
-  "PROVIDER-C": "OrbitSat GO",
+  "PROVIDER-A": "Maxis 5G",
+  "PROVIDER-B": "Digi Fibre Air",
+  "PROVIDER-C": "U Mobile Orbit",
 };
 
 const LIVE_BRANDS: Record<string, string> = {};

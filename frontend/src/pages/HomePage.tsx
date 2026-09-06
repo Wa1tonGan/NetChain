@@ -19,6 +19,7 @@ function useTicker(active: boolean, ms = 1000) {
 
 function SessionCard() {
   const session = useAppStore((s) => s.session)!;
+  const runLog = useAppStore((s) => s.runLog);
   useTicker(true);
 
   const remainMin = session.min - (Date.now() - session.start) / 1000;
@@ -26,6 +27,8 @@ function SessionCard() {
   const mm = Math.floor(totSec / 60);
   const ss = Math.floor(totSec % 60);
   const below = session.log.filter((x) => !x.ok).length;
+  const backupBrand =
+    runLog.find((e): e is RunBid => e.kind === "bid" && Boolean(e.winner))?.brand ?? "Backup slice";
 
   return (
     <div className="session-card">
@@ -33,7 +36,7 @@ function SessionCard() {
         <div>
           <div className="panel-title">Backup session</div>
           <div className="wal-sub">
-            KilatLink FWA · {session.agreed} Mbps · {session.min} min
+            {backupBrand} · {session.agreed} Mbps · {session.min} min
           </div>
         </div>
         <span className="chip good" style={{ marginLeft: "auto" }}>
@@ -206,7 +209,7 @@ export default function HomePage() {
     },
     {
       time: "T+11.1s",
-      title: "KilatLink FWA · offer selected",
+      title: "Digi Fibre Air · offer selected",
       type: "ok",
       desc: "500 Mbps · 18 ms · USDC 1.80 · activation 8 s · 0% loss route.",
     },

@@ -4,7 +4,7 @@ import { signBuyerAgreement, signOffer } from "../a2a/signing.js";
 import { computeFeeSplit, feeConfigFromEnv } from "../a2a/fees.js";
 
 /**
- * Creates a valid, signed SelectedOffer for KilatLink FWA (PROVIDER-B)
+ * Creates a valid, signed SelectedOffer for Digi Fibre Air (PROVIDER-B)
  * with the target demo price (default 1.80 USDC), signed by both the provider
  * and buyer keys so it can be committed directly to the Sui Trust Layer.
  */
@@ -50,7 +50,7 @@ export function createDemoOffer({
     selectionMode: "NORMAL",
     selectedProvider: {
       providerId: "PROVIDER-B",
-      brand: "KilatLink FWA",
+      brand: "Digi Fibre Air",
       offerId: originalOffer.offerId,
       capacityMbps,
       expectedActivationClass: "FAST",

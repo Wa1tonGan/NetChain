@@ -241,7 +241,7 @@ const seedActivity: ActivityItem[] = [
     ts: daysAgo(4, 16, 40),
     type: "failed",
     title: "Primary connection failed",
-    sub: "Switched to KilatLink FWA",
+    sub: "Switched to Digi Fibre Air",
     note: "Sui escrow settled",
   },
 ];
@@ -737,7 +737,7 @@ function latestBidEntryFor(providerId: string): RunBid | null {
   return null;
 }
 
-/** The simulated market's winning quote ("Provider B (KilatLink FWA)" in the
+/** The simulated market's winning quote ("Provider B (Digi Fibre Air)" in the
  *  blueprint) and its display brand — offline-fallback data only. */
 function quoteWinner(): (typeof BLUEPRINT_PROVIDERS)[number] {
   return BLUEPRINT_PROVIDERS.find((q) => q.selected) ?? BLUEPRINT_PROVIDERS[0];

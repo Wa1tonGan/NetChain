@@ -1,6 +1,6 @@
 {
   "providerId": "PROVIDER-C",
-  "brand": "OrbitSat GO",
+  "brand": "U Mobile Orbit",
   "category": "LEO_SATELLITE",
   "description": "Fictional LEO satellite backhaul provider for disaster recovery where terrestrial capacity is gone. Wide coverage and instant pointing, but limited capacity and high latency rule it out for demanding city links.",
   "agentCard": {

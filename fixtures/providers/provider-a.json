@@ -1,6 +1,6 @@
 {
   "providerId": "PROVIDER-A",
-  "brand": "NusaNet 5G",
+  "brand": "Maxis 5G",
   "category": "TELCO_5G_QOD",
   "description": "Fictional Malaysian telco exposing CAMARA-style 5G Quality-on-Demand sessions for prioritised app flows. Big capacity and excellent reliability, but the standard CAMARA session setup is slow unless the P0 fast lane is pre-authorised.",
   "agentCard": {

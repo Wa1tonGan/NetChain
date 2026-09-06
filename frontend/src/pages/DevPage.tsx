@@ -60,7 +60,7 @@ export default function DevPage() {
       tagCls: "green",
       title: "S1 — Backup Capacity Insufficient (Stadium NOC)",
       trigger: "Primary 1,000 Mbps fiber fails; backup has only 500 Mbps while critical demand is 700 Mbps.",
-      action: "Protects P1 POS/CCTV → Throttles Guest Wi-Fi → Acquires 300 Mbps from KilatLink FWA via CAMARA QoD → Rebalances to 800 Mbps → Settles on Sui.",
+      action: "Protects P1 POS/CCTV → Throttles Guest Wi-Fi → Acquires 300 Mbps from Digi Fibre Air via CAMARA QoD → Rebalances to 800 Mbps → Settles on Sui.",
       buttonText: "Run S1 (Primary)",
       btnClass: "primary",
     },
@@ -90,7 +90,7 @@ export default function DevPage() {
       tagCls: "amber",
       title: "S4 — Physical Fiber Severance",
       trigger: "Backhoe physical cut severs primary WAN line.",
-      action: "Autonomous failover kicks in → acquires replacement capacity from KilatLink FWA.",
+      action: "Autonomous failover kicks in → acquires replacement capacity from Digi Fibre Air.",
       buttonText: "Run S4",
       btnClass: "subtle",
     },
@@ -252,7 +252,7 @@ export default function DevPage() {
                 </div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.6 }}>
                   • <b>Time-to-Recovery</b>: Measured live on every scenario.
-                  <br />• <b>A2A Independence</b>: Parallel provider queries to NusaNet, KilatLink, and OrbitSat.
+                  <br />• <b>A2A Independence</b>: Parallel provider queries to Maxis, Digi, and U Mobile.
                   <br />• <b>Trust Layer</b>: Sui Escrow locks dual split before activation; releases on verified delivery.
                   <br />• <b>Deterministic QoS</b>: P0 emergency override never compromised by paid commercial tiers.
                 </div>

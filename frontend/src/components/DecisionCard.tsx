@@ -31,7 +31,7 @@ export default function DecisionCard({
   votes?: ConsensusVoteRow[];
 }) {
   const [showAgentLogs, setShowAgentLogs] = useState(true);
-  const winner = provider ?? "KilatLink FWA";
+  const winner = provider ?? "Digi Fibre Air";
   const isLive = Boolean(comparison);
   // Real Gonka consensus audit trail (LIVE runs) vs the scripted demo logs.
   const hasRealVotes = Boolean(votes?.length);
@@ -80,23 +80,23 @@ export default function DecisionCard({
           name: "DeepSeek-V3",
           role: "Market Pricing & Latency Agent",
           score: "0.96",
-          vote: "KilatLink FWA",
+          vote: "Digi Fibre Air",
           requestId: null,
-          reasoning: `Scanned 3 provider bids. KilatLink FWA offers the lowest latency profile (18ms) at ${rm(cost)} vs NusaNet 5G (congested 25ms @ USDC 2.20) and OrbitSat GO (satellite 65ms @ USDC 2.50).`,
+          reasoning: `Scanned 3 provider bids. Digi Fibre Air offers the lowest latency profile (18ms) at ${rm(cost)} vs Maxis 5G (congested 25ms @ USDC 2.20) and U Mobile Orbit (satellite 65ms @ USDC 2.50).`,
         },
         {
           name: "Kimi-k1.5",
           role: "SLA & CAMARA QoD Verification Agent",
           score: "0.95",
-          vote: "KilatLink FWA",
+          vote: "Digi Fibre Air",
           requestId: null,
-          reasoning: `Verified target bandwidth requirement (${cap} Mbps). KilatLink FWA slice is instantly provisionable via CAMARA QoD programmable API with guaranteed zero packet loss routing.`,
+          reasoning: `Verified target bandwidth requirement (${cap} Mbps). Digi Fibre Air slice is instantly provisionable via CAMARA QoD programmable API with guaranteed zero packet loss routing.`,
         },
         {
           name: "MiniMax-ABAB6.5",
           role: "Budget & Sui Trust Layer Agent",
           score: "0.98",
-          vote: "KilatLink FWA",
+          vote: "Digi Fibre Air",
           requestId: null,
           reasoning: `Checked user budget guardrails. Total committed cost ${rm(cost)} is strictly within the client's ${rm0(budget)} per-recovery spending limit and wallet balance.`,
         },
